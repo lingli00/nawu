@@ -25,8 +25,13 @@ export default function PageShell({
   return (
     <div className="min-h-full bg-surface-2 text-ink">
       <header
-        className="sticky top-0 z-20 flex items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur"
-        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+        className="sticky top-0 z-20 flex items-center gap-2 border-b border-line px-3"
+        style={{
+          paddingTop: 'env(safe-area-inset-top)',
+          background: 'color-mix(in srgb, var(--surface) 62%, transparent)',
+          backdropFilter: 'blur(24px) saturate(170%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(170%)',
+        }}
       >
         <button
           onClick={back}

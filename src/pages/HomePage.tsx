@@ -870,7 +870,10 @@ export default function HomePage() {
     setSharing(true);
     try {
       const dataUrl = await drawGoodsCard(detail, catNameOf(detail.categoryId) ?? '未分类');
-      await shareOrDownload(dataUrl, `纳物-${detail.name || '物品'}.png`);
+      const how = await shareOrDownload(dataUrl, `纳物-${detail.name || '物品'}.png`);
+      if (how === 'saved') toastSuccess('已保存到系统相册「纳物」');
+      else if (how === 'downloaded') toastSuccess('海报已下载');
+      else toastSuccess('已分享');
     } catch (e) {
       toastError(e instanceof Error ? e.message : '生成分享卡片失败');
     } finally {
@@ -1236,8 +1239,10 @@ export default function HomePage() {
                     {isLocalImage(detail) ? (
                       <img src={detail.image?.ref} alt={detail.name} className="h-full w-full object-cover" />
                     ) : isWebImage(detail) ? (
+                      /* v1.0.16：web 图一律走 IconPreview（本地缓存优先 + 多源回退）——
+                         裸 img 直连在 App WebView 里必空白（这正是「首页有图点开空白」的根因） */
                       <span className="flex h-full w-full items-center justify-center" style={{ background: FALLBACK_BG }}>
-                        <img src={detail.image?.ref} alt={detail.name} className="h-2/5 w-2/5 object-contain" />
+                        <IconPreview icon={`url:${detail.image?.ref}`} size={140} className="h-2/5 w-2/5" />
                       </span>
                     ) : (
                       <span className="flex h-full w-full items-center justify-center text-ink-3">

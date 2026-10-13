@@ -1,5 +1,8 @@
 import { useEffect, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
+import { Keyboard, type KeyboardResize } from '@capacitor/keyboard';
 import AppRoutes from './router';
 import MainShell from './components/layout/MainShell';
 import { useAppStore } from './store/useAppStore';
@@ -7,6 +10,44 @@ import { useServerStore } from './store/useServerStore';
 import { isNative } from './net/env';
 import { UiHost } from './components/ui/UiHost';
 import { Compass } from 'lucide-react';
+
+/**
+ * 键盘残留高度修复（v1.0.16，仅原生）。
+ *
+ * 症状（用户实机录屏）：输入法开着时退到后台再回来，页面上一半有内容、
+ * 下一半空白、底部 Tab 挤到屏幕中部——Keyboard resize:'body' 模式下 body
+ * 高度被键盘改写，恢复前台时没有还原。
+ *
+ * 修复：resume 时 ① 重设一次 resize 模式强制原生侧重新计算布局；
+ * ② 显式把 body/html 高度复位并强制 reflow；③ 广播 resize 事件让依赖
+ * 视口的功能（报表图表等）重算。
+ */
+function useKeyboardResumeFix(): void {
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const fix = (): void => {
+      window.setTimeout(() => {
+        // ① 原生侧重应用 resize 模式（重算 WebView inset / body 高度）
+        const mode = 'body' as KeyboardResize;
+        Keyboard.setResizeMode({ mode }).catch(() => undefined);
+        // ② JS 侧兜底：显式复位高度 + 强制 reflow
+        for (const el of [document.body, document.documentElement]) {
+          el.style.height = '';
+        }
+        document.body.style.minHeight = '100%';
+        void document.body.offsetHeight; // 读 offset 强制同步重排
+        // ③ 广播 resize（图表/虚拟键盘感知组件重算）
+        window.dispatchEvent(new Event('resize'));
+      }, 250);
+    };
+    const sub = CapApp.addListener('appStateChange', (s) => {
+      if (s.isActive) fix();
+    });
+    return () => {
+      void sub.then((h) => h.remove());
+    };
+  }, []);
+}
 
 /**
  * 浏览器端自动注册服务器：网页用户本来就是从服务器打开的页面，
@@ -77,6 +118,7 @@ function BootSplash(): JSX.Element {
  */
 export default function App(): JSX.Element {
   const hydrated = useAppStore((s) => s.hydrated);
+  useKeyboardResumeFix();
 
   if (!hydrated) return <BootSplash />;
 

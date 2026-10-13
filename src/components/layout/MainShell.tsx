@@ -100,12 +100,17 @@ export function useShellMode(): 'desktop' | 'mobile' {
 
 /* ---------------- 样式常量 ---------------- */
 
-/** 玻璃拟态面板样式（颜色走 CSS 变量，深浅色自适应）。 */
+/** 液态玻璃面板样式（v1.0.16 对齐 iOS 26 Liquid Glass）：
+ *  低不透明度 + 大半径模糊 + 高饱和 + 顶部内高光边缘 ——
+ *  颜色走 CSS 变量，深浅色自适应；三端（App / 手机网页 / 电脑网页移动壳）共用。 */
 export const GLASS_STYLE: CSSProperties = {
-  background: 'color-mix(in srgb, var(--surface) 78%, transparent)',
-  border: '1px solid color-mix(in srgb, var(--line) 60%, transparent)',
-  backdropFilter: 'blur(20px) saturate(1.4)',
-  WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
+  background:
+    'linear-gradient(to bottom, color-mix(in srgb, var(--surface) 52%, transparent), color-mix(in srgb, var(--surface) 66%, transparent))',
+  border: '1px solid color-mix(in srgb, var(--surface) 55%, transparent)',
+  boxShadow:
+    'inset 0 1px 0 color-mix(in srgb, white 55%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--line) 40%, transparent), 0 12px 36px rgba(0,0,0,0.14)',
+  backdropFilter: 'blur(28px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(28px) saturate(180%)',
 };
 
 /* ---------------- 主壳入口 ---------------- */

@@ -1,6 +1,8 @@
 import type { Goods } from '../types/entities';
+import { Capacitor } from '@capacitor/core';
 import { currentServer } from '../store';
 import { iconCacheLookup } from './iconCache';
+import logger from './log';
 
 /**
  * 分享生图（v1.0.10）：把物品画成 900×1200 的竖版分享海报（纯 canvas，无依赖）。
@@ -12,6 +14,9 @@ import { iconCacheLookup } from './iconCache';
 
 /** 米白底 / 深绿主色（与全局 --paper/--accent 同源）。 */
 const C = { paper: '#f5f3ee', accent: '#2e6e5a', accentSoft: '#e3ede8', ink: '#26302c', ink3: '#8a938f', line: '#e4e2da' };
+
+/** 分享海报写入的系统相册名（App 端）。 */
+const ALBUM_NAME = '纳物';
 
 function loadImage(src: string, timeoutMs = 6000): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
@@ -310,8 +315,39 @@ export async function drawWallSheet(items: Array<{ g: Goods; categoryName: strin
   return cv.toDataURL('image/png');
 }
 
-/** 优先系统分享，失败回退下载。 */
-export async function shareOrDownload(dataUrl: string, fileName: string): Promise<'shared' | 'downloaded'> {
+/** 保存/分享策略（v1.0.16 重写）：
+ *  原生 App → 直接写入系统相册「纳物」相册（MediaStore，无需任何存储权限）；
+ *  网页端 → navigator.share 优先，失败回退 <a download>。
+ *  ★旧实现 `<a download>` 在 App WebView 里既不弹下载也不进相册——
+ *  用户看到「已保存」但相册永远是空的，本版根治。 */
+export async function shareOrDownload(
+  dataUrl: string,
+  fileName: string,
+): Promise<'shared' | 'saved' | 'downloaded'> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { Media } = await import('@capacitor-community/media');
+      // 找「纳物」相册（App 关联相册，无需权限）；没有就建
+      let albumId = '';
+      try {
+        const { albums } = await Media.getAlbums();
+        albumId = albums.find((a) => a.name === ALBUM_NAME)?.identifier ?? '';
+      } catch {
+        /* ignore */
+      }
+      if (!albumId) {
+        await Media.createAlbum({ name: ALBUM_NAME });
+        const { albums } = await Media.getAlbums();
+        albumId = albums.find((a) => a.name === ALBUM_NAME)?.identifier ?? '';
+      }
+      const base = fileName.replace(/\.png$/i, '');
+      await Media.savePhoto({ path: dataUrl, albumIdentifier: albumId || undefined, fileName: base });
+      return 'saved';
+    } catch (e) {
+      logger.warn('savePhoto failed, fallback to share/download', e);
+      // 落相册失败 → 退回系统分享，再不行才下载
+    }
+  }
   try {
     const blob = await (await fetch(dataUrl)).blob();
     const file = new File([blob], fileName, { type: 'image/png' });

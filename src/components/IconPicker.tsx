@@ -14,7 +14,7 @@ import {
 } from '../lib/brandIcon';
 import { currentServer, toastError } from '../store';
 import { get } from '../net/httpClient';
-import { iconCacheFetchAndStore, iconCacheLookup, normIconKey, warmIconCache } from '../lib/iconCache';
+import { fetchIconAsDataUrl, iconCacheFetchAndStore, iconCacheLookup, normIconKey, warmIconCache } from '../lib/iconCache';
 
 /**
  * 统一图标选择器（订阅 / 物品共用，v1.0.5）。
@@ -49,12 +49,73 @@ function iconBaseOf(): string {
   return currentServer()?.url ?? (typeof window !== 'undefined' ? window.location.origin : '');
 }
 
-/** 在线搜索结果（v1.0.11：type=icon 图形图标（Iconify SVG）/ type=site 站点域名）。 */
+/** 在线搜索结果（v1.0.11：site 站点域名 / icon 图形图标；v1.0.16：img 商品图片）。 */
 interface OnlineHit {
-  type?: 'site' | 'icon';
+  type?: 'site' | 'icon' | 'img';
   domain?: string;
   icon?: string;
   url?: string;
+}
+
+/** 商品图预览渲染（缓存优先 + 原生通道抓取，永不裸 img 直连）。 */
+function HitImg({ abs, alt }: { abs: string; alt?: string }) {
+  const chain = useMemo(() => [abs], [abs]);
+  const { src, done } = useCachedIconSrc(chain);
+  if (!done || !src) {
+    return <span className="h-full w-full rounded bg-surface-2" aria-label={alt} />;
+  }
+  return <img src={src} alt={alt ?? abs} className="h-full w-full" style={{ objectFit: 'contain' }} />;
+}
+
+/** 商品图代理相对路径（任意图床统一走自己服务器的 /api/img/get，缓存放心）。 */
+function imgProxyUrl(raw: string): string {
+  return `/api/img/get?u=${encodeURIComponent(raw)}`;
+}
+
+/** 商品图预览渲染（缓存优先 + 原生通道抓取，永不裸 img 直连）。 */
+function ProductImg({ raw, alt }: { raw: string; alt?: string }) {
+  const chain = useMemo(() => [imgProxyUrl(raw)], [raw]);
+  const { src, done } = useCachedIconSrc(chain);
+  if (!done || !src) {
+    return (
+      <span
+        className="flex h-full w-full items-center justify-center rounded-lg bg-surface-2 text-ink-3/40"
+        aria-label={alt}
+      >
+        <ImageIcon size={16} />
+      </span>
+    );
+  }
+  return <img src={src} alt={alt ?? raw} className="h-full w-full rounded-lg" style={{ objectFit: 'cover' }} />;
+}
+
+/** 任意 dataURL 中心方裁到 ≤max 的正方形 JPEG（商品图入库用，随备份走）。 */
+async function cropSquareDataUrl(dataUrl: string, max = 512): Promise<string> {
+  const img = await new Promise<HTMLImageElement | null>((resolve) => {
+    const el = new Image();
+    const t = setTimeout(() => resolve(null), 6000);
+    el.onload = () => {
+      clearTimeout(t);
+      resolve(el);
+    };
+    el.onerror = () => {
+      clearTimeout(t);
+      resolve(null);
+    };
+    el.src = dataUrl;
+  });
+  if (!img) return dataUrl; // 解码失败原样存
+  const side = Math.min(img.naturalWidth, img.naturalHeight);
+  const sx = (img.naturalWidth - side) / 2;
+  const sy = (img.naturalHeight - side) / 2;
+  const out = Math.min(max, side);
+  const cv = document.createElement('canvas');
+  cv.width = out;
+  cv.height = out;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return dataUrl;
+  ctx.drawImage(img, sx, sy, side, side, 0, 0, out, out);
+  return cv.toDataURL('image/jpeg', 0.85);
 }
 
 /** 候选链 → 缓存 dataURL（命中即用；未命中走网络层抓取入库）。 */
@@ -271,6 +332,8 @@ export default function IconPicker({
   /** 全局唯一搜索关键词（只用于过滤，不回写输入框——IME 铁律）。 */
   const [query, setQuery] = useState('');
   const [onlineHits, setOnlineHits] = useState<OnlineHit[] | null>(null);
+  /** 商品图片结果（v1.0.16：/api/img/search，Bing 图搜原图直链）。 */
+  const [imgHits, setImgHits] = useState<OnlineHit[] | null>(null);
   const [onlineBusy, setOnlineBusy] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -301,11 +364,13 @@ export default function IconPicker({
   const runOnlineSearch = (kwRaw: string): void => {
     const kw = kwRaw.trim();
     setOnlineHits(null);
+    setImgHits(null);
     if (kw.length < 2) {
       setOnlineBusy(false);
       return;
     }
     setOnlineBusy(true);
+    /* ① 图形图标 + 站点域名（原有接口） */
     get<{ ok?: boolean; items?: OnlineHit[] }>({ url: base }, '/api/icon/search', { q: kw }, 8000)
       .then((res) => {
         const items = res.data?.ok && Array.isArray(res.data.items) ? res.data.items : [];
@@ -323,8 +388,37 @@ export default function IconPicker({
           .filter(Boolean);
         if (urls.length > 0) void warmIconCache(urls, base);
       })
-      .catch(() => setOnlineHits([]))
+      .catch(() => setOnlineHits([]));
+    /* ② 商品图片（v1.0.16：搜「iPhone 17」「佳能相机」出真实商品缩略图） */
+    get<{ ok?: boolean; items?: OnlineHit[] }>({ url: base }, '/api/img/search', { q: kw }, 10000)
+      .then((res) => {
+        const items = res.data?.ok && Array.isArray(res.data.items) ? res.data.items : [];
+        setImgHits(items);
+        /* 商品图缩略也全量预热（经 /api/img/get 代理缓存，双端离线秒显） */
+        const urls = items
+          .map((h) => (h.url ? absIconUrl(imgProxyUrl(h.url), base) : ''))
+          .filter(Boolean);
+        if (urls.length > 0) void warmIconCache(urls, base);
+      })
+      .catch(() => setImgHits([]))
       .finally(() => setOnlineBusy(false));
+  };
+
+  /** 点选商品图片：原生通道抓原图 → 中心方裁 ≤512 → 存 img: dataURL（随备份走，永不失效）。 */
+  const pickProductImage = async (raw: string): Promise<void> => {
+    const abs = absIconUrl(imgProxyUrl(raw), base);
+    try {
+      const data = await fetchIconAsDataUrl(abs);
+      if (!data) {
+        toastError('图片抓取失败，换一张试试');
+        return;
+      }
+      const square = await cropSquareDataUrl(data, 512);
+      onChange(toImgIcon(square));
+      void warmIconCache([abs], base);
+    } catch {
+      toastError('图片处理失败，换一张试试');
+    }
   };
 
   /** 点选图标：写值 + 立即预热入库（设置过一次，终身离线可用）。 */
@@ -419,7 +513,13 @@ export default function IconPicker({
     () => (onlineHits ?? []).filter((h) => h.domain),
     [onlineHits],
   );
-  const onlineEmpty = !onlineBusy && onlineHits !== null && iconHits.length === 0 && siteHits.length === 0;
+  const onlineEmpty =
+    !onlineBusy &&
+    onlineHits !== null &&
+    imgHits !== null &&
+    iconHits.length === 0 &&
+    siteHits.length === 0 &&
+    imgHits.length === 0;
   const localEmpty = libGroups.length === 0 && (!brandHits || brandHits.length === 0) && !domainHit;
   const allEmpty = searching && localEmpty && (q.length < 2 || onlineEmpty);
 
@@ -621,6 +721,30 @@ export default function IconPicker({
                 </div>
               ) : null}
 
+              {/* ②½ 商品图片（v1.0.16：搜具体型号出真实商品缩略图，物品首选） */}
+              {q.length >= 2 && imgHits && imgHits.length > 0 ? (
+                <div>
+                  <SectionLabel>商品图片</SectionLabel>
+                  <div className="grid grid-cols-4 gap-2">
+                    {imgHits.map((h) =>
+                      h.url ? (
+                        <button
+                          key={h.url}
+                          type="button"
+                          onClick={() => void pickProductImage(h.url!)}
+                          title="采用此商品图"
+                          aria-label="采用此商品图"
+                          className="aspect-square overflow-hidden rounded-lg border border-line bg-surface-2 transition-all active:scale-95"
+                        >
+                          <ProductImg raw={h.url} />
+                        </button>
+                      ) : null,
+                    )}
+                  </div>
+                  <p className="mt-1 text-[10px] text-ink-3">点选自动裁成正方形存入本地（随备份携带）</p>
+                </div>
+              ) : null}
+
               {/* ③ 在线图标（同一关键词自动检索，无需换框重输） */}
               {q.length >= 2 ? (
                 <div>
@@ -648,13 +772,7 @@ export default function IconPicker({
                               value === `url:${abs}` ? 'border-accent bg-accent-soft' : 'border-line'
                             }`}
                           >
-                            <img
-                              src={abs}
-                              alt={h.icon}
-                              loading="lazy"
-                              className="h-full w-full"
-                              style={{ objectFit: 'contain' }}
-                            />
+                            <HitImg abs={abs} alt={h.icon} />
                           </button>
                         );
                       })}

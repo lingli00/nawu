@@ -68,7 +68,8 @@ export default function WallPage(): JSX.Element {
     try {
       const dataUrl = await drawGoodsCard(g, catNameOf(g.categoryId));
       const how = await shareOrDownload(dataUrl, `纳物-${g.name}.png`);
-      if (how === 'downloaded') toastSuccess('海报已下载');
+      if (how === 'saved') toastSuccess('已保存到系统相册「纳物」');
+      else if (how === 'downloaded') toastSuccess('海报已下载');
     } catch (e) {
       toastError(e instanceof Error ? e.message : '生成海报失败');
     }
@@ -81,7 +82,7 @@ export default function WallPage(): JSX.Element {
     try {
       const dataUrl = await drawWallSheet(active.map((g) => ({ g, categoryName: catNameOf(g.categoryId) })));
       const how = await shareOrDownload(dataUrl, '纳物-置物墙.png');
-      toastSuccess(how === 'shared' ? '已分享' : '长图已下载');
+      toastSuccess(how === 'shared' ? '已分享' : how === 'saved' ? '已保存到系统相册「纳物」' : '长图已下载');
     } catch (e) {
       toastError(e instanceof Error ? e.message : '生成整墙海报失败');
     } finally {
