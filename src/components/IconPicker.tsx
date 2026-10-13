@@ -43,9 +43,12 @@ function iconBaseOf(): string {
   return currentServer()?.url ?? (typeof window !== 'undefined' ? window.location.origin : '');
 }
 
-/** 在线搜索结果。 */
+/** 在线搜索结果（v1.0.11：type=icon 图形图标（Iconify SVG）/ type=site 站点域名）。 */
 interface OnlineHit {
-  domain: string;
+  type?: 'site' | 'icon';
+  domain?: string;
+  icon?: string;
+  url?: string;
 }
 
 /** 网络图标（多源回退）+ 固定尺寸容器：任何站点的图标都显示成一样大。 */
@@ -227,18 +230,48 @@ export default function IconPicker({
       });
   };
 
-  /* 防抖 500ms 自动检索；部分 Android WebView 中文组合输入期 input 事件不完整，
-     删除字符才触发——所以回车与放大镜点击都能绕过防抖直接搜。 */
+  /* 防抖 300ms 自动检索；部分 Android WebView 中文组合输入期 input 事件不完整，
+     删除字符才触发——所以回车/放大镜/compositionend/search 事件都能绕过防抖直接搜。 */
   useEffect(() => {
     const kw = query.trim();
     if (kw.length < 2) {
       setOnlineBusy(false);
       return;
     }
-    const timer = setTimeout(() => runOnlineSearch(kw), 500);
+    const timer = setTimeout(() => runOnlineSearch(kw), 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, base]);
+
+  /* 搜索触发多重兜底（v1.0.11）：Android IME 的 Enter 常以 keyCode 229（组合中）
+     吞掉 keydown——这里补 keyup、compositionend（拼音上屏）与 search（键盘搜索键）
+     三个原生事件路径，任何一条命中都立即搜。 */
+  useEffect(() => {
+    const el = searchRef.current;
+    if (!el) return;
+    const fire = (): void => runOnlineSearch(el.value);
+    const sync = (): void => setQuery(el.value);
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if ((e.key === 'Enter' || e.keyCode === 13) && !e.isComposing && e.keyCode !== 229) {
+        e.preventDefault();
+        fire();
+      }
+    };
+    const onCompoEnd = (): void => {
+      sync();
+      fire();
+    };
+    const onSearchEv = (): void => fire();
+    el.addEventListener('keyup', onKeyUp);
+    el.addEventListener('compositionend', onCompoEnd);
+    el.addEventListener('search', onSearchEv);
+    return () => {
+      el.removeEventListener('keyup', onKeyUp);
+      el.removeEventListener('compositionend', onCompoEnd);
+      el.removeEventListener('search', onSearchEv);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base]);
 
   const pickFile = async (file: File | undefined): Promise<void> => {
     if (!file) return;
@@ -259,7 +292,15 @@ export default function IconPicker({
 
   /* —— 搜索结果（内置 + 品牌 + 在线，一框出齐） —— */
   const searching = q !== '' && tab !== 'upload';
-  const onlineEmpty = !onlineBusy && onlineHits !== null && onlineHits.length === 0;
+  const iconHits = useMemo(
+    () => (onlineHits ?? []).filter((h) => h.type === 'icon' && h.url),
+    [onlineHits],
+  );
+  const siteHits = useMemo(
+    () => (onlineHits ?? []).filter((h) => h.domain),
+    [onlineHits],
+  );
+  const onlineEmpty = !onlineBusy && onlineHits !== null && iconHits.length === 0 && siteHits.length === 0;
   const localEmpty = libGroups.length === 0 && (!brandHits || brandHits.length === 0) && !domainHit;
   const allEmpty = searching && localEmpty && (q.length < 2 || onlineEmpty);
 
@@ -381,16 +422,18 @@ export default function IconPicker({
             </button>
             <input
               ref={searchRef}
+              type="search"
               defaultValue=""
               onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                const ke = e.nativeEvent;
+                if ((e.key === 'Enter' || ke.keyCode === 13) && !ke.isComposing && ke.keyCode !== 229) {
                   e.preventDefault();
                   runOnlineSearch((e.target as HTMLInputElement).value);
                 }
               }}
               enterKeyHint="search"
-              placeholder="搜图标：内置 / 品牌 / 任意名称（微信、顺丰速运…）"
+              placeholder="搜图标：耳机、水杯、微信、任一英文词…"
               className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-3"
             />
           </div>
@@ -467,26 +510,57 @@ export default function IconPicker({
                     {onlineBusy ? <span className="ml-1 font-normal text-ink-3/70">搜索中…</span> : null}
                   </SectionLabel>
                   {onlineBusy ? (
-                    <p className="py-3 text-center text-xs text-ink-3">正在检索真实站点图标…</p>
-                  ) : onlineHits && onlineHits.length > 0 ? (
-                    <ul className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface">
-                      {onlineHits.map((h) => (
-                        <li key={h.domain}>
-                          <button
-                            type="button"
-                            onClick={() => onChange(toUrlIcon(iconApiUrl(base, h.domain)))}
-                            className={`flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-surface-2 ${
-                              value === toUrlIcon(iconApiUrl(base, h.domain)) ? 'bg-accent-soft' : ''
-                            }`}
-                          >
-                            <BrandImg base={base} domain={h.domain} size={22} />
-                            <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{h.domain}</span>
-                            <span className="text-[11px] text-accent">采用</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
+                    <p className="py-3 text-center text-xs text-ink-3">正在检索图标…</p>
+                  ) : (
+                    <>
+                      {/* 图形图标（Iconify：数码/生活用品的具体图形，物品/生活流首选） */}
+                      {iconHits.length > 0 ? (
+                        <div className="mb-2 grid grid-cols-8 gap-2">
+                          {iconHits.map((h) => (
+                            <button
+                              key={h.icon}
+                              type="button"
+                              onClick={() => onChange(`url:${h.url}`)}
+                              title={h.icon}
+                              aria-label={h.icon}
+                              className={`flex h-10 items-center justify-center rounded-btn border bg-surface p-1.5 transition-all active:scale-95 ${
+                                value === `url:${h.url}` ? 'border-accent bg-accent-soft' : 'border-line'
+                              }`}
+                            >
+                              <img
+                                src={h.url}
+                                alt={h.icon}
+                                loading="lazy"
+                                className="h-full w-full"
+                                style={{ objectFit: 'contain' }}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {/* 站点图标（favicon：订阅/品牌官网） */}
+                      {siteHits.length > 0 ? (
+                        <ul className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface">
+                          {siteHits.map((h) => (
+                            <li key={h.domain}>
+                              <button
+                                type="button"
+                                onClick={() => onChange(toUrlIcon(iconApiUrl(base, h.domain!)))}
+                                className={`flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-surface-2 ${
+                                  value === toUrlIcon(iconApiUrl(base, h.domain!)) ? 'bg-accent-soft' : ''
+                                }`}
+                              >
+                                <BrandImg base={base} domain={h.domain!} size={22} />
+                                <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{h.domain}</span>
+                                <span className="text-[11px] text-accent">采用</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               ) : null}
 

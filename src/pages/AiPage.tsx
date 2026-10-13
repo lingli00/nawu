@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Camera } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
 import { useDataStore, useSettingsStore, toastSuccess, toastError } from '../store';
 import { parse, parseImage } from '../ai/parseService';
+import { warmUpOcr } from '../lib/localOcr';
 import { today } from '../lib/date';
 import type { AiResultItem } from '../types/ai';
 import type { Category, Goods, Settings, Subscription } from '../types/entities';
@@ -34,6 +35,11 @@ export default function AiPage() {
   /** 仅用于「开始解析」按钮的禁用态（不回写 value，绝不碰受控同步链路）。 */
   const [hasText, setHasText] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // 本地 OCR 预热：进页即后台初始化 wasm + 中文语言包，点识图时省 1-2s（失败静默）
+  useEffect(() => {
+    warmUpOcr();
+  }, []);
   const [items, setItems] = useState<AiResultItem[] | null>(null);
   const [source, setSource] = useState<'ai' | 'local'>('local');
   const [reason, setReason] = useState('');

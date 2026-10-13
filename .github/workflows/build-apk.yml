@@ -42,17 +42,19 @@ jobs:
       # 注：ubuntu runner 自带 Android SDK（ANDROID_HOME 已配置、许可证已接受），
       # 不要用 android-actions/setup-android@v3 —— 它尝试安装已废弃的 'tools' 包会失败。
 
-      - name: Build debug APK
+      # v1.0.11 起 assembleRelease + 固定签名（nawu-release.p12 已在仓库，
+      # build.gradle 的 signingConfigs.release 引用）→ 签名跨版本一致，可覆盖升级
+      - name: Build release APK
         run: |
           chmod +x android/gradlew
-          cd android && ./gradlew assembleDebug --no-daemon
+          cd android && ./gradlew assembleRelease --no-daemon
 
       - name: Rename APK with version
         id: apk
         run: |
           VER=$(grep -oP 'versionName "\K[^"]+' android/app/build.gradle)
           OUT="nawu-v${VER}.apk"
-          cp android/app/build/outputs/apk/debug/app-debug.apk "$OUT"
+          cp android/app/build/outputs/apk/release/app-release.apk "$OUT"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "file=$OUT" >> "$GITHUB_OUTPUT"
           ls -la "$OUT"

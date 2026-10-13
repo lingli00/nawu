@@ -232,19 +232,31 @@ export async function parse(text: string, ctx: ParseContext): Promise<ParseOutco
 }
 
 /**
- * 识图添加（v1.0.10）：把账单/票据/物品照片交给 vision 模型解析。
+ * 识图添加（v1.0.10/v1.0.11）：把账单/票据/物品照片解析成记账条目。
  *
- * - 复用 SYSTEM_PROMPT 的 JSON schema 与 fromAiRaw/normalizeItems 归一化链路；
- * - **识图必须有 AI**：本地规则无法识图，未配置时直接抛错由 UI 提示；
+ * - 已配置 AI：vision 多模态（复用 SYSTEM_PROMPT 的 JSON schema 与归一化链路）；
+ *   AI 调用失败自动回落本地 OCR；
+ * - 未配置 AI：本地算力识别（Tesseract.js OCR 出文字 → 本地规则解析），
+ *   **离线可用**，不再直接报错；
  * - 返回与 parse 一致的 ParseOutcome，AiPage 复用同一套确认落库 UI。
  */
 export async function parseImage(dataUrl: string, ctx: ParseContext): Promise<ParseOutcome> {
+  const cfg = aiConfigOf(ctx.settings);
+  if (isAiConfigured(cfg)) {
+    try {
+      return await parseImageAi(dataUrl, ctx, cfg);
+    } catch (e) {
+      logger.warn('parseImage', 'AI 识图失败，回落本地 OCR', e);
+      return await parseImageLocal(dataUrl, ctx, 'AI 识图失败，已用本地识别');
+    }
+  }
+  return await parseImageLocal(dataUrl, ctx, '未配置 AI，已用本地识别');
+}
+
+/** vision 识别路径（须已配置 AI；失败抛错由调用方回落）。 */
+async function parseImageAi(dataUrl: string, ctx: ParseContext, cfg: AiConfig): Promise<ParseOutcome> {
   const today = ctx.today ?? todayStr();
   const currency = ctx.settings?.currency || 'CNY';
-  const cfg = aiConfigOf(ctx.settings);
-  if (!isAiConfigured(cfg)) {
-    throw new Error('识图添加需要先在「设置 → AI 服务」里配置 AI 接口');
-  }
 
   const messages: ChatMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },
@@ -278,4 +290,18 @@ export async function parseImage(dataUrl: string, ctx: ParseContext): Promise<Pa
     return { items: [], source: 'ai', reason: '图中没有识别出可记账的内容' };
   }
   return { items: normalized, source: 'ai' };
+}
+
+/** 本地 OCR 路径：Tesseract.js 出文字 → 本地规则解析（离线可用）。 */
+async function parseImageLocal(dataUrl: string, ctx: ParseContext, reason: string): Promise<ParseOutcome> {
+  const { ocrText } = await import('../lib/localOcr');
+  const text = await ocrText(dataUrl);
+  if (!text) {
+    return { items: [], source: 'local', reason: `${reason}，但图中没有识别出文字` };
+  }
+  const outcome = parseLocalOnly(text, ctx);
+  if (outcome.items.length === 0) {
+    return { items: [], source: 'local', reason: `${reason}，但文字里没有解析出可记账内容` };
+  }
+  return { ...outcome, reason };
 }

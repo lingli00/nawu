@@ -1,10 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Share2 } from 'lucide-react';
 import { useDataStore, useSettingsStore, toastSuccess, toastError } from '../store';
 import { IconPreview } from '../components/IconPicker';
 import { formatMoney } from '../lib/money';
-import { goodsIconValue, shareOrDownload, drawGoodsCard } from '../lib/shareCard';
+import { goodsIconValue, shareOrDownload, drawGoodsCard, drawWallSheet } from '../lib/shareCard';
 import type { Goods } from '../types/entities';
 
 /**
@@ -58,6 +58,8 @@ export default function WallPage(): JSX.Element {
   const categories = useDataStore((s) => s.categories);
   const currency = useSettingsStore((s) => s.settings.currency);
   const symbol = currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : '¥';
+  /** 整墙海报生成中（防连点）。 */
+  const [wallBusy, setWallBusy] = useState(false);
 
   const active = useMemo(() => goods.filter((g) => g.status !== 'retired'), [goods]);
   const catNameOf = (id: string): string | null => categories.find((c) => c.id === id)?.name ?? null;
@@ -69,6 +71,21 @@ export default function WallPage(): JSX.Element {
       if (how === 'downloaded') toastSuccess('海报已下载');
     } catch (e) {
       toastError(e instanceof Error ? e.message : '生成海报失败');
+    }
+  };
+
+  /** 分享全部物品：一张大图导出整面墙。 */
+  const shareAll = async (): Promise<void> => {
+    if (wallBusy || active.length === 0) return;
+    setWallBusy(true);
+    try {
+      const dataUrl = await drawWallSheet(active.map((g) => ({ g, categoryName: catNameOf(g.categoryId) })));
+      const how = await shareOrDownload(dataUrl, '纳物-置物墙.png');
+      toastSuccess(how === 'shared' ? '已分享' : '长图已下载');
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '生成整墙海报失败');
+    } finally {
+      setWallBusy(false);
     }
   };
 
@@ -85,12 +102,22 @@ export default function WallPage(): JSX.Element {
             )}
           </p>
         </div>
-        <button
-          onClick={() => nav('/home')}
-          className="h-9 rounded-full border border-line bg-surface px-4 text-xs text-ink-2 active:bg-surface-2"
-        >
-          去添置
-        </button>
+        <div className="flex shrink-0 gap-2">
+          <button
+            onClick={() => void shareAll()}
+            disabled={wallBusy}
+            className="flex h-9 items-center gap-1.5 rounded-full border border-line bg-surface px-4 text-xs text-ink-2 active:bg-surface-2 disabled:opacity-50"
+          >
+            <Share2 size={13} strokeWidth={1.8} aria-hidden />
+            {wallBusy ? '生成中…' : '分享全部'}
+          </button>
+          <button
+            onClick={() => nav('/home')}
+            className="h-9 rounded-full border border-line bg-surface px-4 text-xs text-ink-2 active:bg-surface-2"
+          >
+            去添置
+          </button>
+        </div>
       </header>
 
       {active.length === 0 ? (

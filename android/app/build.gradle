@@ -8,8 +8,8 @@ android {
         applicationId "com.guifou.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 18
-        versionName "1.0.10"
+        versionCode 19
+        versionName "1.0.11"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -17,8 +17,24 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    buildTypes {
+    /* v1.0.11 起固定签名（nawu-release.p12，PKCS12）：
+     * 之前 CI 每次打包 runner 自动生成新的 debug keystore → 签名不一致 →
+     * 覆盖安装必失败只能卸载重装。debug/release 统一用同一把固定 key，
+     * 此后版本间可直接覆盖升级。⚠️ 密钥文件随仓库走（私有仓库）。 */
+    signingConfigs {
         release {
+            storeFile file('nawu-release.p12')
+            storePassword 'nawu2026'
+            storeType 'PKCS12'
+            keyAlias 'nawu'
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.release
+        }
+        release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

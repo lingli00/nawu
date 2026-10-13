@@ -169,6 +169,129 @@ export async function drawGoodsCard(g: Goods, categoryName: string | null): Prom
   return cv.toDataURL('image/png');
 }
 
+/** contain 绘制图片进矩形区；失败画首字圆底兜底。返回是否画了真图。 */
+async function drawIconInto(
+  ctx: CanvasRenderingContext2D,
+  g: Goods,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r = 0,
+): Promise<boolean> {
+  const src = iconSrcOf(goodsIconValue(g));
+  if (src) {
+    const img = await loadImage(src);
+    if (img) {
+      const scale = Math.min(w / img.width, h / img.height);
+      const dw = img.width * scale;
+      const dh = img.height * scale;
+      if (r > 0) {
+        ctx.save();
+        roundRect(ctx, x, y, w, h, r);
+        ctx.clip();
+      }
+      ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+      if (r > 0) ctx.restore();
+      return true;
+    }
+  }
+  // 首字圆底兜底
+  ctx.fillStyle = C.accentSoft;
+  ctx.beginPath();
+  ctx.arc(x + w / 2, y + h / 2, Math.min(w, h) * 0.26, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = C.accent;
+  ctx.font = `700 ${Math.round(Math.min(w, h) * 0.26)}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText((g.name || '物').charAt(0), x + w / 2, y + h / 2 + 4);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  return false;
+}
+
+/**
+ * 置物墙整墙海报（v1.0.11）：所有在役物品一张图导出。
+ * 900 宽三列网格，高度随物品数自适应；单卡 = 图区 + 名称 + 价格。
+ */
+export async function drawWallSheet(items: Array<{ g: Goods; categoryName: string | null }>): Promise<string> {
+  const W = 900;
+  const COLS = 3;
+  const GAP = 20;
+  const PAD = 48;
+  const colW = (W - PAD * 2 - GAP * (COLS - 1)) / COLS;
+  const imgH = Math.round(colW * 0.72);
+  const cardH = imgH + 96;
+  const rows = Math.max(1, Math.ceil(items.length / COLS));
+  const headH = 216;
+  const footH = 92;
+  const H = headH + rows * (cardH + GAP) - GAP + footH;
+
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const ctx = cv.getContext('2d');
+  if (!ctx) throw new Error('画布不可用');
+
+  // 底 + 品牌条
+  ctx.fillStyle = C.paper;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C.accent;
+  ctx.fillRect(0, 0, W, 12);
+
+  // 头部
+  ctx.fillStyle = C.ink;
+  ctx.font = '700 52px system-ui, sans-serif';
+  ctx.fillText('纳物 · 置物墙', PAD, 116);
+  const total = items.reduce((acc, it) => acc + Number(it.g.price ?? 0), 0);
+  ctx.fillStyle = C.ink3;
+  ctx.font = '400 26px system-ui, sans-serif';
+  ctx.fillText(
+    `${items.length} 件在役 · 总投入 ¥${total.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`,
+    PAD,
+    160,
+  );
+  ctx.font = '400 22px system-ui, sans-serif';
+  ctx.fillText('NaWu · 值得的花销，值得记录', PAD, 196);
+
+  // 卡片网格
+  for (let i = 0; i < items.length; i += 1) {
+    const cx = PAD + (i % COLS) * (colW + GAP);
+    const cy = headH + Math.floor(i / COLS) * (cardH + GAP);
+    ctx.fillStyle = '#ffffff';
+    roundRect(ctx, cx, cy, colW, cardH, 24);
+    ctx.fill();
+    ctx.strokeStyle = C.line;
+    ctx.lineWidth = 2;
+    roundRect(ctx, cx, cy, colW, cardH, 24);
+    ctx.stroke();
+
+    await drawIconInto(ctx, items[i].g, cx + 14, cy + 14, colW - 28, imgH, 16);
+
+    const name = items[i].g.name || '未命名';
+    ctx.fillStyle = C.ink;
+    ctx.font = '600 24px system-ui, sans-serif';
+    ctx.fillText(name.length > 8 ? `${name.slice(0, 8)}…` : name, cx + 14, cy + imgH + 42);
+    ctx.fillStyle = C.ink3;
+    ctx.font = '400 20px system-ui, sans-serif';
+    ctx.fillText(
+      `¥${Number(items[i].g.price ?? 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`,
+      cx + 14,
+      cy + imgH + 74,
+    );
+  }
+
+  // 页脚
+  ctx.fillStyle = C.ink3;
+  ctx.font = '400 20px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`由「纳物」生成 · ${new Date().toLocaleDateString('zh-CN')}`, W / 2, H - 30);
+  ctx.textAlign = 'left';
+
+  return cv.toDataURL('image/png');
+}
+
 /** 优先系统分享，失败回退下载。 */
 export async function shareOrDownload(dataUrl: string, fileName: string): Promise<'shared' | 'downloaded'> {
   try {
