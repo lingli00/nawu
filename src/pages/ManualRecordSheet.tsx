@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
 import CategoryManageSheet from '../components/CategoryManageSheet';
 import CategoryGlyph from '../components/CategoryGlyph';
+import { QuickCooldownSheet } from '../components/LifeSheets';
 import { useDataStore, useSettingsStore, toastSuccess } from '../store';
 import { today } from '../lib/date';
 import type { Judgement, ValueRecord } from '../types/entities';
@@ -41,6 +42,8 @@ export default function ManualRecordSheet() {
   const [amount, setAmount] = useState(editing ? String(editing.amount) : '');
   /** 就地管理记账分类（不用跳「我的」打断记一笔流程）。 */
   const [managingCats, setManagingCats] = useState(false);
+  /** 「稍后」：先不买，放进冷静池（v1.0.20 对标竞品第四判定钮）。 */
+  const [laterOpen, setLaterOpen] = useState(false);
 
   const ledgerCats = useMemo(
     () => categories.filter((c) => c.kind === 'ledger').sort((a, b) => a.order - b.order),
@@ -108,9 +111,9 @@ export default function ManualRecordSheet() {
         />
       </div>
 
-      {/* 归 / 需 / 否 —— 核心交互 */}
+      {/* 归 / 需 / 否 —— 核心交互（+ 稍后 → 冷静池，四色判定） */}
       <p className="mb-2 mt-4 px-1 text-xs font-medium text-ink-2">这笔花得怎么样？（复盘用）</p>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         {JUDGEMENTS.map((j) => (
           <button
             key={j.key}
@@ -126,7 +129,20 @@ export default function ManualRecordSheet() {
             <span className="mt-0.5 text-[11px] text-ink-3">{j.desc}</span>
           </button>
         ))}
+        <button
+          onClick={() => setLaterOpen(true)}
+          className={`flex flex-col items-center rounded-card border-2 py-3 transition-colors ${
+            laterOpen ? 'border-ink-3 bg-surface' : 'border-line bg-surface opacity-60'
+          }`}
+        >
+          <span className="text-xl font-bold text-ink-2">稍后</span>
+          <span className="mt-0.5 text-[11px] text-ink-3">先放冷静池</span>
+        </button>
       </div>
+
+      {laterOpen ? (
+        <QuickCooldownSheet presetName={(noteRef.current?.value ?? '').trim()} onClose={() => setLaterOpen(false)} />
+      ) : null}
 
       {/* 分类（末尾常驻「管理」贴片：就地增删改/排序，不打断记一笔） */}
       <div className="mb-2 mt-4 flex items-center justify-between px-1">

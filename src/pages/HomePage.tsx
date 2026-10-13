@@ -441,7 +441,16 @@ function CropSheet({
  *   dailyCost/netInvest/totalInvest 消费，本文件不自造任何公式；
  *   incomes（unknown[]）全项目无消费处、无定义形状，编辑时不展示、原样保留。
  * ==========================================================================*/
-function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => void }) {
+function GoodsFormSheet({
+  initial,
+  prefill,
+  onClose,
+}: {
+  initial?: Goods;
+  /** 冷静池「转物品」预填（仅新增模式生效）。 */
+  prefill?: { name?: string; price?: number };
+  onClose: () => void;
+}) {
   useBackGuard(true, onClose);
   const categories = useDataStore((s) => s.categories);
   const addGoods = useDataStore((s) => s.addGoods);
@@ -451,8 +460,10 @@ function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => 
 
   const isEdit = Boolean(initial);
   /* 文本输入非受控：defaultValue + onChange 收集（IME 铁律）；关闭即卸载，无需重置 */
-  const [name, setName] = useState(initial?.name ?? '');
-  const [price, setPrice] = useState(initial ? String(initial.price ?? '') : '');
+  const [name, setName] = useState(initial?.name ?? prefill?.name ?? '');
+  const [price, setPrice] = useState(
+    initial ? String(initial.price ?? '') : prefill?.price != null ? String(prefill.price) : '',
+  );
   const [buyDate, setBuyDate] = useState(initial?.buyDate ?? today());
   const [catId, setCatId] = useState(initial?.categoryId ?? '');
   const [note, setNote] = useState(initial?.note ?? '');
@@ -858,6 +869,21 @@ export default function HomePage() {
   const [sharing, setSharing] = useState(false);
   /** AI 记一笔添加订阅后跳转过来：传给 SubListPage 自动弹出 SubEditSheet。 */
   const [subEditHint, setSubEditHint] = useState<string | null>(null);
+  /** 冷静池「到期转物品」预填（sessionStorage gf.prefill.goods，v1.0.20）。 */
+  const [prefill, setPrefill] = useState<{ name?: string; price?: number } | undefined>(undefined);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('gf.prefill.goods');
+      if (raw) {
+        sessionStorage.removeItem('gf.prefill.goods');
+        setPrefill(JSON.parse(raw) as { name?: string; price?: number });
+        setAdding(true);
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }, []);
 
   /* AI 记一笔创建物品/订阅后导航过来（location.state 带目标 id）：
      自动弹出对应编辑面板，消费一次后立即清掉 state，防止返回键重弹。 */
@@ -1459,7 +1485,7 @@ export default function HomePage() {
         : null}
 
       {/* ============ 新增物品 sheet（portal 挂 body）============ */}
-      {adding ? <GoodsFormSheet onClose={() => setAdding(false)} /> : null}
+      {adding ? <GoodsFormSheet prefill={prefill} onClose={() => setAdding(false)} /> : null}
 
       {/* ============ 编辑物品 sheet（点卡直接打开；portal 挂 body）============ */}
       {editing ? <GoodsFormSheet initial={editing} onClose={() => setEditing(null)} /> : null}

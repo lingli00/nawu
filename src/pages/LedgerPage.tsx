@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Leaf, PenLine, ReceiptText } from 'lucide-react';
+import { CalendarClock, Heart, Leaf, PenLine, ReceiptText, ShoppingBag, Timer } from 'lucide-react';
 import CategoryGlyph from '../components/CategoryGlyph';
+import { CooldownSheet, WishSheet, cooldownLeftDays } from '../components/LifeSheets';
 import {
   useDataStore,
   useSettingsStore,
@@ -12,12 +13,13 @@ import { formatSignedMoney, formatMoney } from '../lib/money';
 import { addDays, monthKey, monthLabel, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
 import type { Judgement, ValueRecord } from '../types/entities';
 
-/** P09 生活流：按日/月/年三态粒度查看流水 + 删除撤销。 */
+/** P09 生活流：按日/周/月/年粒度查看流水 + 四张生活小卡（种草/冷静池最小闭环）。 */
 
-type Grain = 'day' | 'month' | 'year';
+type Grain = 'day' | 'week' | 'month' | 'year';
 
 const GRAIN_CHIPS: Array<[Grain, string]> = [
   ['day', '按日'],
+  ['week', '按周'],
   ['month', '按月'],
   ['year', '按年'],
 ];
@@ -46,18 +48,28 @@ export default function LedgerPage() {
   const [day, setDay] = useState(today());
   const [ym, setYm] = useState(monthKey());
   const [year, setYear] = useState(() => Number(monthKey().slice(0, 4)));
+  /** 本周窗口（周一 ~ 周日）。 */
+  const [weekStart, setWeekStart] = useState(() => {
+    const dow = (new Date().getDay() + 6) % 7; // 周一=0
+    return addDays(today(), -dow);
+  });
 
   const catOf = (id: string) => categories.find((c) => c.id === id);
 
-  /* —— 三种粒度的时间窗口（全部只统计生活流 valueRecords） —— */
+  /* —— 四种粒度的时间窗口（全部只统计生活流 valueRecords） —— */
   const inDay = useMemo(() => records.filter((r) => r.date === day), [records, day]);
+  const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
+  const inWeek = useMemo(
+    () => records.filter((r) => r.date >= weekStart && r.date <= weekEnd),
+    [records, weekStart, weekEnd],
+  );
   const inMonth = useMemo(() => records.filter((r) => r.date.startsWith(ym)), [records, ym]);
   const inYear = useMemo(() => records.filter((r) => r.date.startsWith(String(year))), [records, year]);
 
   /** 按年视图：该年出现过的月份（升序），渲染时倒序展示。 */
   const yearMonths = useMemo(() => monthKeysOf(inYear), [inYear]);
 
-  const activeRows = grain === 'day' ? inDay : grain === 'month' ? inMonth : inYear;
+  const activeRows = grain === 'day' ? inDay : grain === 'week' ? inWeek : grain === 'month' ? inMonth : inYear;
   const expense = useMemo(() => sumExpense(activeRows), [activeRows]);
   const income = useMemo(
     () => activeRows.filter((r) => r.type === 'income').reduce((acc, r) => acc + (r.amount || 0), 0),
@@ -85,6 +97,7 @@ export default function LedgerPage() {
   /** 粒度切换器的 ‹ › 步进。 */
   const step = (dir: -1 | 1) => {
     if (grain === 'day') setDay(addDays(day, dir));
+    else if (grain === 'week') setWeekStart(addDays(weekStart, dir * 7));
     else if (grain === 'month') setYm(dir === -1 ? prevMonth(ym) : nextMonth(ym));
     else setYear((y) => y + dir);
   };
@@ -92,14 +105,70 @@ export default function LedgerPage() {
   const windowLabel =
     grain === 'day'
       ? `${relativeDayLabel(day)} · ${day}`
-      : grain === 'month'
-        ? monthLabel(ym, true)
-        : `${year} 年`;
+      : grain === 'week'
+        ? `${weekStart.slice(5).replace('-', '/')} ~ ${weekEnd.slice(5).replace('-', '/')}`
+        : grain === 'month'
+          ? monthLabel(ym, true)
+          : `${year} 年`;
 
   const del = async (id: string, label: string) => {
     await removeLedger(id);
     useUiStore.getState().toast(`已删除「${label}」`, 'info', { actionLabel: '撤销', onAction: () => void undo() });
   };
+
+  /* —— v1.0.20 四张生活小卡（对标竞品生活流首页）—— */
+  const moods = useDataStore((s) => s.moods);
+  const times = useDataStore((s) => s.times);
+  const wishlist = useDataStore((s) => s.wishlist);
+  const cooldowns = useDataStore((s) => s.cooldowns);
+  const [wishOpen, setWishOpen] = useState(false);
+  const [coolOpen, setCoolOpen] = useState(false);
+
+  const wishTotal = useMemo(() => wishlist.reduce((a, w) => a + (w.price || 0), 0), [wishlist]);
+  const coolingSoon = useMemo(() => {
+    const lefts = cooldowns.map((c) => cooldownLeftDays(c.until));
+    return lefts.filter((l) => l <= 0).length;
+  }, [cooldowns]);
+  const totalMin = useMemo(() => times.reduce((a, t) => a + (t.durationMin || 0), 0), [times]);
+
+  const lifeCards = [
+    {
+      key: 'mood',
+      Icon: Heart,
+      tint: '#EC4899',
+      title: '情绪',
+      main: moods.length > 0 ? `${moods.length} 条心情` : '还没记录',
+      sub: moods.length > 0 ? (moods[0]?.crushed ? '最新：粉碎' : '最新：归入心底') : '记下每一次心动与后悔',
+      onClick: undefined as (() => void) | undefined,
+    },
+    {
+      key: 'time',
+      Icon: Timer,
+      tint: '#3B82F6',
+      title: '时间',
+      main: times.length > 0 ? `${Math.round(totalMin / 60)} 小时` : '还没记录',
+      sub: times.length > 0 ? `${times.length} 段时光` : '时间花在哪，生活就在哪',
+      onClick: undefined,
+    },
+    {
+      key: 'wish',
+      Icon: ShoppingBag,
+      tint: '#F59E0B',
+      title: '种草清单',
+      main: wishlist.length > 0 ? `${wishlist.length} 件想要` : '清单空空',
+      sub: wishTotal > 0 ? `合计 ¥${wishTotal.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}` : '想买的先记下来',
+      onClick: () => setWishOpen(true),
+    },
+    {
+      key: 'cool',
+      Icon: CalendarClock,
+      tint: '#10B981',
+      title: '冷静池',
+      main: cooldowns.length > 0 ? `${cooldowns.length} 件在冷静` : '没有在冷静的',
+      sub: coolingSoon > 0 ? `${coolingSoon} 件已到期，去看看` : '冲动消费前先放 7 天',
+      onClick: () => setCoolOpen(true),
+    },
+  ];
 
   /** 按日分组的流水列表（按日 / 按月共用）。 */
   const renderDayGroups = (rows: ValueRecord[]) => {
@@ -254,6 +323,35 @@ export default function LedgerPage() {
         ) : null}
       </div>
 
+      {/* v1.0.20 四张生活小卡（情绪/时间/种草/冷静池；种草与冷静池可点开管理） */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        {lifeCards.map(({ key, Icon, tint, title, main, sub, onClick }) => {
+          const clickable = typeof onClick === 'function';
+          return (
+            <button
+              key={key}
+              onClick={onClick}
+              disabled={!clickable}
+              className={`rounded-card border border-line bg-surface p-3 text-left transition-all ${
+                clickable ? 'active:scale-[0.98]' : 'cursor-default'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="flex h-6 w-6 items-center justify-center rounded-lg"
+                  style={{ background: `color-mix(in srgb, ${tint} 16%, transparent)`, color: tint }}
+                >
+                  <Icon size={13} />
+                </span>
+                <p className="text-xs font-medium">{title}</p>
+              </div>
+              <p className="mt-1.5 truncate text-sm font-semibold">{main}</p>
+              <p className="mt-0.5 truncate text-[11px] text-ink-3">{sub}</p>
+            </button>
+          );
+        })}
+      </div>
+
       {/* 粒度切换 chips（与首页筛选 chips 同样式） */}
       <div className="flex gap-2">
         {GRAIN_CHIPS.map(([g, label]) => (
@@ -299,6 +397,10 @@ export default function LedgerPage() {
       <div className="space-y-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-5 lg:space-y-0">
         {grain === 'year' ? renderYearGroups() : renderDayGroups(activeRows)}
       </div>
+
+      {/* 种草 / 冷静池管理弹层 */}
+      {wishOpen ? <WishSheet onClose={() => setWishOpen(false)} /> : null}
+      {coolOpen ? <CooldownSheet onClose={() => setCoolOpen(false)} /> : null}
     </div>
   );
 }

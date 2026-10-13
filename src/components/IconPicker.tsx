@@ -565,11 +565,23 @@ export default function IconPicker({
       .finally(() => setOnlineBusy(false));
   };
 
-  /** 点选商品图片：原生通道抓原图 → 中心方裁 ≤512 → 压缩 ≤100KB → 存 img: dataURL。 */
-  const pickProductImage = async (raw: string): Promise<void> => {
-    const abs = absIconUrl(imgProxyUrl(raw), base);
+  /**
+   * 点选商品图片（v1.0.20 兜底链）：原图代理 → Bing 缩略直链 → 缩略经代理，
+   * 抓取上限放宽到 8MB（原图 500KB+ 曾被 400KB 限制拦截报「抓取失败」）；
+   * 到手即中心方裁 ≤512 → 压缩 ≤100KB → 存 img: dataURL。
+   */
+  const pickProductImage = async (raw: string, thumb?: string): Promise<void> => {
+    const BIG = 8_000_000;
+    const candidates = [
+      absIconUrl(imgProxyUrl(raw), base),
+      ...(thumb ? [absIconUrl(thumb, base), absIconUrl(imgProxyUrl(thumb), base)] : []),
+    ];
     try {
-      const data = await fetchIconAsDataUrl(abs);
+      let data: string | null = null;
+      for (const c of candidates) {
+        data = await fetchIconAsDataUrl(c, BIG);
+        if (data) break;
+      }
       if (!data) {
         toastError('图片抓取失败，换一张试试');
         return;
@@ -578,7 +590,7 @@ export default function IconPicker({
       const slim = await compressDataUrlUnder(square, IMAGE_MAX_KB, 512);
       void haptic('select');
       onChange(toImgIcon(slim));
-      void warmIconCache([abs], base);
+      void warmIconCache([absIconUrl(imgProxyUrl(raw), base)], base);
     } catch {
       toastError('图片处理失败，换一张试试');
     }
@@ -867,7 +879,7 @@ export default function IconPicker({
                       <button
                         key={h.url}
                         type="button"
-                        onClick={() => void pickProductImage(h.url!)}
+                        onClick={() => void pickProductImage(h.url!, h.thumb)}
                         title="采用此商品图"
                         aria-label="采用此商品图"
                         className="aspect-square overflow-hidden rounded-xl border border-line bg-surface-2 transition-all active:scale-95"

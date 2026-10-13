@@ -91,8 +91,13 @@ export async function iconCacheStore(src: string, dataUrl: string): Promise<void
 /* 抓取（统一网络层，禁 WebView 直连）                                  */
 /* ------------------------------------------------------------------ */
 
-/** 抓取一个图标 URL → dataURL（失败 null）。限制 512KB。 */
-export async function fetchIconAsDataUrl(src: string): Promise<string | null> {
+/**
+ * 抓取一个图标 URL → dataURL（失败 null）。
+ * ★maxBytes（v1.0.20）：默认 400KB（图标缓存条目上限）；商品图原图抓取显式传大值
+ * （如 8MB）——魅族官网原图 500KB+ 曾被 400KB 硬上限拦截，报「图片抓取失败」。
+ * 超过上限的抓取结果**不入缓存**（iconCacheStore 会自行拦截）。
+ */
+export async function fetchIconAsDataUrl(src: string, maxBytes: number = MAX_ENTRY_CHARS): Promise<string | null> {
   const url = (src ?? '').trim();
   if (!url || (!/^https?:\/\//i.test(url) && !url.startsWith('/'))) return null;
 
@@ -104,12 +109,12 @@ export async function fetchIconAsDataUrl(src: string): Promise<string | null> {
         method: 'GET',
         responseType: 'arraybuffer',
         connectTimeout: 8000,
-        readTimeout: 8000,
+        readTimeout: 10000,
       });
       const status = Number(res.status ?? 0);
       if (status < 200 || status >= 300) return null;
       const b64 = typeof res.data === 'string' ? res.data : '';
-      if (!b64 || b64.length > MAX_ENTRY_CHARS) return null;
+      if (!b64 || b64.length > maxBytes) return null;
       const headers = (res.headers ?? {}) as Record<string, string | string[]>;
       const rawType = Array.isArray(headers['Content-Type'])
         ? headers['Content-Type'][0]
@@ -128,7 +133,7 @@ export async function fetchIconAsDataUrl(src: string): Promise<string | null> {
     const res = await fetch(abs, { credentials: 'omit' });
     if (!res.ok) return null;
     const blob = await res.blob();
-    if (blob.size > MAX_ENTRY_CHARS) return null;
+    if (blob.size > maxBytes) return null;
     return await new Promise<string | null>((resolve) => {
       const fr = new FileReader();
       fr.onload = () => resolve(typeof fr.result === 'string' ? fr.result : null);
