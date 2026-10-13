@@ -83,6 +83,9 @@ export default function BackupPage() {
       const r = await restoreBackup(row.id);
       const timeText = r.exportedAt ? fmtTimestamp(r.exportedAt) : '未知时间';
       let msg = `已恢复 ${r.total} 条记录（备份时间 ${timeText}）`;
+      if (r.restoredIcons > 0) {
+        msg += `，随备份恢复图标缓存 ${r.restoredIcons} 个（离线秒显）`;
+      }
       if (r.subCount > 0) {
         msg += '。注：从网页版备份恢复时，订阅的「停用」状态不会随备份保存，如有需要请重新停用。';
       }
