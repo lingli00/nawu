@@ -17,7 +17,7 @@ import PageField from '../components/ui/PageField';
 import { useBackGuard } from '../lib/backGuard';
 import SubListPage from './SubListPage';
 import CategoryManageSheet from '../components/CategoryManageSheet';
-import IconPicker, { IconPreview, ImageSourceSheet, type IconSource, type Tab as PickerTab } from '../components/IconPicker';import { iconKindOf } from '../lib/brandIcon';
+import IconPicker, { IconPreview, type Tab as PickerTab } from '../components/IconPicker';import { iconKindOf } from '../lib/brandIcon';
 import { GLASS_STYLE } from '../components/layout/MainShell';
 import { useDataStore, useSettingsStore, useUiStore, toastSuccess, toastError } from '../store';
 import { dailyCost, holdDays, perUseCost, sortGoods, totalInvest, achieveRate } from '../domain/goods';
@@ -462,21 +462,8 @@ function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => 
   const cropFileRef = useRef<HTMLInputElement>(null);
   /** 就地管理物品分类（对标归否：不打断添加流程）。 */
   const [managingCats, setManagingCats] = useState(false);
-  /** v1.0.17 五来源选择（对齐归否）：图片来源 sheet + 对应选择视图。 */
-  const [sourceOpen, setSourceOpen] = useState(false);
+  /** v1.0.18：点图标区直接开 picker（跳过五来源 sheet），默认系统图标。 */
   const [pickerTab, setPickerTab] = useState<PickerTab | null>(null);
-  /** 相册 / 拍照直选的隐藏 input。 */
-  const albumRef = useRef<HTMLInputElement>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
-
-  const openSource = (src: IconSource): void => {
-    setSourceOpen(false);
-    if (src === 'system') setPickerTab('lib');
-    else if (src === 'brand') setPickerTab('web');
-    else if (src === 'net') setPickerTab('img');
-    else if (src === 'album') albumRef.current?.click();
-    else if (src === 'camera') cameraRef.current?.click();
-  };
 
   /* —— 统一图标选择器（与订阅完全同一组件）：GoodsImage ↔ icon 字符串互转 —— */
   const goodsIconValue = image
@@ -610,19 +597,19 @@ function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => 
                   />
                 </PageField>
               </div>
-              {/* 图标 / 图片（v1.0.17 对齐归否：点击出五来源 sheet，再进对应选择视图） */}
+              {/* 图标 / 图片（v1.0.18：点击直接进选择器，相册/拍照在「相册·拍照」tab） */}
               <PageField label="图标 / 图片">
                 <button
                   type="button"
-                  onClick={() => setSourceOpen(true)}
+                  onClick={() => setPickerTab('lib')}
                   className="flex w-full items-center gap-3 rounded-btn border border-line bg-surface-2 px-3 py-2.5 text-left active:scale-[0.99]"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-accent-soft text-accent">
                     <IconPreview icon={goodsIconValue} size={26} fallbackBg="transparent" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm text-ink">选择图片</span>
-                    <span className="block text-[11px] text-ink-3">系统图标 / 品牌 / 网络商品图 / 相册 / 拍照</span>
+                    <span className="block text-sm text-ink">选择图标 / 图片</span>
+                    <span className="block text-[11px] text-ink-3">系统图标 / 品牌 / 网络商品图 / 相册·拍照</span>
                   </span>
                 </button>
               </PageField>
@@ -784,10 +771,7 @@ function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => 
         </div>,
         document.body,
       )}
-      {/* 五来源选择 sheet（v1.0.17） */}
-      <ImageSourceSheet open={sourceOpen} onClose={() => setSourceOpen(false)} onPick={openSource} />
-
-      {/* 图标选择视图（系统图标 / 品牌图片 / 网络图片） */}
+      {/* 图标选择视图（v1.0.18：直接进 picker，无中间来源 sheet） */}
       {pickerTab ? (
         createPortal(
           <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={() => setPickerTab(null)}>
@@ -796,9 +780,7 @@ function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => 
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold">
-                  {pickerTab === 'lib' ? '系统图标' : pickerTab === 'web' ? '品牌图片' : '网络图片'}
-                </p>
+                <p className="text-sm font-semibold">选择图标 / 图片</p>
                 <button
                   onClick={() => setPickerTab(null)}
                   aria-label="完成"
@@ -819,31 +801,6 @@ function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => 
           document.body,
         )
       ) : null}
-
-      {/* 相册 / 拍照直选 input（走大图裁剪流程） */}
-      <input
-        ref={albumRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = '';
-          onPickImage(f);
-        }}
-      />
-      <input
-        ref={cameraRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = '';
-          onPickImage(f);
-        }}
-      />
 
       {/* 裁剪弹层（全屏，盖在表单 sheet 之上） */}
       {cropSrc ? (
@@ -1074,8 +1031,8 @@ export default function HomePage() {
         />
       ) : null}
 
-      {/* ============ 物品 / 订阅 pill 分段 tab ============ */}
-      <div className="mx-auto mb-3 flex w-fit rounded-full border border-line bg-surface-2 p-1">
+      {/* ============ 物品 / 订阅 pill 分段 tab（v1.0.18：收窄靠左，对齐竞品） ============ */}
+      <div className="mb-3 flex w-fit rounded-full border border-line bg-surface-2 p-1">
         {(
           [
             { key: 'goods', label: '物品' },
@@ -1085,7 +1042,7 @@ export default function HomePage() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`rounded-full px-6 py-1.5 text-sm transition-all active:scale-95 ${
+            className={`rounded-full px-4 py-1 text-xs transition-all active:scale-95 ${
               tab === t.key ? 'bg-surface font-semibold shadow' : 'text-ink-3'
             }`}
           >
@@ -1115,7 +1072,10 @@ export default function HomePage() {
                 </p>
               </div>
               <div className="text-right">
-                <p className="tnum text-[11px] text-ink-3">在役日均 {formatMoney(summary.daily, currency)}</p>
+                <p className="text-[11px] text-ink-3">在役日均</p>
+                <p className="tnum text-sm font-semibold" style={{ color: 'var(--gui)' }}>
+                  {formatMoney(summary.daily, currency)}
+                </p>
                 <p
                   className="tnum text-[11px]"
                   style={{ color: summary.soldProfit > 0 ? 'var(--gui)' : 'var(--ink-3)' }}
@@ -1276,15 +1236,24 @@ export default function HomePage() {
                           </span>
                         )}
                       </div>
-                      {/* 信息区 */}
-                      <div className="p-2">
-                        <p className="line-clamp-2 min-h-[2.5em] text-xs leading-[1.25]">{g.name}</p>
+                      {/* 信息区（v1.0.18 对齐竞品：双金额行 + 日均/单次 + 持有时长） */}
+                      <div className="p-2 pt-1.5">
+                        <p className="line-clamp-2 min-h-[2.5em] text-xs font-medium leading-[1.25]">{g.name}</p>
                         <p className="tnum mt-1 text-sm font-semibold">
                           {amt.label ? `${amt.label}${amt.text}` : amt.text}
                         </p>
-                        <p className="tnum mt-0.5 truncate text-[10px] text-ink-3">
-                          {formatMoney(dailyCost(g), g.currency)}/天 · {holdLabel(g.buyDate)}
+                        <p className="tnum mt-0.5 flex items-baseline gap-1 truncate text-[10px] text-ink-2">
+                          {formatMoney(dailyCost(g), g.currency)}
+                          <span className="text-ink-3">/天</span>
+                          {g.countEnabled ? (
+                            <>
+                              <span className="text-ink-3">·</span>
+                              {formatMoney(perUseCost(g), g.currency)}
+                              <span className="text-ink-3">/次</span>
+                            </>
+                          ) : null}
                         </p>
+                        <p className="tnum mt-0.5 truncate text-[10px] text-ink-3">{holdLabel(g.buyDate)}</p>
                       </div>
                     </div>
                   </li>

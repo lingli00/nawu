@@ -22,6 +22,14 @@ import type { Subscription } from '../types/entities';
 
 const PERIOD_LABEL = { month: '月', year: '年', week: '周' } as const;
 
+/** 分类彩色底版（v1.0.18 对齐竞品彩色图标卡）：id 哈希 → 柔和色板。 */
+const CAT_TINTS = ['#F97316', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#14B8A6', '#6366F1'];
+function catTint(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return CAT_TINTS[h % CAT_TINTS.length];
+}
+
 /** 订阅图标统一中性底版（v1.0.3 极简化：不再按 id 上彩色）。 */
 
 /** 订阅图标渲染：builtin / url: / img: 三形态统一走 IconPreview（网络图标加载失败自动回落）。 */
@@ -175,7 +183,9 @@ export default function SubListPage({
 
   const subRow = (s: Subscription) => {
     const days = nextRenewCountdown(s);
-    const catName = categories.find((c) => c.id === s.categoryId)?.name;
+    const cat = categories.find((c) => c.id === s.categoryId);
+    const catName = cat?.name;
+    const tint = catTint(s.categoryId ?? s.id);
     return (
       <li key={s.id} className="rounded-card border border-line bg-surface">
         <div
@@ -183,14 +193,24 @@ export default function SubListPage({
           role="button"
           className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-3 text-left active:opacity-70"
         >
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-2 text-ink-2">
+          <span
+            className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl"
+            style={{ background: `color-mix(in srgb, ${tint} 16%, var(--surface))`, color: tint }}
+          >
             <SubIcon icon={s.icon} size={20} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{s.name}</p>
+            <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+              {s.name}
+              {s.type === 'lifetime' ? (
+                <span className="shrink-0 rounded-full bg-surface-2 px-1.5 text-[9px] leading-4 text-ink-3">买断</span>
+              ) : null}
+              {isArchived(s) ? (
+                <span className="shrink-0 rounded-full bg-surface-2 px-1.5 text-[9px] leading-4 text-ink-3">已停用</span>
+              ) : null}
+            </p>
             <p className="text-[11px] text-ink-3">
               {catName ? `${catName} · ` : ''}{formatMoney(s.amount, s.currency)}/{PERIOD_LABEL[s.period]}
-              {s.type === 'lifetime' ? ' · 买断' : ''}
             </p>
           </div>
           <div className="shrink-0 text-right">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Image as ImageIcon, LayoutGrid, Link2, Search, Upload } from 'lucide-react';
+import { Camera, Image as ImageIcon, LayoutGrid, Link2, Search, Upload } from 'lucide-react';
 import { SUB_ICON_GROUPS, subIconOf } from '../lib/subIcons';
 import {
   BRAND_GROUPS,
@@ -12,44 +12,41 @@ import {
   toUrlIcon,
   type BrandItem,
 } from '../lib/brandIcon';
+import { GLYPH_GROUPS, glyphToImgIcon, searchGlyphs, type GlyphItem } from '../lib/simpleBrand';
 import { currentServer, toastError } from '../store';
-import { createPortal } from 'react-dom';
-import { useBackGuard } from '../lib/backGuard';
 import { SYSTEM_ICON_GROUPS } from '../lib/systemIcons';
 import { get } from '../net/httpClient';
 import { fetchIconAsDataUrl, iconCacheFetchAndStore, iconCacheLookup, normIconKey, warmIconCache } from '../lib/iconCache';
 import { haptic } from '../lib/haptics';
 
 /**
- * 统一图标选择器（订阅 / 物品共用，v1.0.5）。
+ * 统一图标选择器（订阅 / 物品共用）。
  *
- * 三个来源 tab（用于不搜索时的浏览）：图标库 / 网络图标 / 本地上传。
- * 搜索框全局唯一：输入任意关键词，一次出齐三类结果 ——
- *   ① 内置图标（lucide 按 id 匹配）
- *   ② 品牌图标（本地 150+ 预设，名称/别名/域名匹配）
- *   ③ 在线图标（自动走服务端 /api/icon/search 检索真实官网，
- *      再由 /api/icon/img 服务端解析目标站真实 <link icon>）—— 无需换框重输。
- * 本地上传：选图自动压缩（默认 96px 方形裁边；传入 onFilePicked 可接管，
- * 物品表单用它走大图裁剪流程）。
+ * ★v1.0.18 重构（对齐用户四条反馈）：
+ * ① 【性能】分类网格一律懒渲染（LazySection：滚到可视区附近才挂载图标）——
+ *    根治「点开系统图标反复闪屏」：v1.0.17 一次性同步渲染 1090 个图标组件，
+ *    主线程阻塞数百 ms，WebView 白屏 + 入场动画掉帧，三端同修。
+ * ② 【系统图标】不再放搜索框；分类按「衣食住行 + 电子设备」常用度重排，
+ *    646 个杂项（basic）沉底。
+ * ③ 【品牌图片】新增内置 glyph 层（simple-icons 192 个常用品牌，路径打进安装包）：
+ *    浏览/搜索零网络秒出、App 离线可用；点选光栅化为 img: dataURL 随备份走。
+ *    不在内置库的品牌继续走 favicon 链（自建代理缓存 30 天）。
+ * ④ 【相册·拍照】合并为同一 tab，两个入口按钮；App 端零跳转。
  *
- * ★v1.0.15 渲染铁律：网络图标**一律不吃 WebView 直连**——
- * 缓存 dataURL 优先 → 未命中走统一网络层抓取入库再渲染 → 全败才落兜底。
- * （用户实测：WebView 加载 http 图极慢且重启即失，缓存层根治。）
- *
- * ⚠️ 铁律：搜索框文本输入非受控（defaultValue + onInput 存 state 仅供过滤，
- * 不回写 DOM）——IME 铁律。
+ * 存储约定：裸 lucide id / url:<https> / img:<dataURL>（与备份管线兼容）。
+ * ⚠️ 铁律：搜索框文本输入非受控（defaultValue + onInput 存 state 仅供过滤）——IME 铁律。
  */
 
 export type Tab = 'lib' | 'web' | 'img' | 'upload';
 
-/** tab 定义：物品模式（系统图标 14 分类 / 品牌图片 / 网络图片 / 相册）与订阅模式（图标库 / 网络图标 / 本地上传）。 */
+/** tab 定义：物品模式（系统图标 / 品牌图片 / 网络图片 / 相册·拍照）与订阅模式。 */
 function tabsOf(systemMode: boolean): Array<{ key: Tab; label: string; Icon: typeof LayoutGrid }> {
   return systemMode
     ? [
         { key: 'lib', label: '系统图标', Icon: LayoutGrid },
         { key: 'web', label: '品牌图片', Icon: Link2 },
         { key: 'img', label: '网络图片', Icon: ImageIcon },
-        { key: 'upload', label: '相册上传', Icon: Upload },
+        { key: 'upload', label: '相册·拍照', Icon: Camera },
       ]
     : [
         { key: 'lib', label: '图标库', Icon: LayoutGrid },
@@ -58,12 +55,24 @@ function tabsOf(systemMode: boolean): Array<{ key: Tab; label: string; Icon: typ
       ];
 }
 
+/** 系统图标分类展示顺序：衣食住行 + 电子设备优先，basic 杂项（646 个）沉底。 */
+const SYS_ORDER = [
+  'clothing', 'kitchen', 'appliances', 'dianqi', 'furniture',
+  'digital', 'traffic', 'tools', 'sports', 'toys',
+  'cosmetic', 'jewelry', 'instruments', 'art', 'basic',
+];
+/** 重排后的系统图标分类（模块级常量，只算一次）。 */
+const SYS_GROUPS_ORDERED: typeof SYSTEM_ICON_GROUPS = (() => {
+  const map = new Map(SYSTEM_ICON_GROUPS.map((g) => [g.key, g]));
+  return SYS_ORDER.map((k) => map.get(k)).filter(Boolean) as typeof SYSTEM_ICON_GROUPS;
+})();
+
 /** 图标服务基址：浏览器 = 当前站点；App = 当前服务器。 */
 function iconBaseOf(): string {
   return currentServer()?.url ?? (typeof window !== 'undefined' ? window.location.origin : '');
 }
 
-/** 在线搜索结果（v1.0.11：site 站点域名 / icon 图形图标；v1.0.16：img 商品图片；v1.0.17：thumb 缩略直链）。 */
+/** 在线搜索结果（site 站点域名 / icon 图形图标；img 商品图片；thumb 缩略直链）。 */
 interface OnlineHit {
   type?: 'site' | 'icon' | 'img';
   domain?: string;
@@ -87,8 +96,7 @@ function imgProxyUrl(raw: string): string {
   return `/api/img/get?u=${encodeURIComponent(raw)}`;
 }
 
-/** 商品图预览渲染（缓存优先 + 原生通道抓取，永不裸 img 直连）。
- *  v1.0.17：优先用 Bing 缩略直链（~7KB/张秒开），无缩略才走代理原图。 */
+/** 商品图预览渲染（缓存优先 + 原生通道抓取，永不裸 img 直连；优先 Bing 缩略直链秒开）。 */
 function ProductImg({ raw, thumb, alt }: { raw: string; thumb?: string; alt?: string }) {
   const chain = useMemo(() => [thumb ?? imgProxyUrl(raw)], [raw, thumb]);
   const { src, done } = useCachedIconSrc(chain);
@@ -180,7 +188,6 @@ export function BrandImg({
   const chain = useMemo(() => faviconChain(base, domain), [base, domain]);
   const { src, done } = useCachedIconSrc(chain);
   if (!done) {
-    // 加载中：占位底（无破图、无闪烁破图标）
     return (
       <span
         className="flex shrink-0 items-center justify-center rounded-md bg-surface-2 text-ink-3/40"
@@ -221,12 +228,17 @@ export function absIconUrl(u: string | undefined, base: string): string {
   return u.startsWith('/') ? `${base}${u}` : u;
 }
 
+/** 内置品牌 glyph 渲染（内联 SVG，零网络零延迟）。 */
+export function GlyphImg({ item, size = 24 }: { item: GlyphItem; size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} role="img" aria-label={item.name}>
+      <path d={item.path} fill={`#${item.hex}`} />
+    </svg>
+  );
+}
+
 /** 预览：任意 icon 值（builtin / url: / img:）→ 可视节点。
- *  v1.0.15：url: 值不再让 WebView 直连网络 ——
- *  ① 本地缓存 dataURL 命中 → 直接渲染（离线可用、重进秒显、恢复备份即显）；
- *  ② 未命中 → 候选链（自建代理 → Iconify 直链 → 公共 favicon 源）走统一网络层
- *     抓取入库后渲染（App 走 CapacitorHttp 原生通道，不受 WebView 网络栈拖累）；
- *  ③ 全败 → 兜底 Tag / 首字符（永不出现「破图」占位）。 */
+ *  网络值不吃 WebView 直连：本地缓存 dataURL 命中即显；未命中统一网络层抓取入库。 */
 export function IconPreview({
   icon,
   size = 22,
@@ -292,17 +304,15 @@ export function IconPreview({
       );
     }
     if (!done) {
-      // 加载中：半透明兜底占位（避免列表跳动，也绝不出现破图）
       const Placeholder = subIconOf(v);
       return <Placeholder size={size} className={`${className ?? ''} opacity-30`} style={fallbackFg ? { color: fallbackFg } : undefined} />;
     }
-    // 全部源失败 → 兜底图标
   }
   const Cmp = subIconOf(v);
   return <Cmp size={size} className={className} style={fallbackFg ? { color: fallbackFg } : undefined} />;
 }
 
-/** 品牌图标按钮（自建代理直链，固定 24px 容器）。 */
+/** 品牌图标按钮（favicon 链，固定 24px 容器）。 */
 function BrandButton({
   brand,
   base,
@@ -329,9 +339,92 @@ function BrandButton({
   );
 }
 
-/** 分区标题（搜索结果分组用）。 */
+/** 内置品牌按钮（内联 SVG 秒显；点选光栅化为 img: dataURL）。 */
+function GlyphButton({
+  item,
+  active,
+  onPick,
+}: {
+  item: GlyphItem;
+  active: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      title={item.name}
+      className={`flex flex-col items-center gap-1 rounded-btn border py-2 transition-all active:scale-95 ${
+        active ? 'border-accent bg-accent-soft' : 'border-line bg-surface-2'
+      }`}
+    >
+      <span className="flex h-6 items-center justify-center">
+        <GlyphImg item={item} size={22} />
+      </span>
+      <span className="w-full truncate px-0.5 text-center text-[10px] text-ink-2">{item.name}</span>
+    </button>
+  );
+}
+
+/** 分区标题。 */
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="mb-1.5 text-[11px] font-medium text-ink-3">{children}</p>;
+}
+
+/* ============================================================================
+ * 懒渲染分区：滚到可视区附近才挂载网格（v1.0.18 闪屏根治）。
+ * 占位高度按行列估算，滚动不跳动；挂载后不再卸载。
+ * ==========================================================================*/
+function LazySection({
+  id,
+  label,
+  count,
+  cols,
+  rowH,
+  children,
+}: {
+  id?: string;
+  label: string;
+  count: number;
+  cols: number;
+  /** 单元格高 + 间距（px）。 */
+  rowH: number;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (shown) return;
+    const el = ref.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setShown(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (es) => {
+        if (es.some((e) => e.isIntersecting)) {
+          setShown(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: '500px 0px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [shown]);
+
+  const minH = 24 + Math.ceil(count / cols) * rowH;
+
+  return (
+    <div ref={ref} id={id} style={shown ? undefined : { minHeight: minH }}>
+      <SectionLabel>
+        {label}
+        <span className="ml-1 text-ink-3/70">({count})</span>
+      </SectionLabel>
+      {shown ? children : null}
+    </div>
+  );
 }
 
 export default function IconPicker({
@@ -345,48 +438,47 @@ export default function IconPicker({
   onChange: (icon: string) => void;
   /** 传入则接管本地上传（如物品表单的大图裁剪流程）；不传走默认 96px 压缩。 */
   onFilePicked?: (file: File) => void;
-  /** v1.0.17 物品模式：系统图标走 14 分类大库 + 品牌图片 / 网络图片独立 tab。 */
+  /** 物品模式：系统图标大库 + 品牌内置层 + 网络图片 + 相册·拍照。 */
   systemMode?: boolean;
-  /** 由五来源选择页带入的初始 tab。 */
+  /** 初始 tab。 */
   initialTab?: Tab;
 }) {
   const [tab, setTab] = useState<Tab>(initialTab ?? 'lib');
-  /** 全局唯一搜索关键词（只用于过滤，不回写输入框——IME 铁律）。 */
+  /** 搜索关键词（只用于过滤，不回写输入框——IME 铁律）。 */
   const [query, setQuery] = useState('');
   const [onlineHits, setOnlineHits] = useState<OnlineHit[] | null>(null);
-  /** 商品图片结果（v1.0.16：/api/img/search，Bing 图搜原图直链）。 */
   const [imgHits, setImgHits] = useState<OnlineHit[] | null>(null);
   const [onlineBusy, setOnlineBusy] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  /** 搜索框 DOM 引用：回车/点放大镜时读真值立即搜（不依赖 state 时序）。 */
+  const albumRef = useRef<HTMLInputElement | null>(null);
+  const cameraRef = useRef<HTMLInputElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const base = useMemo(iconBaseOf, []);
 
   const q = query.trim().toLowerCase();
-  /** 图标库过滤（按 lucide id）。物品模式=14 分类系统图标大库；订阅模式=订阅图标库。 */
-  const baseGroups = systemMode
-    ? SYSTEM_ICON_GROUPS.map((g) => ({ label: g.label, items: g.items.map((id) => ({ id })) }))
-    : SUB_ICON_GROUPS.map((g) => ({ label: g.label, items: g.items.map((it) => ({ id: it.id })) }));
+
+  /** 图标库过滤（订阅模式用；物品模式系统图标不搜索）。 */
+  const subGroups = useMemo(
+    () => SUB_ICON_GROUPS.map((g) => ({ label: g.label, items: g.items.map((it) => ({ id: it.id })) })),
+    [],
+  );
   const libGroups = useMemo(() => {
-    if (!q) return baseGroups;
-    return baseGroups.map((g) => ({ ...g, items: g.items.filter((it) => it.id.includes(q)) })).filter(
+    if (!q) return subGroups;
+    return subGroups.map((g) => ({ ...g, items: g.items.filter((it) => it.id.includes(q)) })).filter(
       (g) => g.items.length > 0,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, systemMode]);
-  /** 品牌库搜索（名称/别名/域名）。 */
+  }, [q, subGroups]);
+
+  /** 本地搜索：内置品牌 glyph + favicon 品牌库（双库一次出齐，零网络秒出）。 */
+  const glyphHits = useMemo(() => (q && tab === 'web' ? searchGlyphs(query) : null), [q, query, tab]);
   const brandHits = useMemo(() => (q ? searchBrands(query) : null), [q, query]);
-  /** 关键词长得像域名时给直取兜底。 */
   const domainHit = useMemo(
-    () => (q && brandHits && brandHits.length === 0 ? normalizeDomainInput(query) : null),
-    [q, brandHits, query],
+    () => (q && tab === 'web' && !glyphHits?.length && !brandHits?.length ? normalizeDomainInput(query) : null),
+    [q, glyphHits, brandHits, query, tab],
   );
 
-  /* 在线搜索：立即执行版（回车 / 点放大镜 / 防抖共用同一实现）。
-     ★必须走统一网络层 get()（v1.0.14）：此前用裸 fetch，App WebView(https 源)
-     跨域请求被 CORS 拦截 → catch → 永远空结果（用户实测「搜索结果空白」）。
-     CapacitorHttp 原生层发请求不受同源策略限制。 */
+  /* 在线搜索：走统一网络层 get()（CapacitorHttp 原生通道不受 CORS 限制）。 */
   const runOnlineSearch = (kwRaw: string): void => {
     const kw = kwRaw.trim();
     setOnlineHits(null);
@@ -397,7 +489,6 @@ export default function IconPicker({
     }
     setOnlineBusy(true);
     if (tab === 'img') {
-      /* 网络图片 tab：只搜商品图 */
       get<{ ok?: boolean; items?: OnlineHit[] }>({ url: base }, '/api/img/search', { q: kw }, 10000)
         .then((res) => {
           const items = res.data?.ok && Array.isArray(res.data.items) ? res.data.items : [];
@@ -411,13 +502,10 @@ export default function IconPicker({
         .finally(() => setOnlineBusy(false));
       return;
     }
-    /* ① 图形图标 + 站点域名（原有接口） */
     get<{ ok?: boolean; items?: OnlineHit[] }>({ url: base }, '/api/icon/search', { q: kw }, 8000)
       .then((res) => {
         const items = res.data?.ok && Array.isArray(res.data.items) ? res.data.items : [];
         setOnlineHits(items);
-        /* ★搜索到的图标全量后台预热进本地缓存（v1.0.15 用户约定）：
-           本次没选的图标也先缓存，之后选用/恢复备份都离线秒显。 */
         const urls = items
           .map((h) =>
             h.type === 'icon' && h.url
@@ -432,7 +520,7 @@ export default function IconPicker({
       .catch(() => setOnlineHits([]));
   };
 
-  /** 点选商品图片：原生通道抓原图 → 中心方裁 ≤512 → 存 img: dataURL（随备份走，永不失效）。 */
+  /** 点选商品图片：原生通道抓原图 → 中心方裁 ≤512 → 存 img: dataURL。 */
   const pickProductImage = async (raw: string): Promise<void> => {
     const abs = absIconUrl(imgProxyUrl(raw), base);
     try {
@@ -450,15 +538,25 @@ export default function IconPicker({
     }
   };
 
-  /** 点选图标：写值 + 立即预热入库（设置过一次，终身离线可用）。 */
+  /** 点选内置品牌 glyph → 光栅化 dataURL（零网络、随备份走）。 */
+  const pickGlyph = async (g: GlyphItem): Promise<void> => {
+    try {
+      const icon = await glyphToImgIcon(g);
+      void haptic('select');
+      onChange(icon);
+    } catch {
+      toastError('图标处理失败');
+    }
+  };
+
+  /** 点选图标：写值 + 立即预热入库。 */
   const pickIcon = (iconValue: string, warmSrc?: string): void => {
     void haptic('select');
     onChange(iconValue);
     if (warmSrc) void warmIconCache([warmSrc], base);
   };
 
-  /* 防抖 300ms 自动检索；query 的来源见下方「事件 + 轮询」双保险。
-     回车/放大镜/compositionend/search 仍绕过防抖立即搜。 */
+  /* 防抖 300ms 自动检索。 */
   useEffect(() => {
     const kw = query.trim();
     if (kw.length < 2) {
@@ -470,16 +568,10 @@ export default function IconPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, base]);
 
-  /* 搜索触发（v1.0.13 最终方案）：事件 + 轮询双保险。
-     实测（用户设备两轮录屏实锤）：部分安卓 WebView + 搜狗输入法，IME 上屏
-     文本时【不向页面派发任何 input/composition 事件】——React 合成与原生
-     addEventListener 都收不到，只有删除字符才有事件；文本明明进了 DOM。
-     事件链在这类设备上理论走不通，所以再加 150ms 轮询直接读输入框 DOM 真值：
-     不管输入法用什么方式写文本，字进了框就必然被发现。 */
+  /* 搜索触发：事件 + 150ms 轮询双保险（IME 铁律）。 */
   useEffect(() => {
     const el = searchRef.current;
     if (!el) return;
-    /** 末次已知值：事件与轮询共用同一基准，去重避免重复 setState。 */
     let last = el.value;
     const sync = (): void => {
       if (el.value === last) return;
@@ -502,7 +594,6 @@ export default function IconPicker({
     el.addEventListener('compositionend', onCompoEnd);
     el.addEventListener('keyup', onKeyUp);
     el.addEventListener('search', fire);
-    /** 轮询兜底：每 150ms 对比一次 DOM 真值（打字无事件的设备靠这条活）。 */
     const iv = window.setInterval(sync, 150);
     return () => {
       window.clearInterval(iv);
@@ -512,7 +603,6 @@ export default function IconPicker({
       el.removeEventListener('keyup', onKeyUp);
       el.removeEventListener('search', fire);
     };
-    /* deps 带 tab：切到「本地上传」输入框会卸载，切回来要重新挂监听+轮询 */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base, tab]);
 
@@ -533,7 +623,9 @@ export default function IconPicker({
     }
   };
 
-  /* —— 搜索结果（内置 + 品牌 + 在线，一框出齐） —— */
+  /* —— 搜索态派生 —— */
+  /** 物品模式 lib tab：无搜索框（需求 v1.0.18③），永远浏览态。 */
+  const sysLib = systemMode && tab === 'lib';
   const searching = q !== '' && (tab === 'lib' || tab === 'web');
   const imgSearching = q !== '' && tab === 'img';
   const iconHits = useMemo(
@@ -546,81 +638,136 @@ export default function IconPicker({
   );
   const onlineEmpty =
     !onlineBusy && onlineHits !== null && iconHits.length === 0 && siteHits.length === 0;
-  const localEmpty = libGroups.length === 0 && (!brandHits || brandHits.length === 0) && !domainHit;
+  const localEmpty = libGroups.length === 0 && !glyphHits?.length && (!brandHits || brandHits.length === 0) && !domainHit;
   const allEmpty = searching && localEmpty && (q.length < 2 || onlineEmpty);
 
-  /** 浏览态（未搜索）时当前 tab 的内容。 */
-  const browseView =
-    tab === 'lib' ? (
-      <>
-        {systemMode && !q ? (
-          /* 分类快捷 chips（对齐竞品）：点击滚动到对应分类 */
-          <div className="sticky top-0 z-10 -mx-1 flex gap-1.5 overflow-x-auto bg-surface px-1 py-1">
-            {SYSTEM_ICON_GROUPS.map((g) => (
-              <button
-                key={g.key}
-                type="button"
-                onClick={() => document.getElementById(`sysgrp-${g.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className="shrink-0 rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-ink-2 active:scale-95"
-              >
-                {g.label}
-                <span className="ml-0.5 text-ink-3/70">{g.items.length}</span>
-              </button>
-            ))}
+  /** 通用搜索框（IME 铁律：非受控）。 */
+  const SearchBox = (
+    <div className="flex h-9 items-center gap-2 rounded-btn border border-line bg-surface-2 px-2.5 focus-within:border-accent">
+      <button
+        type="button"
+        aria-label="搜索"
+        onClick={() => searchRef.current && runOnlineSearch(searchRef.current.value)}
+        className="shrink-0 text-ink-3 active:text-accent"
+      >
+        <Search size={14} />
+      </button>
+      <input
+        ref={searchRef}
+        type="search"
+        defaultValue=""
+        onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
+        onKeyDown={(e) => {
+          const ke = e.nativeEvent;
+          if ((e.key === 'Enter' || ke.keyCode === 13) && !ke.isComposing && ke.keyCode !== 229) {
+            e.preventDefault();
+            runOnlineSearch((e.target as HTMLInputElement).value);
+          }
+        }}
+        enterKeyHint="search"
+        placeholder={systemMode ? '搜品牌 / 任意英文词…' : '搜图标：耳机、水杯、微信、任一英文词…'}
+        className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-3"
+      />
+    </div>
+  );
+
+  /* —— 浏览态：系统图标 tab（无搜索 + 常用分类前置 + 懒渲染） —— */
+  const sysLibView = (
+    <>
+      <div className="sticky top-0 z-10 -mx-1 flex gap-1.5 overflow-x-auto bg-surface px-1 py-1">
+        {SYS_GROUPS_ORDERED.map((g) => (
+          <button
+            key={g.key}
+            type="button"
+            onClick={() => document.getElementById(`sysgrp-${g.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="shrink-0 rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-ink-2 active:scale-95"
+          >
+            {g.label}
+            <span className="ml-0.5 text-ink-3/70">{g.items.length}</span>
+          </button>
+        ))}
+      </div>
+      {SYS_GROUPS_ORDERED.map((g) => (
+        <LazySection key={g.key} id={`sysgrp-${g.key}`} label={g.label} count={g.items.length} cols={8} rowH={48}>
+          <div className="grid grid-cols-8 gap-2">
+            {g.items.map((id) => {
+              const Icon = subIconOf(id);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    void haptic('select');
+                    onChange(id);
+                  }}
+                  aria-label={id}
+                  title={id}
+                  className={`flex h-10 items-center justify-center rounded-btn border transition-all active:scale-95 ${
+                    value === id ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface-2 text-ink-2'
+                  }`}
+                >
+                  <Icon size={18} />
+                </button>
+              );
+            })}
           </div>
-        ) : null}
-        {libGroups.map((group) => {
-          const gkey = systemMode ? (SYSTEM_ICON_GROUPS.find((g) => g.label === group.label)?.key ?? '') : '';
-          return (
-            <div key={group.label} id={gkey ? `sysgrp-${gkey}` : undefined}>
-              <SectionLabel>
-                {group.label}
-                {systemMode ? <span className="ml-1 text-ink-3/70">({group.items.length})</span> : null}
-              </SectionLabel>
-              <div className="grid grid-cols-8 gap-2">
-                {group.items.map(({ id }) => {
-                  const Icon = subIconOf(id);
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => onChange(id)}
-                      aria-label={id}
-                      title={id}
-                      className={`flex h-10 items-center justify-center rounded-btn border transition-all active:scale-95 ${
-                        value === id ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface-2 text-ink-2'
-                      }`}
-                    >
-                      <Icon size={18} />
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </>
-    ) : (
-      BRAND_GROUPS.map((group) => (
-        <div key={group.label}>
-          <SectionLabel>
-            {group.label}
-            <span className="ml-1 text-ink-3/70">({group.items.length})</span>
-          </SectionLabel>
+        </LazySection>
+      ))}
+    </>
+  );
+
+  /* —— 浏览态：品牌图片 tab（内置 glyph 组 + favicon 品牌组，全部懒渲染） —— */
+  const brandBrowse = systemMode ? (
+    <>
+      {GLYPH_GROUPS.map((g) => (
+        <LazySection key={g.label} label={`${g.label} · 内置`} count={g.items.length} cols={5} rowH={64}>
           <div className="grid grid-cols-5 gap-2">
-            {group.items.map((b) => (
-              <BrandButton
-                key={b.domain + b.name}
-                brand={b}
-                base={base}
-                active={value === toUrlIcon(iconApiUrl(base, b.domain))}
-                onPick={() => pickIcon(toUrlIcon(iconApiUrl(base, b.domain)), iconApiUrl(base, b.domain))}
-              />
+            {g.items.map((it) => (
+              <GlyphButton key={it.slug} item={it} active={value.startsWith('img:')} onPick={() => void pickGlyph(it)} />
             ))}
           </div>
+        </LazySection>
+      ))}
+      <LazySection label="更多品牌（官网图标）" count={BRAND_GROUPS.reduce((a, g) => a + g.items.length, 0)} cols={5} rowH={64}>
+        {BRAND_GROUPS.map((group) => (
+          <div key={group.label} className="mb-3">
+            <p className="mb-1 text-[10px] text-ink-3/80">{group.label}</p>
+            <div className="grid grid-cols-5 gap-2">
+              {group.items.map((b) => (
+                <BrandButton
+                  key={b.domain + b.name}
+                  brand={b}
+                  base={base}
+                  active={value === toUrlIcon(iconApiUrl(base, b.domain))}
+                  onPick={() => pickIcon(toUrlIcon(iconApiUrl(base, b.domain)), iconApiUrl(base, b.domain))}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </LazySection>
+    </>
+  ) : (
+    BRAND_GROUPS.map((group) => (
+      <div key={group.label}>
+        <SectionLabel>
+          {group.label}
+          <span className="ml-1 text-ink-3/70">({group.items.length})</span>
+        </SectionLabel>
+        <div className="grid grid-cols-5 gap-2">
+          {group.items.map((b) => (
+            <BrandButton
+              key={b.domain + b.name}
+              brand={b}
+              base={base}
+              active={value === toUrlIcon(iconApiUrl(base, b.domain))}
+              onPick={() => pickIcon(toUrlIcon(iconApiUrl(base, b.domain)), iconApiUrl(base, b.domain))}
+            />
+          ))}
         </div>
-      ))
-    );
+      </div>
+    ))
+  );
 
   return (
     <div>
@@ -650,48 +797,21 @@ export default function IconPicker({
           {tab === 'upload'
             ? uploadBusy
               ? '处理中…'
-              : '选一张方图，自动裁边压缩'
+              : '相册选一张或现场拍一张，自动裁方'
             : tab === 'img'
               ? '搜商品名称或型号，出真实商品图'
-              : tab === 'web'
-                ? searching
-                  ? '品牌 + 在线图标，一次搜齐'
-                  : '内置品牌库，点击即采用'
-                : searching
-                  ? '按图标名过滤全部分类'
-                  : '按分类浏览 · 点击即选中'}
+              : sysLib
+                ? '按分类浏览 · 点击即选中'
+            : searching
+              ? '内置品牌秒出，在线图标随后补齐'
+              : '内置品牌离线秒显，点击即采用'}
         </span>
       </div>
 
       {tab === 'img' ? (
-        /* —— v1.0.17 网络图片：商品图专用搜索（大图九宫格） —— */
+        /* —— 网络图片：商品图专用搜索（大图九宫格） —— */
         <div className="max-h-80 space-y-3 overflow-y-auto">
-          <div className="flex h-9 items-center gap-2 rounded-btn border border-line bg-surface-2 px-2.5 focus-within:border-accent">
-            <button
-              type="button"
-              aria-label="搜索"
-              onClick={() => searchRef.current && runOnlineSearch(searchRef.current.value)}
-              className="shrink-0 text-ink-3 active:text-accent"
-            >
-              <Search size={14} />
-            </button>
-            <input
-              ref={searchRef}
-              type="search"
-              defaultValue=""
-              onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => {
-                const ke = e.nativeEvent;
-                if ((e.key === 'Enter' || ke.keyCode === 13) && !ke.isComposing && ke.keyCode !== 229) {
-                  e.preventDefault();
-                  runOnlineSearch((e.target as HTMLInputElement).value);
-                }
-              }}
-              enterKeyHint="search"
-              placeholder="如：iPhone 17、一加15、佳能 R6、戴森吸尘器…"
-              className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-3"
-            />
-          </div>
+          {SearchBox}
           {imgSearching ? (
             onlineBusy ? (
               <p className="py-6 text-center text-xs text-ink-3">正在检索商品图…</p>
@@ -728,20 +848,42 @@ export default function IconPicker({
           )}
         </div>
       ) : tab === 'upload' ? (
-        <div>
+        /* —— 相册·拍照（v1.0.18 合并双入口） —— */
+        <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => fileRef.current?.click()}
+            onClick={() => albumRef.current?.click()}
             disabled={uploadBusy}
-            className="flex h-24 w-full flex-col items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-surface-2 text-xs text-ink-3 disabled:opacity-50"
+            className="flex h-24 flex-col items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-surface-2 text-xs text-ink-3 disabled:opacity-50"
           >
             <ImageIcon size={22} />
-            {uploadBusy ? '压缩处理中…' : '点此选择图片（自动裁成正方形）'}
+            {uploadBusy ? '压缩处理中…' : '从相册选一张'}
+          </button>
+          <button
+            type="button"
+            onClick={() => cameraRef.current?.click()}
+            disabled={uploadBusy}
+            className="flex h-24 flex-col items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-surface-2 text-xs text-ink-3 disabled:opacity-50"
+          >
+            <Camera size={22} />
+            现场拍一张
           </button>
           <input
-            ref={fileRef}
+            ref={albumRef}
             type="file"
             accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              void pickFile(f);
+            }}
+          />
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -752,38 +894,13 @@ export default function IconPicker({
         </div>
       ) : (
         <div className="max-h-80 space-y-3 overflow-y-auto">
-          {/* 唯一搜索框：内置 / 品牌 / 在线，一框搜齐；回车或点放大镜立即搜 */}
-          <div className="flex h-9 items-center gap-2 rounded-btn border border-line bg-surface-2 px-2.5 focus-within:border-accent">
-            <button
-              type="button"
-              aria-label="搜索"
-              onClick={() => searchRef.current && runOnlineSearch(searchRef.current.value)}
-              className="shrink-0 text-ink-3 active:text-accent"
-            >
-              <Search size={14} />
-            </button>
-            <input
-              ref={searchRef}
-              type="search"
-              defaultValue=""
-              onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => {
-                const ke = e.nativeEvent;
-                if ((e.key === 'Enter' || ke.keyCode === 13) && !ke.isComposing && ke.keyCode !== 229) {
-                  e.preventDefault();
-                  runOnlineSearch((e.target as HTMLInputElement).value);
-                }
-              }}
-              enterKeyHint="search"
-              placeholder={systemMode ? '搜系统图标 / 品牌 / 在线…' : '搜图标：耳机、水杯、微信、任一英文词…'}
-              className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-3"
-            />
-          </div>
+          {/* 物品模式系统图标 tab：无搜索框（v1.0.18③）；其余 tab 保留搜索 */}
+          {!sysLib ? SearchBox : null}
 
           {searching ? (
             <>
-              {/* ① 内置图标 */}
-              {libGroups.length > 0 ? (
+              {/* ① 本地图标库（订阅模式 lib 搜索 / 网页模式兜底） */}
+              {tab === 'lib' && libGroups.length > 0 ? (
                 <div>
                   <SectionLabel>内置图标</SectionLabel>
                   <div className="space-y-3">
@@ -801,9 +918,7 @@ export default function IconPicker({
                                 aria-label={id}
                                 title={id}
                                 className={`flex h-10 items-center justify-center rounded-btn border transition-all active:scale-95 ${
-                                  value === id
-                                    ? 'border-accent bg-accent-soft text-accent'
-                                    : 'border-line bg-surface-2 text-ink-2'
+                                  value === id ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface-2 text-ink-2'
                                 }`}
                               >
                                 <Icon size={18} />
@@ -817,10 +932,22 @@ export default function IconPicker({
                 </div>
               ) : null}
 
-              {/* ② 品牌图标 */}
+              {/* ② 内置品牌（本地数据零网络秒出） */}
+              {glyphHits && glyphHits.length > 0 ? (
+                <div>
+                  <SectionLabel>内置品牌</SectionLabel>
+                  <div className="grid grid-cols-5 gap-2">
+                    {glyphHits.map((g) => (
+                      <GlyphButton key={g.slug} item={g} active={value.startsWith('img:')} onPick={() => void pickGlyph(g)} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* ③ favicon 品牌库 */}
               {brandHits && brandHits.length > 0 ? (
                 <div>
-                  <SectionLabel>品牌图标</SectionLabel>
+                  <SectionLabel>品牌图标（官网）</SectionLabel>
                   <div className="grid grid-cols-5 gap-2">
                     {brandHits.map((b) => (
                       <BrandButton
@@ -847,8 +974,8 @@ export default function IconPicker({
                 </div>
               ) : null}
 
-              {/* ③ 在线图标（同一关键词自动检索，无需换框重输） */}
-              {q.length >= 2 ? (
+              {/* ④ 在线图标（同一关键词自动检索） */}
+              {q.length >= 2 && tab === 'web' ? (
                 <div>
                   <SectionLabel>
                     在线图标
@@ -858,30 +985,28 @@ export default function IconPicker({
                     <p className="py-3 text-center text-xs text-ink-3">正在检索图标…</p>
                   ) : (
                     <>
-                      {/* 图形图标（Iconify：数码/生活用品的具体图形，物品/生活流首选） */}
                       {iconHits.length > 0 ? (
                         <div className="mb-2 grid grid-cols-8 gap-2">
-                      {iconHits.map((h) => {
-                        const abs = absIconUrl(h.url, base);
-                        return (
-                          <button
-                            key={h.icon}
-                            type="button"
-                            onClick={() => pickIcon(`url:${abs}`, abs)}
-                            title={h.icon}
-                            aria-label={h.icon}
-                            className={`flex h-10 items-center justify-center rounded-btn border bg-surface p-1.5 transition-all active:scale-95 ${
-                              value === `url:${abs}` ? 'border-accent bg-accent-soft' : 'border-line'
-                            }`}
-                          >
-                            <HitImg abs={abs} alt={h.icon} />
-                          </button>
-                        );
-                      })}
+                          {iconHits.map((h) => {
+                            const abs = absIconUrl(h.url, base);
+                            return (
+                              <button
+                                key={h.icon}
+                                type="button"
+                                onClick={() => pickIcon(`url:${abs}`, abs)}
+                                title={h.icon}
+                                aria-label={h.icon}
+                                className={`flex h-10 items-center justify-center rounded-btn border bg-surface p-1.5 transition-all active:scale-95 ${
+                                  value === `url:${abs}` ? 'border-accent bg-accent-soft' : 'border-line'
+                                }`}
+                              >
+                                <HitImg abs={abs} alt={h.icon} />
+                              </button>
+                            );
+                          })}
                         </div>
                       ) : null}
 
-                      {/* 站点图标（favicon：订阅/品牌官网） */}
                       {siteHits.length > 0 ? (
                         <ul className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface">
                           {siteHits.map((h) => (
@@ -906,78 +1031,18 @@ export default function IconPicker({
                 </div>
               ) : null}
 
-              {/* 全空兜底 */}
               {allEmpty ? (
                 <p className="rounded-card border border-dashed border-line bg-surface-2 p-4 text-center text-xs text-ink-3">
-                  没有找到「{query}」，换个说法试试，或切「网络图片 / 相册上传」
+                  没有找到「{query}」，换个说法试试，或切「网络图片 / 相册·拍照」
                 </p>
               ) : null}
             </>
           ) : (
-            /* 浏览态：按当前 tab 展示全部 */
-            browseView
+            /* 浏览态 */
+            sysLib ? sysLibView : brandBrowse
           )}
         </div>
       )}
     </div>
-  );
-}
-
-
-/* ============================================================================
- * 图片来源选择页（v1.0.17）：对齐竞品「归否」的五来源 action sheet。
- * 点物品/订阅的图标位 → 先选来源 → 再进对应选择视图。
- * ==========================================================================*/
-export type IconSource = 'system' | 'brand' | 'net' | 'album' | 'camera';
-
-const SOURCE_OPTIONS: Array<{ key: IconSource; label: string; desc: string }> = [
-  { key: 'system', label: '系统图标', desc: '14 分类 · 单色线性 · 离线可用' },
-  { key: 'brand', label: '品牌图片', desc: '常见品牌官网图标' },
-  { key: 'net', label: '网络图片', desc: '搜商品名称/型号出真实商品图' },
-  { key: 'album', label: '相册图片', desc: '从手机相册选一张' },
-  { key: 'camera', label: '拍照', desc: '现场拍一张' },
-];
-
-export function ImageSourceSheet({
-  open,
-  onClose,
-  onPick,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onPick: (s: IconSource) => void;
-}) {
-  useBackGuard(open, onClose);
-  if (!open) return null;
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
-      <div
-        className="sheet-enter mx-auto w-full max-w-md rounded-t-3xl bg-surface p-2 pb-[max(env(safe-area-inset-bottom),0.5rem)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {SOURCE_OPTIONS.map((o) => (
-          <button
-            key={o.key}
-            type="button"
-            onClick={() => {
-              void haptic('select');
-              onPick(o.key);
-            }}
-            className="flex w-full flex-col items-center gap-0.5 border-b border-line py-3.5 last:border-b-0 active:bg-surface-2"
-          >
-            <span className="text-base font-medium text-ink">{o.label}</span>
-            <span className="text-[11px] text-ink-3">{o.desc}</span>
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-2 w-full rounded-2xl bg-surface-2 py-3.5 text-base font-semibold text-ink active:scale-[0.99]"
-        >
-          取消
-        </button>
-      </div>
-    </div>,
-    document.body,
   );
 }
