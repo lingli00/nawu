@@ -1,0 +1,33 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist-ssr/
+dist_prev*/
+.vite/
+coverage/
+
+# Vite 加载配置失败时留下的临时文件
+vite.config.ts.timestamp-*.mjs
+
+# 原生工程中间产物（保留 android/ 源码，忽略编译输出）
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/.idea/
+*.apk
+*.aab
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 编辑器 / 系统
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*

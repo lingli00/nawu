@@ -1,0 +1,16 @@
+{
+	"appId": "com.guifou.app",
+	"appName": "归否",
+	"webDir": "dist",
+	"android": {
+		"allowMixedContent": true,
+		"captureInput": true,
+		"webContentsDebuggingEnabled": false
+	},
+	"plugins": {
+		"Keyboard": {
+			"resizeOnFullScreen": true,
+			"resize": "body"
+		}
+	}
+}

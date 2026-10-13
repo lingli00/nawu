@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 允许明文 HTTP：内网自建服务器（如 http://10.0.0.209:3030）必须开启 -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <!-- 自签 HTTPS 证书默认不信任：由用户在系统内安装 CA，不要在这里加 user -->
+</network-security-config>

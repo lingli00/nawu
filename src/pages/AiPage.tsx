@@ -1,0 +1,247 @@
+import { useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import PageShell from '../components/layout/PageShell';
+import { useDataStore, useSettingsStore, toastSuccess, toastError } from '../store';
+import { parse } from '../ai/parseService';
+import { today } from '../lib/date';
+import type { AiResultItem } from '../types/ai';
+import type { Category, Goods, Settings, Subscription } from '../types/entities';
+
+/**
+ * P10 + P11 AI 助手：一句话记账 → 解析结果逐条确认 → 落库。
+ * 未配置 AI 时自动用本地规则解析（parse 内部已兜底）。
+ *
+ * ★修复 v1.0.0（输入框中间插字被顶到末尾）：本页输入框原为受控 `value/onChange`，
+ * 在 Android WebView 的中文输入法（IME 组合输入）下 React state 与 DOM 值不同步，
+ * 每次按键 React 把 value 写回 → 光标被顶到末尾，导致只能整段删掉重输。
+ * 现改为**非受控**（DOM 自持值，提交时用 ref 读真值），
+ * 与登录页同一套方案（见 LoginPage 顶部注释）；光标位置由浏览器自己维护，不再被劫持。
+ */
+export default function AiPage() {
+  const nav = useNavigate();
+  const categories = useDataStore((s) => s.categories);
+  const settings = useSettingsStore((s) => s.settings);
+  const addLedger = useDataStore((s) => s.addLedger);
+  const addLedgerMany = useDataStore((s) => s.addLedgerMany);
+  const addGoods = useDataStore((s) => s.addGoods);
+  const addSubscription = useDataStore((s) => s.addSubscription);
+  const addMood = useDataStore((s) => s.addMood);
+  const addTime = useDataStore((s) => s.addTime);
+
+  /** 非受控输入框：DOM 自持值，解析时读真值（Android WebView 下唯一可靠来源）。 */
+  const textRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 仅用于「开始解析」按钮的禁用态（不回写 value，绝不碰受控同步链路）。 */
+  const [hasText, setHasText] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [items, setItems] = useState<AiResultItem[] | null>(null);
+  const [source, setSource] = useState<'ai' | 'local'>('local');
+  const [reason, setReason] = useState('');
+  const [checked, setChecked] = useState<boolean[]>([]);
+
+  /** 读取输入框当前 DOM 真值。 */
+  const readText = (): string => textRef.current?.value ?? '';
+
+  const run = async () => {
+    const text = readText();
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    try {
+      const out = await parse(text, {
+        categories,
+        settings: settings as Settings,
+        today: today(),
+      });
+      if (out.items.length === 0) {
+        toastError('没有识别出可以记录的内容，试着说「花了多少钱」');
+        setBusy(false);
+        return;
+      }
+      setItems(out.items);
+      setSource(out.source);
+      setReason(out.reason ?? '');
+      setChecked(out.items.map(() => true));
+    } catch (e) {
+      toastError((e as Error).message);
+    }
+    setBusy(false);
+  };
+
+  const catOf = (id: string): Category | undefined => categories.find((c) => c.id === id);
+
+  /** 把勾选的结果落库。 */
+  const commit = async () => {
+    if (!items) return;
+    const chosen = items.filter((_, i) => checked[i]);
+    if (chosen.length === 0) return;
+
+    // 先收集 ledger 草稿，能合并的用 addLedgerMany 一次写入
+    const ledgerDrafts = chosen
+      .filter((it) => it.action === 'create_ledger' && it.ledgerDraft)
+      .map((it) => it.ledgerDraft!);
+    // 记下第一条新建的物品/订阅（落库返回带 id），跳过去让用户立即编辑
+    let createdGoods: Goods | null = null;
+    let createdSub: Subscription | null = null;
+    for (const it of chosen) {
+      if (it.action === 'create_goods' && it.goodsDraft) {
+        const g = await addGoods(it.goodsDraft);
+        createdGoods = createdGoods ?? g;
+      }
+      if (it.action === 'create_subscription' && it.subDraft) {
+        const s = await addSubscription(it.subDraft);
+        createdSub = createdSub ?? s;
+      }
+      if (it.action === 'create_mood' && it.moodDraft) await addMood({ ...it.moodDraft });
+      if (it.action === 'create_time' && it.timeDraft) await addTime({ ...it.timeDraft });
+    }
+    if (ledgerDrafts.length === 1) await addLedger(ledgerDrafts[0]);
+    else if (ledgerDrafts.length > 1) await addLedgerMany(ledgerDrafts);
+
+    toastSuccess(`已记录 ${chosen.length} 条`);
+    // 物品 → 首页物品 tab 并自动弹编辑面板；订阅 → 首页订阅 tab 并自动弹编辑；
+    // 其余（纯生活流/情绪/时间）保持原跳生活流。
+    if (createdGoods) {
+      nav('/home', { replace: true, state: { editGoodsId: createdGoods.id } });
+      return;
+    }
+    if (createdSub) {
+      nav('/home', { replace: true, state: { editSubId: createdSub.id } });
+      return;
+    }
+    nav('/ledger', { replace: true });
+  };
+
+  /** 单条结果的摘要文案。 */
+  const summaryOf = (it: AiResultItem): string => {
+    switch (it.action) {
+      case 'create_ledger': {
+        const d = it.ledgerDraft!;
+        const cat = catOf(d.categoryId);
+        return `${d.type === 'income' ? '收入' : '支出'} ¥${d.amount} · ${cat ? cat.name : d.categoryId} · ${d.judgement === 'gui' ? '归' : d.judgement === 'xu' ? '需' : '否'} · ${d.date}`;
+      }
+      case 'create_goods':
+        return `新增物品 ${it.goodsDraft!.name} ¥${it.goodsDraft!.price}`;
+      case 'create_subscription':
+        return `新增订阅 ${it.subDraft!.name} ¥${it.subDraft!.amount}/${it.subDraft!.period === 'month' ? '月' : it.subDraft!.period === 'year' ? '年' : '周'}`;
+      case 'create_mood':
+        return `情绪 ${it.moodDraft!.feeling} ${it.moodDraft!.text}`;
+      case 'create_time':
+        return `时间 ${it.timeDraft!.durationMin} 分钟`;
+      case 'retire_sell':
+        return `退役转卖 ${it.retireDraft!.match} ¥${it.retireDraft!.sellPrice}`;
+      default:
+        return it.explanation ?? '未知内容';
+    }
+  };
+
+  return (
+    <PageShell title="AI 记一笔" onBack={() => nav(-1)}>
+      {/* PC 桌面：内容居中收窄，避免整页拉伸 */}
+      <div className="mx-auto w-full max-w-2xl">
+      <div className="rounded-card border border-line bg-surface p-4">
+        <textarea
+          ref={textRef}
+          defaultValue=""
+          onInput={(e) => setHasText(e.currentTarget.value.trim().length > 0)}
+          rows={4}
+          placeholder={'像说话一样描述就行，例如：\n今天早上吃了油条包子花了30，然后坐火车花了60去桐柏'}
+          className="w-full resize-none rounded-btn border border-line bg-surface-2 p-3 text-sm leading-6 outline-none focus:border-accent"
+        />
+        <div className="mt-2 flex items-center justify-between">
+          <p className="text-[11px] text-ink-3">
+            {settings.aiEndpoint ? 'AI 模式' : '本地规则模式（设置里可配 AI）'}
+          </p>
+          <button
+            onClick={run}
+            disabled={!hasText || busy}
+            className="h-10 rounded-full bg-accent px-6 text-sm font-semibold text-white active:opacity-90 disabled:opacity-40"
+          >
+            {busy ? '解析中…' : '开始解析'}
+          </button>
+        </div>
+      </div>
+
+      {items ? (
+        <div className="mt-4">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <h2 className="text-sm font-semibold">
+              识别出 {items.length} 条
+              <span className="ml-1.5 text-[11px] font-normal text-ink-3">
+                （{source === 'ai' ? 'AI 解析' : '本地规则'}
+                {reason ? ` · ${reason}` : ''}）
+              </span>
+            </h2>
+            <button
+              onClick={() => setChecked(checked.every(Boolean) ? checked.map(() => false) : checked.map(() => true))}
+              className="text-xs text-accent"
+            >
+              {checked.every(Boolean) ? '全不选' : '全选'}
+            </button>
+          </div>
+
+          <ul className="space-y-2">
+            {items.map((it, i) => (
+              <li
+                key={i}
+                className={`flex items-start gap-3 rounded-card border p-3.5 ${
+                  checked[i] ? 'border-accent bg-surface' : 'border-line bg-surface opacity-50'
+                }`}
+                onClick={() => setChecked(checked.map((c, j) => (j === i ? !c : c)))}
+              >
+                <span
+                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] ${
+                    checked[i] ? 'border-accent bg-accent text-white' : 'border-line-2'
+                  }`}
+                >
+                  ✓
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{summaryOf(it)}</p>
+                  {it.explanation ? (
+                    <p className="mt-0.5 text-xs leading-5 text-ink-3">{it.explanation}</p>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <button
+            onClick={commit}
+            disabled={!checked.some(Boolean)}
+            className="mt-4 mb-2 h-12 w-full rounded-btn bg-accent text-base font-semibold text-white active:opacity-90 disabled:opacity-40"
+          >
+            记下选中的 {checked.filter(Boolean).length} 条
+          </button>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-card border border-dashed border-line bg-surface p-4">
+          <p className="text-xs font-medium text-ink-2">可以这样说</p>
+          <ul className="mt-2 space-y-1.5">
+            {[
+              '今天早上吃了油条包子花了30',
+              '然后坐火车花了60去桐柏',
+              '在闲鱼买了魅族20花了两千',
+              '开了个B站会员25',
+            ].map((s) => (
+              <li key={s}>
+                <button
+                  onClick={() => {
+                    const el = textRef.current;
+                    if (!el) return;
+                    // 非受控：直接写 DOM 追加示例句，光标位置由浏览器保持
+                    el.value = el.value ? `${el.value}${s}` : s;
+                    setHasText(true);
+                    el.focus();
+                  }}
+                  className="text-xs text-accent"
+                >
+                  「{s}」
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      </div>
+    </PageShell>
+  );
+}
