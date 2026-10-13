@@ -230,8 +230,8 @@ export default function IconPicker({
       });
   };
 
-  /* 防抖 300ms 自动检索；部分 Android WebView 中文组合输入期 input 事件不完整，
-     删除字符才触发——所以回车/放大镜/compositionend/search 事件都能绕过防抖直接搜。 */
+  /* 防抖 300ms 自动检索；query 的来源见下方「事件 + 轮询」双保险。
+     回车/放大镜/compositionend/search 仍绕过防抖立即搜。 */
   useEffect(() => {
     const kw = query.trim();
     if (kw.length < 2) {
@@ -243,17 +243,22 @@ export default function IconPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, base]);
 
-  /* 搜索触发兜底（v1.0.12 重写）：全部改挂【原生 DOM 事件】。
-     实测（用户视频实锤）：Android Gboard 中文拼音【连续组合输入】期间，
-     React 合成 onInput 被 ChangeEventPlugin 延迟到 compositionend——而连续
-     打拼音时 composition 一直不结束 → 输入全程不触发；删除已上屏字符是
-     非组合编辑 → 立即触发。这就是「只能删字符才搜索」的根因。
-     原生 input/compositionupdate 事件不受 React 合成系统影响，
-     组合输入期间照常派发，这里同步 state 即可。 */
+  /* 搜索触发（v1.0.13 最终方案）：事件 + 轮询双保险。
+     实测（用户设备两轮录屏实锤）：部分安卓 WebView + 搜狗输入法，IME 上屏
+     文本时【不向页面派发任何 input/composition 事件】——React 合成与原生
+     addEventListener 都收不到，只有删除字符才有事件；文本明明进了 DOM。
+     事件链在这类设备上理论走不通，所以再加 150ms 轮询直接读输入框 DOM 真值：
+     不管输入法用什么方式写文本，字进了框就必然被发现。 */
   useEffect(() => {
     const el = searchRef.current;
     if (!el) return;
-    const sync = (): void => setQuery(el.value);
+    /** 末次已知值：事件与轮询共用同一基准，去重避免重复 setState。 */
+    let last = el.value;
+    const sync = (): void => {
+      if (el.value === last) return;
+      last = el.value;
+      setQuery(el.value);
+    };
     const fire = (): void => runOnlineSearch(el.value);
     const onKeyUp = (e: KeyboardEvent): void => {
       if ((e.key === 'Enter' || e.keyCode === 13) && !e.isComposing && e.keyCode !== 229) {
@@ -261,23 +266,26 @@ export default function IconPicker({
         fire();
       }
     };
-    el.addEventListener('input', sync);
-    el.addEventListener('compositionupdate', sync);
     const onCompoEnd = (): void => {
       sync();
       fire();
     };
+    el.addEventListener('input', sync);
+    el.addEventListener('compositionupdate', sync);
     el.addEventListener('compositionend', onCompoEnd);
     el.addEventListener('keyup', onKeyUp);
     el.addEventListener('search', fire);
+    /** 轮询兜底：每 150ms 对比一次 DOM 真值（打字无事件的设备靠这条活）。 */
+    const iv = window.setInterval(sync, 150);
     return () => {
+      window.clearInterval(iv);
       el.removeEventListener('input', sync);
       el.removeEventListener('compositionupdate', sync);
       el.removeEventListener('compositionend', onCompoEnd);
       el.removeEventListener('keyup', onKeyUp);
       el.removeEventListener('search', fire);
     };
-    /* deps 带 tab：切到「本地上传」输入框会卸载，切回来要重新挂监听 */
+    /* deps 带 tab：切到「本地上传」输入框会卸载，切回来要重新挂监听+轮询 */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base, tab]);
 
