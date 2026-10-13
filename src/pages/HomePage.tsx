@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import PageField from '../components/ui/PageField';
+import { useBackGuard } from '../lib/backGuard';
 import SubListPage from './SubListPage';
 import CategoryManageSheet from '../components/CategoryManageSheet';
 import IconPicker from '../components/IconPicker';
@@ -184,6 +185,7 @@ function CropSheet({
   /** 「重选」：重新打开文件选择 */
   onPickAnother: () => void;
 }) {
+  useBackGuard(true, onCancel);
   /** 视口边长：屏宽 - 48px（上限 480 防 dev 大屏、下限 200 防极端小窗）。 */
   const vp = useMemo(() => Math.max(200, Math.min(window.innerWidth - 48, 480)), []);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
@@ -438,6 +440,7 @@ function CropSheet({
  *   incomes（unknown[]）全项目无消费处、无定义形状，编辑时不展示、原样保留。
  * ==========================================================================*/
 function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => void }) {
+  useBackGuard(true, onClose);
   const categories = useDataStore((s) => s.categories);
   const addGoods = useDataStore((s) => s.addGoods);
   const updateGoods = useDataStore((s) => s.updateGoods);

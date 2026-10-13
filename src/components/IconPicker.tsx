@@ -186,6 +186,8 @@ export default function IconPicker({
   const [onlineBusy, setOnlineBusy] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  /** 搜索框 DOM 引用：回车/点放大镜时读真值立即搜（不依赖 state 时序）。 */
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const base = useMemo(iconBaseOf, []);
 
   const q = query.trim().toLowerCase();
@@ -204,28 +206,38 @@ export default function IconPicker({
     [q, brandHits, query],
   );
 
-  /* 在线搜索：与本地共用同一个框，防抖 500ms 自动检索（真实域名 → 真实图标）。 */
-  useEffect(() => {
-    const kw = query.trim();
+  /* 在线搜索：立即执行版（回车 / 点放大镜 / 防抖共用同一实现）。 */
+  const runOnlineSearch = (kwRaw: string): void => {
+    const kw = kwRaw.trim();
+    setOnlineHits(null);
     if (kw.length < 2) {
-      setOnlineHits(null);
       setOnlineBusy(false);
       return;
     }
     setOnlineBusy(true);
-    const timer = setTimeout(() => {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 8000);
-      fetch(`${base}/api/icon/search?q=${encodeURIComponent(kw)}`, { signal: ctrl.signal })
-        .then((r) => r.json())
-        .then((j: { ok?: boolean; items?: OnlineHit[] }) => setOnlineHits(j.ok && j.items ? j.items : []))
-        .catch(() => setOnlineHits([]))
-        .finally(() => {
-          clearTimeout(t);
-          setOnlineBusy(false);
-        });
-    }, 500);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    fetch(`${base}/api/icon/search?q=${encodeURIComponent(kw)}`, { signal: ctrl.signal })
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; items?: OnlineHit[] }) => setOnlineHits(j.ok && j.items ? j.items : []))
+      .catch(() => setOnlineHits([]))
+      .finally(() => {
+        clearTimeout(timer);
+        setOnlineBusy(false);
+      });
+  };
+
+  /* 防抖 500ms 自动检索；部分 Android WebView 中文组合输入期 input 事件不完整，
+     删除字符才触发——所以回车与放大镜点击都能绕过防抖直接搜。 */
+  useEffect(() => {
+    const kw = query.trim();
+    if (kw.length < 2) {
+      setOnlineBusy(false);
+      return;
+    }
+    const timer = setTimeout(() => runOnlineSearch(kw), 500);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, base]);
 
   const pickFile = async (file: File | undefined): Promise<void> => {
@@ -357,12 +369,27 @@ export default function IconPicker({
         </div>
       ) : (
         <div className="max-h-80 space-y-3 overflow-y-auto">
-          {/* 唯一搜索框：内置 / 品牌 / 在线，一框搜齐 */}
+          {/* 唯一搜索框：内置 / 品牌 / 在线，一框搜齐；回车或点放大镜立即搜 */}
           <div className="flex h-9 items-center gap-2 rounded-btn border border-line bg-surface-2 px-2.5 focus-within:border-accent">
-            <Search size={14} className="shrink-0 text-ink-3" />
+            <button
+              type="button"
+              aria-label="搜索"
+              onClick={() => searchRef.current && runOnlineSearch(searchRef.current.value)}
+              className="shrink-0 text-ink-3 active:text-accent"
+            >
+              <Search size={14} />
+            </button>
             <input
+              ref={searchRef}
               defaultValue=""
               onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  runOnlineSearch((e.target as HTMLInputElement).value);
+                }
+              }}
+              enterKeyHint="search"
               placeholder="搜图标：内置 / 品牌 / 任意名称（微信、顺丰速运…）"
               className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-3"
             />

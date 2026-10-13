@@ -4,6 +4,7 @@ import PageField from './ui/PageField';
 import { useDataStore, useUiStore, toastSuccess, toastError } from '../store';
 import { CATEGORY_ICON_GROUPS, getCategoryIcon } from '../lib/categoryIcons';
 import type { Category, CategoryKind } from '../types/entities';
+import { useBackGuard } from '../lib/backGuard';
 
 /**
  * 可复用的分类管理弹层（portal 挂 body）。
@@ -134,6 +135,7 @@ export default function CategoryManageSheet({
   kind: CategoryKind;
   onClose: () => void;
 }) {
+  useBackGuard(true, onClose);
   const categories = useDataStore((s) => s.categories);
   const goods = useDataStore((s) => s.goods);
   const subscriptions = useDataStore((s) => s.subscriptions);

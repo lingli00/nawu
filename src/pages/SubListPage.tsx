@@ -8,6 +8,7 @@ import CategoryManageSheet from '../components/CategoryManageSheet';
 import { useDataStore, useSettingsStore, useUiStore, toastSuccess, toastError } from '../store';
 import { monthlyAvg, nextRenewCountdown } from '../domain/subscription';
 import { formatMoney } from '../lib/money';
+import { useBackGuard } from '../lib/backGuard';
 import { today } from '../lib/date';
 import type { Subscription } from '../types/entities';
 
@@ -60,6 +61,8 @@ export default function SubListPage({
   const [addingInner, setAddingInner] = useState(false);
   /** 新增 sheet 开关：外部传了 addOpen 就走受控，否则自管。 */
   const adding = addOpen ?? addingInner;
+  // 注意：受控模式（父级传 addOpen）下 setAddingInner 无效，必须走统一入口 setAdding
+  useBackGuard(adding, () => setAdding(false));
   const setAdding = (open: boolean): void => {
     setAddingInner(open);
     onAddOpenChange?.(open);
@@ -463,6 +466,7 @@ function SubCatChips({
  *     云快照整体恢复 collections 时该字段会丢失（settings 合并不受影响）。
  * ==========================================================================*/
 function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: () => void }) {
+  useBackGuard(true, onClose);
   const updateSubscription = useDataStore((s) => s.updateSubscription);
   const removeById = useDataStore((s) => s.removeById);
   const settings = useSettingsStore((s) => s.settings);

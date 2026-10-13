@@ -34,15 +34,15 @@ interface AdminSettings {
   [key: string]: string;
 }
 
-const SWITCHES: Array<{ key: string; label: string; desc: string }> = [
+const SWITCHES: Array<{ key: string; label: string; desc: string; wip?: boolean }> = [
   { key: 'siteClosed', label: '关闭站点', desc: '维护模式：除管理后台外全部不可用' },
   { key: 'allowRegister', label: '允许注册', desc: '关闭后新用户无法注册' },
   { key: 'allowLogin', label: '允许登录', desc: '关闭后用户无法登录（已登录不受影响）' },
   { key: 'requireVerified', label: '邮箱验证后才能登录', desc: '要求用户先完成邮箱验证' },
   { key: 'featAi', label: 'AI 记一笔', desc: '自然语言记账入口' },
-  { key: 'featOcr', label: '识图添加', desc: '拍照/截图识别记账' },
-  { key: 'featShare', label: '分享生图', desc: '物品卡片/置物墙分享' },
-  { key: 'featWall', label: '置物墙', desc: '物品墙展示页' },
+  { key: 'featOcr', label: '识图添加', desc: '拍照/截图识别记账', wip: true },
+  { key: 'featShare', label: '分享生图', desc: '物品卡片/置物墙分享', wip: true },
+  { key: 'featWall', label: '置物墙', desc: '物品墙展示页', wip: true },
   { key: 'featSync', label: '云同步', desc: '多端数据同步' },
 ];
 
@@ -461,7 +461,17 @@ function SwitchesTab({
         return (
           <div key={s.key} className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{s.label}</p>
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                {s.label}
+                {s.wip ? (
+                  <span
+                    className="rounded-full px-1.5 py-0.5 text-[10px] font-normal"
+                    style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}
+                  >
+                    功能开发中
+                  </span>
+                ) : null}
+              </p>
               <p className="text-[11px] text-ink-3">{s.desc}</p>
             </div>
             <button
@@ -598,6 +608,24 @@ function SecurityTab({
   onLogout: () => void;
 }): JSX.Element {
   const [msg, setMsg] = useState('');
+  const [nameBusy, setNameBusy] = useState(false);
+
+  /** 修改管理员登录名。 */
+  const changeName = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault();
+    const username = String(new FormData(e.currentTarget).get('username') ?? '').trim();
+    if (!username) return;
+    setNameBusy(true);
+    try {
+      await adminPost('/api/admin/username', { username });
+      toastSuccess('登录名已更新，下次登录请使用新用户名');
+      (e.target as HTMLFormElement).reset();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : '修改失败');
+    } finally {
+      setNameBusy(false);
+    }
+  };
 
   const changePwd = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
@@ -631,6 +659,25 @@ function SecurityTab({
 
   return (
     <div className="space-y-2">
+      <form onSubmit={(e) => void changeName(e)} className="rounded-card border border-line bg-surface p-4">
+        <p className="mb-3 flex items-center gap-2 text-sm font-medium">
+          <ShieldCheck size={16} strokeWidth={1.8} className="text-accent" aria-hidden />
+          修改管理员登录名
+        </p>
+        <div className="flex gap-2">
+          <input
+            name="username"
+            defaultValue={admins[0]?.username ?? ''}
+            placeholder="新的登录用户名（3-40 字符）"
+            autoComplete="username"
+            className="h-11 min-w-0 flex-1 rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+          />
+          <button type="submit" disabled={nameBusy} className="h-11 shrink-0 rounded-btn bg-accent px-4 text-sm font-medium text-white disabled:opacity-60">
+            {nameBusy ? '保存中…' : '更新登录名'}
+          </button>
+        </div>
+      </form>
+
       <form onSubmit={(e) => void changePwd(e)} className="rounded-card border border-line bg-surface p-4">
         <p className="mb-3 flex items-center gap-2 text-sm font-medium">
           <UserCog size={16} strokeWidth={1.8} className="text-accent" aria-hidden />
@@ -916,8 +963,59 @@ function DbTab({
     }
   };
 
+  /** 导出备份为 JSON 文件下载。 */
+  const exportBackup = async (scope: 'all' | 'site'): Promise<void> => {
+    setBusy(scope);
+    setMsg('');
+    try {
+      const res = await adminGet(`/api/admin/backup?scope=${scope}`);
+      const dump = {
+        app: 'nawu',
+        exportedAt: new Date().toISOString(),
+        scope,
+        tables: res.tables ?? {},
+      };
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `nawu-backup-${scope}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      const n = Object.values(dump.tables as Record<string, unknown[]>).reduce((acc, v) => acc + (Array.isArray(v) ? v.length : 0), 0);
+      setMsg(`备份已下载（${Object.keys(dump.tables as object).length} 张表 / ${n} 行）。恢复备份目前需联系维护者手工导入。`);
+      toastSuccess('备份已下载');
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : '导出失败');
+      toastError('备份导出失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
   return (
     <div className="space-y-2">
+      {/* 备份导出 */}
+      <div className="rounded-card border border-line bg-surface p-4">
+        <p className="text-sm font-medium">数据备份</p>
+        <p className="mt-0.5 text-[11px] text-ink-3">导出为 JSON 文件保存在本地；建议定期下载留存。</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            onClick={() => void exportBackup('site')}
+            disabled={busy === 'site'}
+            className="h-10 rounded-btn border border-accent px-4 text-sm font-medium text-accent disabled:opacity-60"
+          >
+            {busy === 'site' ? '导出中…' : '站点数据备份（用户/云备份/名册）'}
+          </button>
+          <button
+            onClick={() => void exportBackup('all')}
+            disabled={busy === 'all'}
+            className="h-10 rounded-btn border border-accent px-4 text-sm font-medium text-accent disabled:opacity-60"
+          >
+            {busy === 'all' ? '导出中…' : '全站备份（全部数据表）'}
+          </button>
+        </div>
+      </div>
+
       {/* 连接状态 */}
       <div className="rounded-card border border-line bg-surface p-4">
         <div className="flex items-center justify-between">

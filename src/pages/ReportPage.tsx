@@ -163,7 +163,7 @@ export default function ReportPage() {
         </div>
       </header>
       {/* PC 桌面：环图 + 趋势并排两列，归/需/否占整行（对齐 PC 阅读节奏） */}
-      <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-3">
+      <div className="lg:grid lg:grid-cols-2 lg:gap-3">
         {/* 粒度切换 chips（与首页筛选 chips 同样式） */}
         <div className="mb-3 flex gap-2 lg:col-span-2">
           {GRAIN_CHIPS.map(([g, label]) => (
@@ -211,7 +211,7 @@ export default function ReportPage() {
         </div>
 
         {/* 趋势 */}
-        <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4">
+        <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4 lg:mt-0">
           <div className="flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">{trendTitle}</h2>
             <p className="text-[11px] text-ink-3">
@@ -253,7 +253,7 @@ export default function ReportPage() {
         </div>
 
         {/* 归 / 需 / 否 */}
-        <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4 lg:col-span-2">
+        <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4 lg:col-span-2 lg:mt-0">
           <h2 className="text-sm font-semibold">归 / 需 / 否 结构</h2>
           <p className="mt-0.5 text-[11px] text-ink-3">仅统计生活流记账（物品与订阅不计入）</p>
           <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-surface-2">
