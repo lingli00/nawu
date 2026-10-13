@@ -11,6 +11,7 @@ import LedgerPage from './pages/LedgerPage';
 import AiPage from './pages/AiPage';
 import ManualRecordSheet from './pages/ManualRecordSheet';
 import MePage from './pages/MePage';
+import WallPage from './pages/WallPage';
 import BackupPage from './pages/BackupPage';
 import SettingsPage from './pages/SettingsPage';
 import CategoryPage from './pages/CategoryPage';
@@ -71,6 +72,7 @@ export const AppRoutes: AppRoute[] = [
 
   // —— 我的 / 数据（P20–P24）——
   { path: '/me', element: <MePage /> },
+  { path: '/wall', element: <WallPage /> },
   { path: '/backup', element: <BackupPage /> },
   { path: '/settings', element: <SettingsPage /> },
   { path: '/profile', element: <PlaceholderPage code="P23" title="账号资料" future="src/pages/ProfilePage.tsx" /> },

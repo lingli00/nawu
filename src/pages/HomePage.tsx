@@ -10,6 +10,7 @@ import {
   Plus,
   X,
   Star,
+  Share2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import PageField from '../components/ui/PageField';
@@ -23,6 +24,7 @@ import { useDataStore, useSettingsStore, useUiStore, toastSuccess, toastError } 
 import { dailyCost, holdDays, perUseCost, sortGoods, totalInvest, achieveRate } from '../domain/goods';
 import { formatMoney, symbolOf } from '../lib/money';
 import { fmtDate, today } from '../lib/date';
+import { drawGoodsCard, shareOrDownload } from '../lib/shareCard';
 import { getCategoryIcon } from '../lib/categoryIcons';
 import type { Goods, GoodsImage } from '../types/entities';
 
@@ -801,6 +803,8 @@ export default function HomePage() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Goods | null>(null);
   const [subAdding, setSubAdding] = useState(false);
+  /** 分享生图进行中（防连点）。 */
+  const [sharing, setSharing] = useState(false);
   /** AI 记一笔添加订阅后跳转过来：传给 SubListPage 自动弹出 SubEditSheet。 */
   const [subEditHint, setSubEditHint] = useState<string | null>(null);
 
@@ -859,6 +863,20 @@ export default function HomePage() {
 
   /* detail 派生自 goods 列表：编辑/+1/退役后详情内容自动刷新 */
   const detail = detailId ? goods.find((g) => g.id === detailId) ?? null : null;
+
+  /** 分享生图：canvas 绘制物品海报 → 系统分享（降级为保存图片）。 */
+  const shareDetail = async (): Promise<void> => {
+    if (!detail || sharing) return;
+    setSharing(true);
+    try {
+      const dataUrl = await drawGoodsCard(detail, catNameOf(detail.categoryId) ?? '未分类');
+      await shareOrDownload(dataUrl, `纳物-${detail.name || '物品'}.png`);
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '生成分享卡片失败');
+    } finally {
+      setSharing(false);
+    }
+  };
   /** 详情卡净赚（出售价 − 总投入，负数不展示）。 */
   const detailSoldProfit = detail
     ? Math.max(
@@ -1322,8 +1340,16 @@ export default function HomePage() {
 
                     {detail.note ? <p className="mt-3 text-xs leading-5 text-ink-2">{detail.note}</p> : null}
 
-                    {/* 操作按钮行（＋1 使用 / 编辑 / 退役|恢复 / 删除） */}
+                    {/* 操作按钮行（分享生图 / ＋1 使用 / 编辑 / 退役|恢复 / 删除） */}
                     <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={() => void shareDetail()}
+                        disabled={sharing}
+                        className="flex h-10 flex-1 items-center justify-center gap-1 rounded-btn border border-line text-xs font-medium text-ink-2 active:scale-95 transition-transform disabled:opacity-50"
+                      >
+                        <Share2 size={13} strokeWidth={1.8} aria-hidden />
+                        {sharing ? '生成中…' : '分享'}
+                      </button>
                       {detail.status !== 'retired' ? (
                         <button
                           onClick={() => void useGoodsOnce(detail.id).then(() => toastSuccess('已 +1'))}

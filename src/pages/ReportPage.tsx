@@ -126,7 +126,7 @@ export default function ReportPage() {
     grain === 'day' ? '近 7 天趋势' : grain === 'month' ? '近 6 个月趋势' : `${year} 年逐月趋势`;
 
   return (
-    <div className="min-h-full bg-surface-2 text-ink">
+    <div className="text-ink">
       {/* 自绘 Tab 头（底栏页不带返回箭头；safe-area 由 MainShell 外层统一处理） */}
       {/* 宽度/边距全部交给 MainShell 的 main（max-w-xl px-4），页面不再自带宽度容器 */}
       <header className="page-enter flex w-full items-end justify-between pb-1 pt-2">

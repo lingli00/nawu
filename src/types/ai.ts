@@ -89,9 +89,12 @@ export interface AiConfig {
 }
 
 /** `chat/completions` 消息。 */
+export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  /** 文本消息为 string；vision（识图）消息为 content 数组（文本 + image_url）。 */
+  content: string | ChatContentPart[];
 }
 
 /** parseService 的输出（含降级来源说明）。 */

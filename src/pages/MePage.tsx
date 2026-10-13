@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, CircleUser, Cloud, Compass, Monitor, Settings, Server, Shield, Smartphone, Tags, ChevronRight } from 'lucide-react';
+import { Brain, CircleUser, Cloud, Compass, LayoutGrid, Monitor, Settings, Server, Shield, Smartphone, Tags, ChevronRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore, useAuthStore, useServerStore, useUiStore, currentServer, toastSuccess } from '../store';
 import { getProfile } from '../api/user';
@@ -17,6 +17,7 @@ const STATE_LABEL: Record<string, string> = {
 
 // 物品/报表入口与底栏 Tab 重复，已移除；这里只保留底栏没有的子功能
 const ENTRIES: Array<{ to: string; Icon: LucideIcon; label: string; desc: string }> = [
+  { to: '/wall', Icon: LayoutGrid, label: '置物墙', desc: '在役物品一览 · 生成分享卡片' },
   { to: '/backup', Icon: Cloud, label: '备份与恢复', desc: '云备份 / 覆盖恢复' },
   { to: '/categories', Icon: Tags, label: '分类管理', desc: '自定义分类' },
   { to: '/rules', Icon: Brain, label: '识别规则', desc: '教 AI 识记账：关键词 → 分类' },

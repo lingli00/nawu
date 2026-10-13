@@ -34,15 +34,15 @@ interface AdminSettings {
   [key: string]: string;
 }
 
-const SWITCHES: Array<{ key: string; label: string; desc: string; wip?: boolean }> = [
+const SWITCHES: Array<{ key: string; label: string; desc: string }> = [
   { key: 'siteClosed', label: '关闭站点', desc: '维护模式：除管理后台外全部不可用' },
   { key: 'allowRegister', label: '允许注册', desc: '关闭后新用户无法注册' },
   { key: 'allowLogin', label: '允许登录', desc: '关闭后用户无法登录（已登录不受影响）' },
   { key: 'requireVerified', label: '邮箱验证后才能登录', desc: '要求用户先完成邮箱验证' },
   { key: 'featAi', label: 'AI 记一笔', desc: '自然语言记账入口' },
-  { key: 'featOcr', label: '识图添加', desc: '拍照/截图识别记账', wip: true },
-  { key: 'featShare', label: '分享生图', desc: '物品卡片/置物墙分享', wip: true },
-  { key: 'featWall', label: '置物墙', desc: '物品墙展示页', wip: true },
+  { key: 'featOcr', label: '识图添加', desc: 'AI 记一笔内拍照/截图识别记账' },
+  { key: 'featShare', label: '分享生图', desc: '物品详情/置物墙生成分享卡片' },
+  { key: 'featWall', label: '置物墙', desc: '在役物品墙展示页（我的 → 置物墙）' },
   { key: 'featSync', label: '云同步', desc: '多端数据同步' },
 ];
 
@@ -463,14 +463,6 @@ function SwitchesTab({
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5 text-sm font-medium">
                 {s.label}
-                {s.wip ? (
-                  <span
-                    className="rounded-full px-1.5 py-0.5 text-[10px] font-normal"
-                    style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}
-                  >
-                    功能开发中
-                  </span>
-                ) : null}
               </p>
               <p className="text-[11px] text-ink-3">{s.desc}</p>
             </div>

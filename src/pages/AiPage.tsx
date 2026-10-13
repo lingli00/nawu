@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
+import { Camera } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
 import { useDataStore, useSettingsStore, toastSuccess, toastError } from '../store';
-import { parse } from '../ai/parseService';
+import { parse, parseImage } from '../ai/parseService';
 import { today } from '../lib/date';
 import type { AiResultItem } from '../types/ai';
 import type { Category, Goods, Settings, Subscription } from '../types/entities';
@@ -37,6 +38,60 @@ export default function AiPage() {
   const [source, setSource] = useState<'ai' | 'local'>('local');
   const [reason, setReason] = useState('');
   const [checked, setChecked] = useState<boolean[]>([]);
+  /* —— 识图添加（v1.0.10）：拍照/相册 → vision 解析 → 复用下方确认落库流程 —— */
+  const ocrInputRef = useRef<HTMLInputElement | null>(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
+
+  /** 压到长边 1024 的 JPEG dataURL（vision 上传体积可控）。 */
+  const compressForOcr = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('图片读取失败'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('图片解码失败'));
+        img.onload = () => {
+          const max = 1024;
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const cv = document.createElement('canvas');
+          cv.width = Math.round(img.width * scale);
+          cv.height = Math.round(img.height * scale);
+          const ctx2d = cv.getContext('2d');
+          if (!ctx2d) return reject(new Error('画布不可用'));
+          ctx2d.drawImage(img, 0, 0, cv.width, cv.height);
+          resolve(cv.toDataURL('image/jpeg', 0.85));
+        };
+        img.src = String(reader.result);
+      };
+      reader.readAsDataURL(file);
+    });
+
+  const runOcr = async (file: File | undefined): Promise<void> => {
+    if (!file || ocrBusy || busy) return;
+    setOcrBusy(true);
+    try {
+      const dataUrl = await compressForOcr(file);
+      const out = await parseImage(dataUrl, {
+        categories,
+        settings: settings as Settings,
+        today: today(),
+      });
+      if (out.items.length === 0) {
+        toastError(out.reason ?? '图中没有识别出可记账的内容');
+        return;
+      }
+      setItems(out.items);
+      setSource(out.source);
+      setReason(out.reason ?? '由照片识别');
+      setChecked(out.items.map(() => true));
+      toastSuccess(`从图片识别出 ${out.items.length} 条，请确认`);
+    } catch (e) {
+      toastError((e as Error).message || '识图失败，请稍后再试');
+    } finally {
+      setOcrBusy(false);
+      if (ocrInputRef.current) ocrInputRef.current.value = '';
+    }
+  };
 
   /** 读取输入框当前 DOM 真值。 */
   const readText = (): string => textRef.current?.value ?? '';
@@ -146,6 +201,42 @@ export default function AiPage() {
           placeholder={'像说话一样描述就行，例如：\n今天早上吃了油条包子花了30，然后坐火车花了60去桐柏'}
           className="w-full resize-none rounded-btn border border-line bg-surface-2 p-3 text-sm leading-6 outline-none focus:border-accent"
         />
+        <div className="mt-2 flex gap-2">
+
+          <button
+
+            type="button"
+
+            onClick={() => ocrInputRef.current?.click()}
+
+            disabled={ocrBusy || busy}
+
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-btn border border-line bg-surface-2 text-xs text-ink-2 active:bg-surface disabled:opacity-50"
+
+          >
+
+            <Camera size={14} strokeWidth={1.8} aria-hidden />
+
+            {ocrBusy ? '识别中…' : '拍照 / 相册识图添加'}
+
+          </button>
+
+          <input
+
+            ref={ocrInputRef}
+
+            type="file"
+
+            accept="image/*"
+
+            className="hidden"
+
+            onChange={(e) => void runOcr(e.target.files?.[0])}
+
+          />
+
+        </div>
+
         <div className="mt-2 flex items-center justify-between">
           <p className="text-[11px] text-ink-3">
             {settings.aiEndpoint ? 'AI 模式' : '本地规则模式（设置里可配 AI）'}

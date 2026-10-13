@@ -2,6 +2,9 @@ import { today as todayStr } from '../lib/date';
 import { emojiForName, toJudgement } from '../lib/emoji';
 import logger from '../lib/log';
 import { chatJsonArray } from '../net/aiClient';
+import { chatComplete } from '../net/aiClient';
+import { SYSTEM_PROMPT } from './prompt';
+import type { ChatContentPart, ChatMessage } from '../types/ai';
 import type { AiConfig } from '../types/ai';
 import type { AiResultItem, ParseOutcome } from '../types/ai';
 import type { Category, Judgement, Settings } from '../types/entities';
@@ -226,4 +229,53 @@ export async function parse(text: string, ctx: ParseContext): Promise<ParseOutco
     logger.warn('parse', 'AI 解析失败，回落本地规则', e);
     return { ...parseLocalOnly(text, ctx), reason: 'AI 调用失败，已使用本地规则解析' };
   }
+}
+
+/**
+ * 识图添加（v1.0.10）：把账单/票据/物品照片交给 vision 模型解析。
+ *
+ * - 复用 SYSTEM_PROMPT 的 JSON schema 与 fromAiRaw/normalizeItems 归一化链路；
+ * - **识图必须有 AI**：本地规则无法识图，未配置时直接抛错由 UI 提示；
+ * - 返回与 parse 一致的 ParseOutcome，AiPage 复用同一套确认落库 UI。
+ */
+export async function parseImage(dataUrl: string, ctx: ParseContext): Promise<ParseOutcome> {
+  const today = ctx.today ?? todayStr();
+  const currency = ctx.settings?.currency || 'CNY';
+  const cfg = aiConfigOf(ctx.settings);
+  if (!isAiConfigured(cfg)) {
+    throw new Error('识图添加需要先在「设置 → AI 服务」里配置 AI 接口');
+  }
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text:
+            `这是一张照片/截图。请识别图中所有可记账的信息（账单、小票、订单、物品、会员、订阅等），` +
+            `按系统提示词的 JSON 数组格式输出；识别不到任何可记账内容时输出 []。今天的日期：${today}。`,
+        },
+        { type: 'image_url', image_url: { url: dataUrl } },
+      ] as ChatContentPart[],
+    },
+  ];
+
+  const rawList = await chatComplete(cfg, messages, 30000).then((c) => {
+    // 复用 JSON 数组抽取（容错围栏/前后杂质）
+    const start = c.indexOf('[');
+    const end = c.lastIndexOf(']');
+    if (start === -1 || end <= start) return [];
+    return JSON.parse(c.slice(start, end + 1)) as Record<string, unknown>[];
+  });
+
+  const items = rawList
+    .map((raw) => (raw && typeof raw === 'object' ? fromAiRaw(raw, ctx.categories, { today, currency }) : null))
+    .filter((i): i is AiResultItem => i !== null);
+  const normalized = normalizeItems(items, ctx.categories, { today, currency });
+  if (normalized.length === 0) {
+    return { items: [], source: 'ai', reason: '图中没有识别出可记账的内容' };
+  }
+  return { items: normalized, source: 'ai' };
 }

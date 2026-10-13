@@ -22,7 +22,7 @@ const TABS: Array<{ to: string; label: string; Icon: LucideIcon }> = [
 ];
 
 /** 这些路由属于主壳内页面，其余子页（详情/编辑/设置…）全屏显示。 */
-const SHELL_PATHS = new Set(['/home', '/ledger', '/report', '/me']);
+const SHELL_PATHS = new Set(['/home', '/ledger', '/report', '/me', '/wall']);
 
 /* ---------------- 壳模式偏好（手动切换手机版 / 电脑版） ---------------- */
 
