@@ -27,6 +27,7 @@ android {
             storePassword 'nawu2026'
             storeType 'PKCS12'
             keyAlias 'nawu'
+            keyPassword 'nawu2026' // PKCS12 key/store 同密码，AGP 8 仍要求显式声明
         }
     }
     buildTypes {
