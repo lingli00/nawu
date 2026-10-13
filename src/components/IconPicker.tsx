@@ -243,35 +243,43 @@ export default function IconPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, base]);
 
-  /* 搜索触发多重兜底（v1.0.11）：Android IME 的 Enter 常以 keyCode 229（组合中）
-     吞掉 keydown——这里补 keyup、compositionend（拼音上屏）与 search（键盘搜索键）
-     三个原生事件路径，任何一条命中都立即搜。 */
+  /* 搜索触发兜底（v1.0.12 重写）：全部改挂【原生 DOM 事件】。
+     实测（用户视频实锤）：Android Gboard 中文拼音【连续组合输入】期间，
+     React 合成 onInput 被 ChangeEventPlugin 延迟到 compositionend——而连续
+     打拼音时 composition 一直不结束 → 输入全程不触发；删除已上屏字符是
+     非组合编辑 → 立即触发。这就是「只能删字符才搜索」的根因。
+     原生 input/compositionupdate 事件不受 React 合成系统影响，
+     组合输入期间照常派发，这里同步 state 即可。 */
   useEffect(() => {
     const el = searchRef.current;
     if (!el) return;
-    const fire = (): void => runOnlineSearch(el.value);
     const sync = (): void => setQuery(el.value);
+    const fire = (): void => runOnlineSearch(el.value);
     const onKeyUp = (e: KeyboardEvent): void => {
       if ((e.key === 'Enter' || e.keyCode === 13) && !e.isComposing && e.keyCode !== 229) {
         e.preventDefault();
         fire();
       }
     };
+    el.addEventListener('input', sync);
+    el.addEventListener('compositionupdate', sync);
     const onCompoEnd = (): void => {
       sync();
       fire();
     };
-    const onSearchEv = (): void => fire();
-    el.addEventListener('keyup', onKeyUp);
     el.addEventListener('compositionend', onCompoEnd);
-    el.addEventListener('search', onSearchEv);
+    el.addEventListener('keyup', onKeyUp);
+    el.addEventListener('search', fire);
     return () => {
-      el.removeEventListener('keyup', onKeyUp);
+      el.removeEventListener('input', sync);
+      el.removeEventListener('compositionupdate', sync);
       el.removeEventListener('compositionend', onCompoEnd);
-      el.removeEventListener('search', onSearchEv);
+      el.removeEventListener('keyup', onKeyUp);
+      el.removeEventListener('search', fire);
     };
+    /* deps 带 tab：切到「本地上传」输入框会卸载，切回来要重新挂监听 */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [base]);
+  }, [base, tab]);
 
   const pickFile = async (file: File | undefined): Promise<void> => {
     if (!file) return;
