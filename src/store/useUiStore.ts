@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { create } from 'zustand';
 import { newId } from '../lib/id';
+import { haptic } from '../lib/haptics';
 
 /**
  * 全局 UI 状态：Toast / 确认弹窗 / 底部弹层。
@@ -136,11 +137,20 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
   closeSheet: () => set({ sheet: null }),
 }));
 
-/** 便捷：成功提示。 */
-export const toastSuccess = (message: string): string => useUiStore.getState().toast(message, 'success');
+/**
+ * 便捷：成功提示（v1.0.17 附带「成功」触感，归否同款：保存即轻震一下）。
+ * haptic 内部已节流且静默失败，不需要 await。
+ */
+export const toastSuccess = (message: string): string => {
+  void haptic('success');
+  return useUiStore.getState().toast(message, 'success');
+};
 
-/** 便捷：错误提示。 */
-export const toastError = (message: string): string => useUiStore.getState().toast(message, 'error');
+/** 便捷：错误提示（附「失败」三段震）。 */
+export const toastError = (message: string): string => {
+  void haptic('error');
+  return useUiStore.getState().toast(message, 'error');
+};
 
 /** 便捷：普通提示。 */
 export const toastInfo = (message: string): string => useUiStore.getState().toast(message, 'info');

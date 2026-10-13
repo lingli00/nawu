@@ -17,8 +17,7 @@ import PageField from '../components/ui/PageField';
 import { useBackGuard } from '../lib/backGuard';
 import SubListPage from './SubListPage';
 import CategoryManageSheet from '../components/CategoryManageSheet';
-import IconPicker, { IconPreview } from '../components/IconPicker';
-import { iconKindOf } from '../lib/brandIcon';
+import IconPicker, { IconPreview, ImageSourceSheet, type IconSource, type Tab as PickerTab } from '../components/IconPicker';import { iconKindOf } from '../lib/brandIcon';
 import { GLASS_STYLE } from '../components/layout/MainShell';
 import { useDataStore, useSettingsStore, useUiStore, toastSuccess, toastError } from '../store';
 import { dailyCost, holdDays, perUseCost, sortGoods, totalInvest, achieveRate } from '../domain/goods';
@@ -463,6 +462,21 @@ function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => 
   const cropFileRef = useRef<HTMLInputElement>(null);
   /** 就地管理物品分类（对标归否：不打断添加流程）。 */
   const [managingCats, setManagingCats] = useState(false);
+  /** v1.0.17 五来源选择（对齐归否）：图片来源 sheet + 对应选择视图。 */
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [pickerTab, setPickerTab] = useState<PickerTab | null>(null);
+  /** 相册 / 拍照直选的隐藏 input。 */
+  const albumRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+
+  const openSource = (src: IconSource): void => {
+    setSourceOpen(false);
+    if (src === 'system') setPickerTab('lib');
+    else if (src === 'brand') setPickerTab('web');
+    else if (src === 'net') setPickerTab('img');
+    else if (src === 'album') albumRef.current?.click();
+    else if (src === 'camera') cameraRef.current?.click();
+  };
 
   /* —— 统一图标选择器（与订阅完全同一组件）：GoodsImage ↔ icon 字符串互转 —— */
   const goodsIconValue = image
@@ -596,9 +610,21 @@ function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => 
                   />
                 </PageField>
               </div>
-              {/* 图标 / 图片（与订阅共用同一 IconPicker：图标库 / 网络品牌搜索 / 本地上传裁剪） */}
+              {/* 图标 / 图片（v1.0.17 对齐归否：点击出五来源 sheet，再进对应选择视图） */}
               <PageField label="图标 / 图片">
-                <IconPicker value={goodsIconValue} onChange={onIconChange} onFilePicked={onPickImage} />
+                <button
+                  type="button"
+                  onClick={() => setSourceOpen(true)}
+                  className="flex w-full items-center gap-3 rounded-btn border border-line bg-surface-2 px-3 py-2.5 text-left active:scale-[0.99]"
+                >
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-accent-soft text-accent">
+                    <IconPreview icon={goodsIconValue} size={26} fallbackBg="transparent" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm text-ink">选择图片</span>
+                    <span className="block text-[11px] text-ink-3">系统图标 / 品牌 / 网络商品图 / 相册 / 拍照</span>
+                  </span>
+                </button>
               </PageField>
               <div>
                 <div className="flex items-center justify-between">
@@ -758,6 +784,67 @@ function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => 
         </div>,
         document.body,
       )}
+      {/* 五来源选择 sheet（v1.0.17） */}
+      <ImageSourceSheet open={sourceOpen} onClose={() => setSourceOpen(false)} onPick={openSource} />
+
+      {/* 图标选择视图（系统图标 / 品牌图片 / 网络图片） */}
+      {pickerTab ? (
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={() => setPickerTab(null)}>
+            <div
+              className="sheet-enter mx-auto max-h-[86vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold">
+                  {pickerTab === 'lib' ? '系统图标' : pickerTab === 'web' ? '品牌图片' : '网络图片'}
+                </p>
+                <button
+                  onClick={() => setPickerTab(null)}
+                  aria-label="完成"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-ink-2 active:scale-95"
+                >
+                  ✕
+                </button>
+              </div>
+              <IconPicker
+                value={goodsIconValue}
+                onChange={onIconChange}
+                onFilePicked={onPickImage}
+                systemMode
+                initialTab={pickerTab}
+              />
+            </div>
+          </div>,
+          document.body,
+        )
+      ) : null}
+
+      {/* 相册 / 拍照直选 input（走大图裁剪流程） */}
+      <input
+        ref={albumRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          onPickImage(f);
+        }}
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          onPickImage(f);
+        }}
+      />
+
       {/* 裁剪弹层（全屏，盖在表单 sheet 之上） */}
       {cropSrc ? (
         <CropSheet

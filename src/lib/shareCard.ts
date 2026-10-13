@@ -2,14 +2,18 @@ import type { Goods } from '../types/entities';
 import { Capacitor } from '@capacitor/core';
 import { currentServer } from '../store';
 import { iconCacheLookup } from './iconCache';
+import { isValidDate } from './date';
+import { dailyCost, goodsStatusLabel, holdDays, totalInvest } from '../domain/goods';
 import logger from './log';
 
 /**
- * 分享生图（v1.0.10）：把物品画成 900×1200 的竖版分享海报（纯 canvas，无依赖）。
+ * 分享生图（v1.0.10；v1.0.17 重排版）。纯 canvas，无第三方依赖。
  *
  * - icon 三形态兼容：img: dataURL 直接画；url: 相对路径补当前站点 origin；
- *   裸 lucide id / 无法加载 → 圆底 + 名称首字兜底；
- * - 返回 PNG dataURL，由调用方决定 navigator.share 或下载。
+ *   裸 lucide id / 无法加载 → 柔底 + 名称首字兜底；
+ * - v1.0.17：照片类（本地 / 商品图）一律 **cover 铺满图区**，不再小图居中留白；
+ *   logo 类才 contain；单卡补齐备注、标签与「总投入 / 日均 / 陪伴 / 购入」四项数据；
+ * - 返回 PNG dataURL，由调用方决定存相册 / 分享 / 下载。
  */
 
 /** 米白底 / 深绿主色（与全局 --paper/--accent 同源）。 */
@@ -89,154 +93,245 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
+/** 千分位金额；整数不显示小数，有零头保留两位。 */
+function fmtMoney(n: number, keepCents = false): string {
+  const v = Number.isFinite(n) ? n : 0;
+  if (keepCents) return v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return v.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+}
+
+/**
+ * 图该怎么画（v1.0.17）。
+ *
+ * 旧版一律 contain + 56 内边距 → 商品照片被缩得很小、四周大片白边（用户反馈「显示图小」）。
+ * 现在按来源判定：
+ * - **cover**：实拍图 / 商品图（本地上传 `img:`、Bing 商品图代理 `/api/img/`）→ 铺满图区、居中裁切；
+ * - **contain**：品牌 logo / 矢量图标（Iconify 代理 `/api/icon/`、裸 lucide）→ 完整呈现，只留很小边距。
+ */
+export function iconFitMode(icon: string | undefined): 'cover' | 'contain' {
+  const v = (icon ?? '').trim();
+  if (v.startsWith('img:')) return 'cover';
+  if (v.startsWith('url:')) {
+    const u = v.slice(4).toLowerCase();
+    if (u.includes('/api/img/') || u.includes('bing.net') || u.includes('tse') ) return 'cover';
+  }
+  return 'contain';
+}
+
+/** 缩略图被 cover 会糊：短边不足阈值时退回 contain。 */
+const COVER_MIN_PX = 180;
+
+/** cover / contain 画一张图进矩形（带圆角裁切）。返回是否画了真图。 */
+function drawFit(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+  mode: 'cover' | 'contain',
+): void {
+  const iw = img.width || 1;
+  const ih = img.height || 1;
+  const useCover = mode === 'cover' && Math.min(iw, ih) >= COVER_MIN_PX;
+  // contain 的留白：logo 也不该缩得太小，边距压到 8%
+  const pad = useCover ? 0 : Math.min(w, h) * 0.08;
+  const boxW = w - pad * 2;
+  const boxH = h - pad * 2;
+  const scale = useCover ? Math.max(boxW / iw, boxH / ih) : Math.min(boxW / iw, boxH / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  ctx.save();
+  if (r > 0) {
+    roundRect(ctx, x, y, w, h, r);
+    ctx.clip();
+  }
+  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  ctx.restore();
+}
+
+/** 无真图时的兜底：柔和底色 + 名称首字。 */
+function drawInitialFallback(
+  ctx: CanvasRenderingContext2D,
+  name: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r = 0,
+): void {
+  if (r > 0) {
+    ctx.fillStyle = C.accentSoft;
+    roundRect(ctx, x, y, w, h, r);
+    ctx.fill();
+  }
+  const rad = Math.min(w, h) * 0.24;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(x + w / 2, y + h / 2, rad, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = C.accent;
+  ctx.font = `700 ${Math.round(rad)}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText((name || '物').charAt(0), x + w / 2, y + h / 2 + rad * 0.04);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+/** 按当前 font 把长文本截断到 maxW（二分 + 省略号）。 */
+function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (maxW <= 0) return '';
+  if (ctx.measureText(text).width <= maxW) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(`${text.slice(0, mid)}…`).width <= maxW) lo = mid;
+    else hi = mid - 1;
+  }
+  return `${text.slice(0, lo)}…`;
+}
+
+/**
+ * 单物品海报（v1.0.17 重排版）。
+ *
+ * 版式：品牌头 → **整幅图区**（照片铺满、logo 居中）→ 名称 / 备注 / 标签胶囊
+ * → 2×2 数据卡（总投入·日均·陪伴·购入）→ 页脚。
+ * 数据口径与详情页一致，全部走 `domain/goods.ts` 的纯函数。
+ */
 export async function drawGoodsCard(g: Goods, categoryName: string | null): Promise<string> {
   const W = 900;
   const H = 1200;
+  const PAD = 64;
+  const CW = W - PAD * 2;
   const cv = document.createElement('canvas');
   cv.width = W;
   cv.height = H;
   const ctx = cv.getContext('2d');
   if (!ctx) throw new Error('画布不可用');
 
+  const note = (g.note ?? '').trim();
+  // 有备注时图区收一点，保证整版构图重心不变
+  const cardY = 116;
+  const cardH = note ? 540 : 580;
+  const cardX = PAD;
+  const cardW = CW;
+
   // 底 + 顶部品牌条
   ctx.fillStyle = C.paper;
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = C.accent;
-  ctx.fillRect(0, 0, W, 12);
+  ctx.fillRect(0, 0, W, 10);
   ctx.fillStyle = C.ink;
-  ctx.font = '700 44px system-ui, sans-serif';
-  ctx.fillText('纳物', 64, 108);
+  ctx.font = '700 40px system-ui, sans-serif';
+  ctx.fillText('纳物', PAD, 92);
   ctx.fillStyle = C.ink3;
-  ctx.font = '400 26px system-ui, sans-serif';
-  ctx.fillText('NaWu · 值得的花销，值得记录', 64, 150);
+  ctx.font = '400 24px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('值得的花销，值得记录', W - PAD, 92);
+  ctx.textAlign = 'left';
 
-  // 图区卡（460 高圆角卡：图片或首字兜底）
-  const cardX = 64;
-  const cardY = 210;
-  const cardW = W - 128;
-  const cardH = 460;
+  // ── 图区：整幅卡片，照片 cover 铺满 / logo contain 居中 ──
   ctx.fillStyle = '#ffffff';
   roundRect(ctx, cardX, cardY, cardW, cardH, 32);
   ctx.fill();
+  const iconVal = goodsIconValue(g);
+  const src = await resolveIconSrc(iconVal);
+  let drawn = false;
+  if (src) {
+    const img = await loadImage(src);
+    if (img) {
+      drawFit(ctx, img, cardX, cardY, cardW, cardH, 32, iconFitMode(iconVal));
+      drawn = true;
+    }
+  }
+  if (!drawn) drawInitialFallback(ctx, g.name, cardX, cardY, cardW, cardH, 32);
   ctx.strokeStyle = C.line;
   ctx.lineWidth = 2;
   roundRect(ctx, cardX, cardY, cardW, cardH, 32);
   ctx.stroke();
 
-  const src = await resolveIconSrc(goodsIconValue(g));
-  let drawn = false;
-  if (src) {
-    const img = await loadImage(src);
-    if (img) {
-      // contain 绘制进内边距 48 的区域
-      const pad = 56;
-      const boxW = cardW - pad * 2;
-      const boxH = cardH - pad * 2;
-      const scale = Math.min(boxW / img.width, boxH / img.height);
-      const dw = img.width * scale;
-      const dh = img.height * scale;
-      ctx.drawImage(img, cardX + (cardW - dw) / 2, cardY + (cardH - dh) / 2, dw, dh);
-      drawn = true;
-    }
-  }
-  if (!drawn) {
-    ctx.fillStyle = C.accentSoft;
-    ctx.beginPath();
-    ctx.arc(cardX + cardW / 2, cardY + cardH / 2, 120, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = C.accent;
-    ctx.font = '700 120px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText((g.name || '物').charAt(0), cardX + cardW / 2, cardY + cardH / 2 + 6);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-  }
-
-  // 名称 + 分类
-  let y = cardY + cardH + 96;
+  // ── 名称 ──
+  let y = cardY + cardH + 74;
   ctx.fillStyle = C.ink;
-  ctx.font = '700 56px system-ui, sans-serif';
-  const name = g.name || '未命名物品';
-  ctx.fillText(name.length > 14 ? `${name.slice(0, 14)}…` : name, 64, y);
-  if (categoryName) {
-    ctx.fillStyle = C.accentSoft;
-    roundRect(ctx, 64, y + 28, 40 + categoryName.length * 30, 56, 28);
-    ctx.fill();
-    ctx.fillStyle = C.accent;
-    ctx.font = '500 28px system-ui, sans-serif';
-    ctx.fillText(categoryName, 84, y + 66);
+  ctx.font = '700 54px system-ui, sans-serif';
+  ctx.fillText(ellipsize(ctx, g.name || '未命名物品', CW), PAD, y);
+
+  // ── 备注（一行） ──
+  if (note) {
+    y += 42;
+    ctx.fillStyle = C.ink3;
+    ctx.font = '400 24px system-ui, sans-serif';
+    ctx.fillText(ellipsize(ctx, note, CW), PAD, y);
   }
 
-  // 底部数据行
-  const infoY = H - 150;
-  ctx.fillStyle = C.ink3;
-  ctx.font = '400 26px system-ui, sans-serif';
-  const days = Math.max(0, Math.floor((Date.now() - new Date(g.buyDate).getTime()) / 86400000));
+  // ── 胶囊行：分类 / 状态 / 标签 ──
+  const chipTop = y + 30;
+  const chipH = 52;
+  let cx = PAD;
+  ctx.font = '500 24px system-ui, sans-serif';
+  const putChip = (text: string, bg: string, fg: string): boolean => {
+    const w = ctx.measureText(text).width + 40;
+    if (cx + w > W - PAD) return false;
+    ctx.fillStyle = bg;
+    roundRect(ctx, cx, chipTop, w, chipH, chipH / 2);
+    ctx.fill();
+    ctx.fillStyle = fg;
+    ctx.fillText(text, cx + 20, chipTop + chipH / 2 + 9);
+    cx += w + 12;
+    return true;
+  };
+  if (categoryName) putChip(categoryName, C.accentSoft, C.accent);
+  putChip(goodsStatusLabel(g.status), '#eae7e0', g.status === 'retired' ? C.ink3 : '#4c5b53');
+  for (const t of (g.tags ?? []).slice(0, 3)) {
+    if (!putChip(`#${t}`, '#f0eee8', C.ink3)) break;
+  }
+
+  // ── 2×2 数据卡 ──
+  const gap = 20;
+  const cellW = (CW - gap) / 2;
+  const cellH = 104;
+  const gridY = chipTop + chipH + 42;
   const cells: Array<[string, string]> = [
-    ['价格', `¥${Number(g.price ?? 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`],
-    ['陪伴', `${days} 天`],
-    ['状态', g.status === 'retired' ? '已退役' : '在役'],
+    ['总投入', `¥${fmtMoney(totalInvest(g))}`],
+    ['日均成本', `¥${fmtMoney(dailyCost(g), true)}`],
+    ['已陪伴', `${holdDays(g)} 天`],
+    ['购入于', isValidDate(g.buyDate) ? g.buyDate : '—'],
   ];
-  const colW = (W - 128) / 3;
   cells.forEach(([label, val], i) => {
-    const x = 64 + i * colW;
+    const x = PAD + (i % 2) * (cellW + gap);
+    const cy = gridY + Math.floor(i / 2) * (cellH + gap);
+    ctx.fillStyle = '#ffffff';
+    roundRect(ctx, x, cy, cellW, cellH, 24);
+    ctx.fill();
+    ctx.strokeStyle = C.line;
+    ctx.lineWidth = 2;
+    roundRect(ctx, x, cy, cellW, cellH, 24);
+    ctx.stroke();
     ctx.fillStyle = C.ink3;
-    ctx.font = '400 26px system-ui, sans-serif';
-    ctx.fillText(label, x, infoY);
+    ctx.font = '400 22px system-ui, sans-serif';
+    ctx.fillText(label, x + 24, cy + 40);
     ctx.fillStyle = C.ink;
-    ctx.font = '700 40px system-ui, sans-serif';
-    ctx.fillText(val, x, infoY + 58);
+    ctx.font = '700 36px system-ui, sans-serif';
+    ctx.fillText(ellipsize(ctx, val, cellW - 48), x + 24, cy + 82);
   });
+
+  // ── 页脚 ──
+  ctx.fillStyle = C.ink3;
+  ctx.font = '400 22px system-ui, sans-serif';
+  ctx.fillText(`由「纳物」生成 · ${new Date().toLocaleDateString('zh-CN')}`, PAD, H - 44);
+  ctx.textAlign = 'right';
+  ctx.fillText('NaWu', W - PAD, H - 44);
+  ctx.textAlign = 'left';
 
   return cv.toDataURL('image/png');
 }
 
-/** contain 绘制图片进矩形区；失败画首字圆底兜底。返回是否画了真图。 */
-async function drawIconInto(
-  ctx: CanvasRenderingContext2D,
-  g: Goods,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r = 0,
-): Promise<boolean> {
-  const src = await resolveIconSrc(goodsIconValue(g));
-  if (src) {
-    const img = await loadImage(src);
-    if (img) {
-      const scale = Math.min(w / img.width, h / img.height);
-      const dw = img.width * scale;
-      const dh = img.height * scale;
-      if (r > 0) {
-        ctx.save();
-        roundRect(ctx, x, y, w, h, r);
-        ctx.clip();
-      }
-      ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
-      if (r > 0) ctx.restore();
-      return true;
-    }
-  }
-  // 首字圆底兜底
-  ctx.fillStyle = C.accentSoft;
-  ctx.beginPath();
-  ctx.arc(x + w / 2, y + h / 2, Math.min(w, h) * 0.26, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = C.accent;
-  ctx.font = `700 ${Math.round(Math.min(w, h) * 0.26)}px system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText((g.name || '物').charAt(0), x + w / 2, y + h / 2 + 4);
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  return false;
-}
-
 /**
- * 置物墙整墙海报（v1.0.11）：所有在役物品一张图导出。
- * 900 宽三列网格，高度随物品数自适应；单卡 = 图区 + 名称 + 价格。
+ * 置物墙整墙海报（v1.0.11；v1.0.17 重排版）。
+ * 900 宽三列网格，高度随物品数自适应；单卡 = 图区（照片 cover 铺满）+ 名称 + 价格/日均。
  */
 export async function drawWallSheet(items: Array<{ g: Goods; categoryName: string | null }>): Promise<string> {
   const W = 900;
@@ -244,8 +339,8 @@ export async function drawWallSheet(items: Array<{ g: Goods; categoryName: strin
   const GAP = 20;
   const PAD = 48;
   const colW = (W - PAD * 2 - GAP * (COLS - 1)) / COLS;
-  const imgH = Math.round(colW * 0.72);
-  const cardH = imgH + 96;
+  const imgH = Math.round(colW * 0.82);
+  const cardH = imgH + 108;
   const rows = Math.max(1, Math.ceil(items.length / COLS));
   const headH = 216;
   const footH = 92;
@@ -267,11 +362,14 @@ export async function drawWallSheet(items: Array<{ g: Goods; categoryName: strin
   ctx.fillStyle = C.ink;
   ctx.font = '700 52px system-ui, sans-serif';
   ctx.fillText('纳物 · 置物墙', PAD, 116);
-  const total = items.reduce((acc, it) => acc + Number(it.g.price ?? 0), 0);
+  const total = items.reduce((acc, it) => acc + totalInvest(it.g), 0);
   ctx.fillStyle = C.ink3;
   ctx.font = '400 26px system-ui, sans-serif';
   ctx.fillText(
-    `${items.length} 件在役 · 总投入 ¥${total.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`,
+    `${items.length} 件在役 · 总投入 ¥${fmtMoney(total)} · 日均 ¥${fmtMoney(
+      items.reduce((acc, it) => acc + dailyCost(it.g), 0),
+      true,
+    )}`,
     PAD,
     160,
   );
@@ -290,19 +388,41 @@ export async function drawWallSheet(items: Array<{ g: Goods; categoryName: strin
     roundRect(ctx, cx, cy, colW, cardH, 24);
     ctx.stroke();
 
-    await drawIconInto(ctx, items[i].g, cx + 14, cy + 14, colW - 28, imgH, 16);
+    // 图区：照片铺满，logo 居中
+    ctx.fillStyle = '#ffffff';
+    const ix = cx + 14;
+    const iy = cy + 14;
+    const iw = colW - 28;
+    const ih = imgH;
+    const iconVal = goodsIconValue(items[i].g);
+    const src = await resolveIconSrc(iconVal);
+    let ok = false;
+    if (src) {
+      const img = await loadImage(src);
+      if (img) {
+        drawFit(ctx, img, ix, iy, iw, ih, 16, iconFitMode(iconVal));
+        ok = true;
+      }
+    }
+    if (!ok) drawInitialFallback(ctx, items[i].g.name, ix, iy, iw, ih, 16);
 
+    // 名称
     const name = items[i].g.name || '未命名';
     ctx.fillStyle = C.ink;
     ctx.font = '600 24px system-ui, sans-serif';
-    ctx.fillText(name.length > 8 ? `${name.slice(0, 8)}…` : name, cx + 14, cy + imgH + 42);
+    ctx.textAlign = 'left';
+    ctx.fillText(ellipsize(ctx, name, colW - 28), cx + 14, cy + imgH + 44);
+    // 价格 + 日均
+    ctx.fillStyle = C.accent;
+    ctx.font = '700 26px system-ui, sans-serif';
+    const price = `¥${fmtMoney(totalInvest(items[i].g))}`;
+    ctx.fillText(ellipsize(ctx, price, (colW - 28) * 0.55), cx + 14, cy + imgH + 82);
     ctx.fillStyle = C.ink3;
     ctx.font = '400 20px system-ui, sans-serif';
-    ctx.fillText(
-      `¥${Number(items[i].g.price ?? 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`,
-      cx + 14,
-      cy + imgH + 74,
-    );
+    const per = `日均 ¥${fmtMoney(dailyCost(items[i].g), true)}`;
+    ctx.textAlign = 'right';
+    ctx.fillText(ellipsize(ctx, per, (colW - 28) * 0.5), cx + colW - 14, cy + imgH + 82);
+    ctx.textAlign = 'left';
   }
 
   // 页脚

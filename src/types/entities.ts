@@ -244,6 +244,8 @@ export interface Settings {
   showWarrantyCountdown: boolean;
   formatDaysAsYmd: boolean;
   vibrate: boolean;
+  /** v1.0.17：品牌开屏动画开关（参考归否「显示偏好 → 开屏」）。 */
+  splash: boolean;
   reminderMaster: boolean;
   homeTab: string;
   viewMode: 'list' | 'grid';

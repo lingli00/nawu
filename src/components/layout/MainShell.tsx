@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BarChart3, Compass, Home, ScrollText, Shield, Smartphone, Sparkles, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { APP_VERSION } from '../../lib/appVersion';
+import { haptic } from '../../lib/haptics';
 
 /**
  * 主壳（v1.0.6：三端一码，PC 网页重构完成）：
@@ -158,7 +159,10 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
         {/* AI 记一笔（桌面主行动） */}
         <div className={narrow ? 'px-2' : 'px-4'}>
           <button
-            onClick={() => nav('/ai')}
+            onClick={() => {
+              void haptic('medium');
+              nav('/ai');
+            }}
             aria-label="AI 记一笔"
             className={`flex items-center font-medium transition-transform active:scale-95 ${narrow ? 'h-10 w-10 justify-center rounded-xl' : 'h-10 w-full justify-center gap-2 rounded-xl text-sm'}`}
             style={{ background: 'var(--accent)', color: '#fff' }}
@@ -213,6 +217,7 @@ function SideItem({ to, label, Icon, narrow }: { to: string; label: string; Icon
     <NavLink
       to={to}
       title={label}
+      onClick={() => void haptic('select')}
       className={`mb-1 flex items-center rounded-xl text-sm transition-colors ${
         narrow ? 'h-10 justify-center' : 'h-11 gap-3 px-3'
       }`}
@@ -274,7 +279,10 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
         {/* 中央 FAB */}
         <div className="relative w-16 shrink-0">
           <button
-            onClick={() => nav('/ai')}
+            onClick={() => {
+              void haptic('medium');
+              nav('/ai');
+            }}
             aria-label="AI 记一笔"
             className="absolute -top-7 left-1/2 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full bg-accent text-3xl font-light text-white shadow-lg shadow-accent/40 active:scale-95"
             style={{ boxShadow: '0 10px 24px color-mix(in srgb, var(--accent) 40%, transparent)' }}
@@ -295,6 +303,7 @@ function Tab({ to, label, Icon }: { to: string; label: string; Icon: LucideIcon 
   return (
     <NavLink
       to={to}
+      onClick={() => void haptic('select')}
       className={({ isActive }) =>
         `flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] ${
           isActive ? 'font-semibold text-accent' : 'text-ink-3'

@@ -5,10 +5,13 @@ import { App as CapApp } from '@capacitor/app';
 import { Keyboard, type KeyboardResize } from '@capacitor/keyboard';
 import AppRoutes from './router';
 import MainShell from './components/layout/MainShell';
+import SplashOverlay from './components/SplashOverlay';
 import { useAppStore } from './store/useAppStore';
 import { useServerStore } from './store/useServerStore';
+import { useSettingsStore } from './store/useSettingsStore';
 import { isNative } from './net/env';
 import { UiHost } from './components/ui/UiHost';
+import { setHapticsEnabled } from './lib/haptics';
 import { Compass } from 'lucide-react';
 
 /**
@@ -114,15 +117,22 @@ function BootSplash(): JSX.Element {
 }
 
 /**
- * App 根组件：路由 + 主壳（底部 4 Tab + FAB，按路径自动显隐）+ 全局 Toast / Dialog 宿主。
+ * App 根组件（v1.0.17）：
+ * 路由 + 主壳（底部 4 Tab + FAB，按路径自动显隐）+ 全局 Toast / Dialog 宿主
+ * + 品牌开屏动画（受 `settings.splash` 控制）+ 触觉反馈总开关（受 `settings.vibrate` 控制）。
  */
 export default function App(): JSX.Element {
   const hydrated = useAppStore((s) => s.hydrated);
+  const vibrate = useSettingsStore((s) => s.settings.vibrate);
+  const splash = useSettingsStore((s) => s.settings.splash);
   useKeyboardResumeFix();
 
-  if (!hydrated) return <BootSplash />;
+  // 震动开关注入 lib/haptics（lib 不能反向依赖 store，故用注入式）
+  useEffect(() => {
+    setHapticsEnabled(vibrate !== false);
+  }, [vibrate]);
 
-  return (
+  const shell = hydrated ? (
     <RouteGuard>
       <MainShell>
         <Routes>
@@ -135,5 +145,14 @@ export default function App(): JSX.Element {
       </MainShell>
       <UiHost />
     </RouteGuard>
+  ) : (
+    <BootSplash />
+  );
+
+  return (
+    <>
+      {shell}
+      {splash !== false ? <SplashOverlay /> : null}
+    </>
   );
 }

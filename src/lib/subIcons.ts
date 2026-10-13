@@ -87,6 +87,7 @@ import {
   Lamp,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { SYSTEM_ICON_MAP } from './systemIcons';
 
 /**
  * 订阅图标库（单色 lucide 线性图标，按真实场景分组；只归 eng-home 维护）。
@@ -281,7 +282,9 @@ export const SUB_ICON_MAP: Record<string, LucideIcon> = (() => {
   return map;
 })();
 
-/** 渲染兜底：未知 id / 旧 emoji 数据 / 空 → Repeat。 */
+/** 渲染兜底：未知 id / 旧 emoji 数据 / 空 → Repeat。
+ *  v1.0.17：先查订阅库，再查物品系统图标库（14 分类 1090 个），都不中才回落。 */
 export function subIconOf(id?: string): LucideIcon {
-  return (id && SUB_ICON_MAP[id]) || Repeat;
+  if (!id) return Repeat;
+  return SUB_ICON_MAP[id] ?? SYSTEM_ICON_MAP[id] ?? Repeat;
 }

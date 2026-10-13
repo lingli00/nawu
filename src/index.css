@@ -262,6 +262,46 @@ textarea {
   animation: guifou-sheet-in 250ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
+/* ============================================================
+   品牌开屏动画（v1.0.17，参考归否 SplashPage）
+   rhythm：logo 缩放淡入 700ms → 名称/口号阶梯上浮 → 停留 → 整体淡出
+   ============================================================ */
+@keyframes guifou-splash-logo {
+  from {
+    opacity: 0;
+    transform: scale(0.72) rotate(-10deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes guifou-splash-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes guifou-splash-out {
+  to {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+.splash-logo {
+  animation: guifou-splash-logo 700ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.splash-up {
+  animation: guifou-splash-up 520ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.splash-out {
+  animation: guifou-splash-out 420ms ease-in both;
+}
+
 /* Toast 淡入 */
 @keyframes guifou-toast-in {
   from {

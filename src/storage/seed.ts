@@ -86,6 +86,7 @@ export const SEED_SETTINGS: Settings = {
   showWarrantyCountdown: true,
   formatDaysAsYmd: false,
   vibrate: true,
+  splash: true,
   reminderMaster: true,
   homeTab: 'goods',
   viewMode: 'list',

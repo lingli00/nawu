@@ -13,8 +13,12 @@ import {
   type BrandItem,
 } from '../lib/brandIcon';
 import { currentServer, toastError } from '../store';
+import { createPortal } from 'react-dom';
+import { useBackGuard } from '../lib/backGuard';
+import { SYSTEM_ICON_GROUPS } from '../lib/systemIcons';
 import { get } from '../net/httpClient';
 import { fetchIconAsDataUrl, iconCacheFetchAndStore, iconCacheLookup, normIconKey, warmIconCache } from '../lib/iconCache';
+import { haptic } from '../lib/haptics';
 
 /**
  * 统一图标选择器（订阅 / 物品共用，v1.0.5）。
@@ -36,25 +40,36 @@ import { fetchIconAsDataUrl, iconCacheFetchAndStore, iconCacheLookup, normIconKe
  * 不回写 DOM）——IME 铁律。
  */
 
-type Tab = 'lib' | 'web' | 'upload';
+export type Tab = 'lib' | 'web' | 'img' | 'upload';
 
-const TABS: Array<{ key: Tab; label: string; Icon: typeof LayoutGrid }> = [
-  { key: 'lib', label: '图标库', Icon: LayoutGrid },
-  { key: 'web', label: '网络图标', Icon: Link2 },
-  { key: 'upload', label: '本地上传', Icon: Upload },
-];
+/** tab 定义：物品模式（系统图标 14 分类 / 品牌图片 / 网络图片 / 相册）与订阅模式（图标库 / 网络图标 / 本地上传）。 */
+function tabsOf(systemMode: boolean): Array<{ key: Tab; label: string; Icon: typeof LayoutGrid }> {
+  return systemMode
+    ? [
+        { key: 'lib', label: '系统图标', Icon: LayoutGrid },
+        { key: 'web', label: '品牌图片', Icon: Link2 },
+        { key: 'img', label: '网络图片', Icon: ImageIcon },
+        { key: 'upload', label: '相册上传', Icon: Upload },
+      ]
+    : [
+        { key: 'lib', label: '图标库', Icon: LayoutGrid },
+        { key: 'web', label: '网络图标', Icon: Link2 },
+        { key: 'upload', label: '本地上传', Icon: Upload },
+      ];
+}
 
 /** 图标服务基址：浏览器 = 当前站点；App = 当前服务器。 */
 function iconBaseOf(): string {
   return currentServer()?.url ?? (typeof window !== 'undefined' ? window.location.origin : '');
 }
 
-/** 在线搜索结果（v1.0.11：site 站点域名 / icon 图形图标；v1.0.16：img 商品图片）。 */
+/** 在线搜索结果（v1.0.11：site 站点域名 / icon 图形图标；v1.0.16：img 商品图片；v1.0.17：thumb 缩略直链）。 */
 interface OnlineHit {
   type?: 'site' | 'icon' | 'img';
   domain?: string;
   icon?: string;
   url?: string;
+  thumb?: string;
 }
 
 /** 商品图预览渲染（缓存优先 + 原生通道抓取，永不裸 img 直连）。 */
@@ -72,9 +87,10 @@ function imgProxyUrl(raw: string): string {
   return `/api/img/get?u=${encodeURIComponent(raw)}`;
 }
 
-/** 商品图预览渲染（缓存优先 + 原生通道抓取，永不裸 img 直连）。 */
-function ProductImg({ raw, alt }: { raw: string; alt?: string }) {
-  const chain = useMemo(() => [imgProxyUrl(raw)], [raw]);
+/** 商品图预览渲染（缓存优先 + 原生通道抓取，永不裸 img 直连）。
+ *  v1.0.17：优先用 Bing 缩略直链（~7KB/张秒开），无缩略才走代理原图。 */
+function ProductImg({ raw, thumb, alt }: { raw: string; thumb?: string; alt?: string }) {
+  const chain = useMemo(() => [thumb ?? imgProxyUrl(raw)], [raw, thumb]);
   const { src, done } = useCachedIconSrc(chain);
   if (!done || !src) {
     return (
@@ -322,13 +338,19 @@ export default function IconPicker({
   value,
   onChange,
   onFilePicked,
+  systemMode = false,
+  initialTab,
 }: {
   value: string;
   onChange: (icon: string) => void;
   /** 传入则接管本地上传（如物品表单的大图裁剪流程）；不传走默认 96px 压缩。 */
   onFilePicked?: (file: File) => void;
+  /** v1.0.17 物品模式：系统图标走 14 分类大库 + 品牌图片 / 网络图片独立 tab。 */
+  systemMode?: boolean;
+  /** 由五来源选择页带入的初始 tab。 */
+  initialTab?: Tab;
 }) {
-  const [tab, setTab] = useState<Tab>('lib');
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'lib');
   /** 全局唯一搜索关键词（只用于过滤，不回写输入框——IME 铁律）。 */
   const [query, setQuery] = useState('');
   const [onlineHits, setOnlineHits] = useState<OnlineHit[] | null>(null);
@@ -342,13 +364,17 @@ export default function IconPicker({
   const base = useMemo(iconBaseOf, []);
 
   const q = query.trim().toLowerCase();
-  /** 图标库过滤（按 lucide id）。 */
+  /** 图标库过滤（按 lucide id）。物品模式=14 分类系统图标大库；订阅模式=订阅图标库。 */
+  const baseGroups = systemMode
+    ? SYSTEM_ICON_GROUPS.map((g) => ({ label: g.label, items: g.items.map((id) => ({ id })) }))
+    : SUB_ICON_GROUPS.map((g) => ({ label: g.label, items: g.items.map((it) => ({ id: it.id })) }));
   const libGroups = useMemo(() => {
-    if (!q) return SUB_ICON_GROUPS;
-    return SUB_ICON_GROUPS.map((g) => ({ ...g, items: g.items.filter((it) => it.id.includes(q)) })).filter(
+    if (!q) return baseGroups;
+    return baseGroups.map((g) => ({ ...g, items: g.items.filter((it) => it.id.includes(q)) })).filter(
       (g) => g.items.length > 0,
     );
-  }, [q]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, systemMode]);
   /** 品牌库搜索（名称/别名/域名）。 */
   const brandHits = useMemo(() => (q ? searchBrands(query) : null), [q, query]);
   /** 关键词长得像域名时给直取兜底。 */
@@ -370,6 +396,21 @@ export default function IconPicker({
       return;
     }
     setOnlineBusy(true);
+    if (tab === 'img') {
+      /* 网络图片 tab：只搜商品图 */
+      get<{ ok?: boolean; items?: OnlineHit[] }>({ url: base }, '/api/img/search', { q: kw }, 10000)
+        .then((res) => {
+          const items = res.data?.ok && Array.isArray(res.data.items) ? res.data.items : [];
+          setImgHits(items);
+          const urls = items
+            .map((h) => (h.thumb ? absIconUrl(h.thumb, base) : ''))
+            .filter(Boolean);
+          if (urls.length > 0) void warmIconCache(urls, base);
+        })
+        .catch(() => setImgHits([]))
+        .finally(() => setOnlineBusy(false));
+      return;
+    }
     /* ① 图形图标 + 站点域名（原有接口） */
     get<{ ok?: boolean; items?: OnlineHit[] }>({ url: base }, '/api/icon/search', { q: kw }, 8000)
       .then((res) => {
@@ -389,19 +430,6 @@ export default function IconPicker({
         if (urls.length > 0) void warmIconCache(urls, base);
       })
       .catch(() => setOnlineHits([]));
-    /* ② 商品图片（v1.0.16：搜「iPhone 17」「佳能相机」出真实商品缩略图） */
-    get<{ ok?: boolean; items?: OnlineHit[] }>({ url: base }, '/api/img/search', { q: kw }, 10000)
-      .then((res) => {
-        const items = res.data?.ok && Array.isArray(res.data.items) ? res.data.items : [];
-        setImgHits(items);
-        /* 商品图缩略也全量预热（经 /api/img/get 代理缓存，双端离线秒显） */
-        const urls = items
-          .map((h) => (h.url ? absIconUrl(imgProxyUrl(h.url), base) : ''))
-          .filter(Boolean);
-        if (urls.length > 0) void warmIconCache(urls, base);
-      })
-      .catch(() => setImgHits([]))
-      .finally(() => setOnlineBusy(false));
   };
 
   /** 点选商品图片：原生通道抓原图 → 中心方裁 ≤512 → 存 img: dataURL（随备份走，永不失效）。 */
@@ -414,6 +442,7 @@ export default function IconPicker({
         return;
       }
       const square = await cropSquareDataUrl(data, 512);
+      void haptic('select');
       onChange(toImgIcon(square));
       void warmIconCache([abs], base);
     } catch {
@@ -423,6 +452,7 @@ export default function IconPicker({
 
   /** 点选图标：写值 + 立即预热入库（设置过一次，终身离线可用）。 */
   const pickIcon = (iconValue: string, warmSrc?: string): void => {
+    void haptic('select');
     onChange(iconValue);
     if (warmSrc) void warmIconCache([warmSrc], base);
   };
@@ -504,7 +534,8 @@ export default function IconPicker({
   };
 
   /* —— 搜索结果（内置 + 品牌 + 在线，一框出齐） —— */
-  const searching = q !== '' && tab !== 'upload';
+  const searching = q !== '' && (tab === 'lib' || tab === 'web');
+  const imgSearching = q !== '' && tab === 'img';
   const iconHits = useMemo(
     () => (onlineHits ?? []).filter((h) => h.type === 'icon' && h.url),
     [onlineHits],
@@ -514,39 +545,61 @@ export default function IconPicker({
     [onlineHits],
   );
   const onlineEmpty =
-    !onlineBusy &&
-    onlineHits !== null &&
-    imgHits !== null &&
-    iconHits.length === 0 &&
-    siteHits.length === 0 &&
-    imgHits.length === 0;
+    !onlineBusy && onlineHits !== null && iconHits.length === 0 && siteHits.length === 0;
   const localEmpty = libGroups.length === 0 && (!brandHits || brandHits.length === 0) && !domainHit;
   const allEmpty = searching && localEmpty && (q.length < 2 || onlineEmpty);
 
   /** 浏览态（未搜索）时当前 tab 的内容。 */
   const browseView =
     tab === 'lib' ? (
-      libGroups.map((group) => (
-        <div key={group.label}>
-          <SectionLabel>{group.label}</SectionLabel>
-          <div className="grid grid-cols-8 gap-2">
-            {group.items.map(({ id, icon: Icon }) => (
+      <>
+        {systemMode && !q ? (
+          /* 分类快捷 chips（对齐竞品）：点击滚动到对应分类 */
+          <div className="sticky top-0 z-10 -mx-1 flex gap-1.5 overflow-x-auto bg-surface px-1 py-1">
+            {SYSTEM_ICON_GROUPS.map((g) => (
               <button
-                key={id}
+                key={g.key}
                 type="button"
-                onClick={() => onChange(id)}
-                aria-label={id}
-                title={id}
-                className={`flex h-10 items-center justify-center rounded-btn border transition-all active:scale-95 ${
-                  value === id ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface-2 text-ink-2'
-                }`}
+                onClick={() => document.getElementById(`sysgrp-${g.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="shrink-0 rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-ink-2 active:scale-95"
               >
-                <Icon size={18} />
+                {g.label}
+                <span className="ml-0.5 text-ink-3/70">{g.items.length}</span>
               </button>
             ))}
           </div>
-        </div>
-      ))
+        ) : null}
+        {libGroups.map((group) => {
+          const gkey = systemMode ? (SYSTEM_ICON_GROUPS.find((g) => g.label === group.label)?.key ?? '') : '';
+          return (
+            <div key={group.label} id={gkey ? `sysgrp-${gkey}` : undefined}>
+              <SectionLabel>
+                {group.label}
+                {systemMode ? <span className="ml-1 text-ink-3/70">({group.items.length})</span> : null}
+              </SectionLabel>
+              <div className="grid grid-cols-8 gap-2">
+                {group.items.map(({ id }) => {
+                  const Icon = subIconOf(id);
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => onChange(id)}
+                      aria-label={id}
+                      title={id}
+                      className={`flex h-10 items-center justify-center rounded-btn border transition-all active:scale-95 ${
+                        value === id ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface-2 text-ink-2'
+                      }`}
+                    >
+                      <Icon size={18} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </>
     ) : (
       BRAND_GROUPS.map((group) => (
         <div key={group.label}>
@@ -573,7 +626,7 @@ export default function IconPicker({
     <div>
       {/* 来源 tab */}
       <div className="mb-2 flex gap-1 rounded-btn bg-surface-2 p-1">
-        {TABS.map(({ key, label, Icon }) => (
+        {tabsOf(systemMode).map(({ key, label, Icon }) => (
           <button
             key={key}
             type="button"
@@ -598,13 +651,83 @@ export default function IconPicker({
             ? uploadBusy
               ? '处理中…'
               : '选一张方图，自动裁边压缩'
-            : searching
-              ? '内置 + 品牌 + 在线，一次搜齐'
-              : '点击图标即选中；搜索一次出齐所有来源'}
+            : tab === 'img'
+              ? '搜商品名称或型号，出真实商品图'
+              : tab === 'web'
+                ? searching
+                  ? '品牌 + 在线图标，一次搜齐'
+                  : '内置品牌库，点击即采用'
+                : searching
+                  ? '按图标名过滤全部分类'
+                  : '按分类浏览 · 点击即选中'}
         </span>
       </div>
 
-      {tab === 'upload' ? (
+      {tab === 'img' ? (
+        /* —— v1.0.17 网络图片：商品图专用搜索（大图九宫格） —— */
+        <div className="max-h-80 space-y-3 overflow-y-auto">
+          <div className="flex h-9 items-center gap-2 rounded-btn border border-line bg-surface-2 px-2.5 focus-within:border-accent">
+            <button
+              type="button"
+              aria-label="搜索"
+              onClick={() => searchRef.current && runOnlineSearch(searchRef.current.value)}
+              className="shrink-0 text-ink-3 active:text-accent"
+            >
+              <Search size={14} />
+            </button>
+            <input
+              ref={searchRef}
+              type="search"
+              defaultValue=""
+              onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => {
+                const ke = e.nativeEvent;
+                if ((e.key === 'Enter' || ke.keyCode === 13) && !ke.isComposing && ke.keyCode !== 229) {
+                  e.preventDefault();
+                  runOnlineSearch((e.target as HTMLInputElement).value);
+                }
+              }}
+              enterKeyHint="search"
+              placeholder="如：iPhone 17、一加15、佳能 R6、戴森吸尘器…"
+              className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-3"
+            />
+          </div>
+          {imgSearching ? (
+            onlineBusy ? (
+              <p className="py-6 text-center text-xs text-ink-3">正在检索商品图…</p>
+            ) : imgHits && imgHits.length > 0 ? (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  {imgHits.map((h) =>
+                    h.url ? (
+                      <button
+                        key={h.url}
+                        type="button"
+                        onClick={() => void pickProductImage(h.url!)}
+                        title="采用此商品图"
+                        aria-label="采用此商品图"
+                        className="aspect-square overflow-hidden rounded-xl border border-line bg-surface-2 transition-all active:scale-95"
+                      >
+                        <ProductImg raw={h.url} thumb={h.thumb} />
+                      </button>
+                    ) : null,
+                  )}
+                </div>
+                <p className="text-[10px] text-ink-3">点选自动裁正方形存入本地 · 随备份携带 · 永久离线可用</p>
+              </>
+            ) : (
+              <p className="rounded-card border border-dashed border-line bg-surface-2 p-4 text-center text-xs text-ink-3">
+                没有找到「{query}」的商品图，换个说法（品牌 + 型号）试试
+              </p>
+            )
+          ) : (
+            <div className="flex flex-col items-center gap-2 rounded-card border border-dashed border-line bg-surface-2 px-4 py-8 text-center">
+              <ImageIcon size={24} className="text-ink-3/60" />
+              <p className="text-xs text-ink-3">搜「手机型号 / 相机 / 家电」等，直接出真实商品缩略图</p>
+            </div>
+          )}
+        </div>
+      ) : tab === 'upload' ? (
         <div>
           <button
             type="button"
@@ -652,7 +775,7 @@ export default function IconPicker({
                 }
               }}
               enterKeyHint="search"
-              placeholder="搜图标：耳机、水杯、微信、任一英文词…"
+              placeholder={systemMode ? '搜系统图标 / 品牌 / 在线…' : '搜图标：耳机、水杯、微信、任一英文词…'}
               className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-ink-3"
             />
           </div>
@@ -668,22 +791,25 @@ export default function IconPicker({
                       <div key={group.label}>
                         <p className="mb-1 text-[10px] text-ink-3/80">{group.label}</p>
                         <div className="grid grid-cols-8 gap-2">
-                          {group.items.map(({ id, icon: Icon }) => (
-                            <button
-                              key={id}
-                              type="button"
-                              onClick={() => onChange(id)}
-                              aria-label={id}
-                              title={id}
-                              className={`flex h-10 items-center justify-center rounded-btn border transition-all active:scale-95 ${
-                                value === id
-                                  ? 'border-accent bg-accent-soft text-accent'
-                                  : 'border-line bg-surface-2 text-ink-2'
-                              }`}
-                            >
-                              <Icon size={18} />
-                            </button>
-                          ))}
+                          {group.items.map(({ id }) => {
+                            const Icon = subIconOf(id);
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                onClick={() => onChange(id)}
+                                aria-label={id}
+                                title={id}
+                                className={`flex h-10 items-center justify-center rounded-btn border transition-all active:scale-95 ${
+                                  value === id
+                                    ? 'border-accent bg-accent-soft text-accent'
+                                    : 'border-line bg-surface-2 text-ink-2'
+                                }`}
+                              >
+                                <Icon size={18} />
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -718,30 +844,6 @@ export default function IconPicker({
                     <BrandImg base={base} domain={domainHit} size={20} />
                     获取 {domainHit} 的图标
                   </button>
-                </div>
-              ) : null}
-
-              {/* ②½ 商品图片（v1.0.16：搜具体型号出真实商品缩略图，物品首选） */}
-              {q.length >= 2 && imgHits && imgHits.length > 0 ? (
-                <div>
-                  <SectionLabel>商品图片</SectionLabel>
-                  <div className="grid grid-cols-4 gap-2">
-                    {imgHits.map((h) =>
-                      h.url ? (
-                        <button
-                          key={h.url}
-                          type="button"
-                          onClick={() => void pickProductImage(h.url!)}
-                          title="采用此商品图"
-                          aria-label="采用此商品图"
-                          className="aspect-square overflow-hidden rounded-lg border border-line bg-surface-2 transition-all active:scale-95"
-                        >
-                          <ProductImg raw={h.url} />
-                        </button>
-                      ) : null,
-                    )}
-                  </div>
-                  <p className="mt-1 text-[10px] text-ink-3">点选自动裁成正方形存入本地（随备份携带）</p>
                 </div>
               ) : null}
 
@@ -807,7 +909,7 @@ export default function IconPicker({
               {/* 全空兜底 */}
               {allEmpty ? (
                 <p className="rounded-card border border-dashed border-line bg-surface-2 p-4 text-center text-xs text-ink-3">
-                  没有找到「{query}」，换个说法试试，或切「本地上传」直接选图片
+                  没有找到「{query}」，换个说法试试，或切「网络图片 / 相册上传」
                 </p>
               ) : null}
             </>
@@ -818,5 +920,64 @@ export default function IconPicker({
         </div>
       )}
     </div>
+  );
+}
+
+
+/* ============================================================================
+ * 图片来源选择页（v1.0.17）：对齐竞品「归否」的五来源 action sheet。
+ * 点物品/订阅的图标位 → 先选来源 → 再进对应选择视图。
+ * ==========================================================================*/
+export type IconSource = 'system' | 'brand' | 'net' | 'album' | 'camera';
+
+const SOURCE_OPTIONS: Array<{ key: IconSource; label: string; desc: string }> = [
+  { key: 'system', label: '系统图标', desc: '14 分类 · 单色线性 · 离线可用' },
+  { key: 'brand', label: '品牌图片', desc: '常见品牌官网图标' },
+  { key: 'net', label: '网络图片', desc: '搜商品名称/型号出真实商品图' },
+  { key: 'album', label: '相册图片', desc: '从手机相册选一张' },
+  { key: 'camera', label: '拍照', desc: '现场拍一张' },
+];
+
+export function ImageSourceSheet({
+  open,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onPick: (s: IconSource) => void;
+}) {
+  useBackGuard(open, onClose);
+  if (!open) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
+      <div
+        className="sheet-enter mx-auto w-full max-w-md rounded-t-3xl bg-surface p-2 pb-[max(env(safe-area-inset-bottom),0.5rem)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {SOURCE_OPTIONS.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => {
+              void haptic('select');
+              onPick(o.key);
+            }}
+            className="flex w-full flex-col items-center gap-0.5 border-b border-line py-3.5 last:border-b-0 active:bg-surface-2"
+          >
+            <span className="text-base font-medium text-ink">{o.label}</span>
+            <span className="text-[11px] text-ink-3">{o.desc}</span>
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-2 w-full rounded-2xl bg-surface-2 py-3.5 text-base font-semibold text-ink active:scale-[0.99]"
+        >
+          取消
+        </button>
+      </div>
+    </div>,
+    document.body,
   );
 }

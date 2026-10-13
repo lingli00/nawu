@@ -8,6 +8,7 @@ import { fmtTimestamp } from '../lib/date';
 import { APP_VERSION, compareVersions } from '../lib/appVersion';
 import { checkAppVersion, openAppDownload } from '../api/app';
 import { isNative } from '../net/env';
+import { haptic } from '../lib/haptics';
 import type { ThemeMode } from '../types/entities';
 
 const THEMES: Array<{ value: ThemeMode; label: string }> = [
@@ -171,10 +172,44 @@ export default function SettingsPage() {
         </button>
       </section>
 
+      {/* 显示偏好（v1.0.17，对标归否「更多设置 → 显示偏好 → 震动 / 开屏」） */}
+      <section className="mt-3 rounded-card border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold">显示偏好</h2>
+        <div className="mt-3 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="min-w-0 pr-3">
+              <p className="text-sm">震动反馈</p>
+              <p className="text-[11px] text-ink-3">保存成功、切换 Tab、点选图标时轻微震动；失败时给出失败反馈。</p>
+            </div>
+            <Toggle
+              on={settings.vibrate !== false}
+              label="震动反馈"
+              onClick={() => {
+                const next = !(settings.vibrate !== false);
+                void update({ vibrate: next });
+                if (next) void haptic('select');
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="min-w-0 pr-3">
+              <p className="text-sm">开屏动画</p>
+              <p className="text-[11px] text-ink-3">
+                打开应用时播放品牌开屏页（网页端每次浏览会话只播一次）。
+              </p>
+            </div>
+            <Toggle
+              on={settings.splash !== false}
+              label="开屏动画"
+              onClick={() => void update({ splash: !(settings.splash !== false) })}
+            />
+          </div>
+        </div>
+      </section>
+
       {/* 货币 */}
       <section className="mt-3 rounded-card border border-line bg-surface p-4">
-        <h2 className="text-sm font-semibold">货币</h2>
-        <select
+        <h2 className="text-sm font-semibold">货币</h2>        <select
           value={settings.currency}
           onChange={(e) => void update({ currency: e.target.value })}
           className="mt-3 h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
