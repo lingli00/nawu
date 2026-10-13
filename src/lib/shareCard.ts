@@ -2,6 +2,7 @@ import type { Goods } from '../types/entities';
 import { Capacitor } from '@capacitor/core';
 import { currentServer } from '../store';
 import { iconCacheLookup } from './iconCache';
+import { glyphBySlug } from './simpleBrand';
 import { isValidDate } from './date';
 import { dailyCost, goodsStatusLabel, holdDays, totalInvest } from '../domain/goods';
 import logger from './log';
@@ -39,11 +40,12 @@ function loadImage(src: string, timeoutMs = 6000): Promise<HTMLImageElement | nu
   });
 }
 
-/** Goods.image（{source, ref} 对象）→ 三形态 icon 字符串（img:/url:/空）。 */
+/** Goods.image（{source, ref} 对象）→ 三形态 icon 字符串（img:/url:/brand:/空）。 */
 export function goodsIconValue(g: Pick<Goods, 'image'>): string {
   const img = g.image;
   const ref = (img?.ref ?? '').trim();
   if (!ref) return '';
+  if (ref.startsWith('brand:')) return ref; // v1.0.19 内置品牌引用码
   if (img?.source === 'local' || ref.startsWith('data:')) return `img:${ref}`;
   if (img?.source === 'web' || /^https?:\/\//i.test(ref)) return `url:${ref}`;
   return '';
@@ -111,6 +113,7 @@ function fmtMoney(n: number, keepCents = false): string {
 export function iconFitMode(icon: string | undefined): 'cover' | 'contain' {
   const v = (icon ?? '').trim();
   if (v.startsWith('img:')) return 'cover';
+  if (v.startsWith('brand:')) return 'contain'; // 内置品牌 glyph = 矢量 logo
   if (v.startsWith('url:')) {
     const u = v.slice(4).toLowerCase();
     if (u.includes('/api/img/') || u.includes('bing.net') || u.includes('tse') ) return 'cover';
@@ -149,6 +152,30 @@ function drawFit(
   }
   ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
   ctx.restore();
+}
+
+/** brand: 内置品牌 glyph 直绘（path 缩放居中，品牌色；v1.0.19 引用码渲染）。返回是否画了。 */
+function drawBrandGlyph(
+  ctx: CanvasRenderingContext2D,
+  icon: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): boolean {
+  const item = glyphBySlug(icon.slice(6).trim());
+  if (!item) return false;
+  const scale = Math.min((w * 0.84) / 24, (h * 0.84) / 24);
+  if (!(scale > 0)) return false;
+  const dw = 24 * scale;
+  const dh = 24 * scale;
+  ctx.save();
+  ctx.translate(x + (w - dw) / 2, y + (h - dh) / 2);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = `#${item.hex}`;
+  ctx.fill(new Path2D(item.path));
+  ctx.restore();
+  return true;
 }
 
 /** 无真图时的兜底：柔和底色 + 名称首字。 */
@@ -238,13 +265,17 @@ export async function drawGoodsCard(g: Goods, categoryName: string | null): Prom
   roundRect(ctx, cardX, cardY, cardW, cardH, 32);
   ctx.fill();
   const iconVal = goodsIconValue(g);
-  const src = await resolveIconSrc(iconVal);
   let drawn = false;
-  if (src) {
-    const img = await loadImage(src);
-    if (img) {
-      drawFit(ctx, img, cardX, cardY, cardW, cardH, 32, iconFitMode(iconVal));
-      drawn = true;
+  if (iconVal.startsWith('brand:')) {
+    drawn = drawBrandGlyph(ctx, iconVal, cardX, cardY, cardW, cardH);
+  } else {
+    const src = await resolveIconSrc(iconVal);
+    if (src) {
+      const img = await loadImage(src);
+      if (img) {
+        drawFit(ctx, img, cardX, cardY, cardW, cardH, 32, iconFitMode(iconVal));
+        drawn = true;
+      }
     }
   }
   if (!drawn) drawInitialFallback(ctx, g.name, cardX, cardY, cardW, cardH, 32);
@@ -395,13 +426,17 @@ export async function drawWallSheet(items: Array<{ g: Goods; categoryName: strin
     const iw = colW - 28;
     const ih = imgH;
     const iconVal = goodsIconValue(items[i].g);
-    const src = await resolveIconSrc(iconVal);
     let ok = false;
-    if (src) {
-      const img = await loadImage(src);
-      if (img) {
-        drawFit(ctx, img, ix, iy, iw, ih, 16, iconFitMode(iconVal));
-        ok = true;
+    if (iconVal.startsWith('brand:')) {
+      ok = drawBrandGlyph(ctx, iconVal, ix, iy, iw, ih);
+    } else {
+      const src = await resolveIconSrc(iconVal);
+      if (src) {
+        const img = await loadImage(src);
+        if (img) {
+          drawFit(ctx, img, ix, iy, iw, ih, 16, iconFitMode(iconVal));
+          ok = true;
+        }
       }
     }
     if (!ok) drawInitialFallback(ctx, items[i].g.name, ix, iy, iw, ih, 16);

@@ -192,6 +192,23 @@ export async function iconCacheExport(): Promise<Record<string, string>> {
   return out;
 }
 
+/**
+ * ★v1.0.19 备份瘦身：只导出**被数据实际引用**的缓存条目。
+ * refKeys = collectUrlRefKeys() 的归一化键集合；不传则退化为全量导出。
+ * 单条仍受 MAX_ENTRY_CHARS 限制——备份只带「在用的图标」，不再随身携带整个搜索缓存。
+ */
+export async function iconCacheExportReferenced(refKeys?: Set<string>): Promise<Record<string, string>> {
+  if (!refKeys) return iconCacheExport();
+  const idx = (await getKV<IconIndex>(INDEX_KEY)) ?? { keys: [] };
+  const out: Record<string, string> = {};
+  for (const k of idx.keys) {
+    if (!refKeys.has(k)) continue;
+    const v = await getKV<string>(ENTRY_PREFIX + k);
+    if (v && v.startsWith('data:') && v.length <= MAX_ENTRY_CHARS) out[k] = v;
+  }
+  return out;
+}
+
 /** 从备份合并导入图标缓存（不清空现有）。@returns 导入条数 */
 export async function iconCacheImport(rec: unknown): Promise<number> {
   if (!rec || typeof rec !== 'object') return 0;

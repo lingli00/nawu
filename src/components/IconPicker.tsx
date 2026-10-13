@@ -12,7 +12,8 @@ import {
   toUrlIcon,
   type BrandItem,
 } from '../lib/brandIcon';
-import { GLYPH_GROUPS, glyphToImgIcon, searchGlyphs, type GlyphItem } from '../lib/simpleBrand';
+import { GLYPH_GROUPS, glyphBySlug, searchGlyphs, type GlyphItem } from '../lib/simpleBrand';
+import { compressDataUrlUnder, IMAGE_MAX_KB } from '../lib/imageCompress';
 import { currentServer, toastError } from '../store';
 import { SYSTEM_ICON_GROUPS } from '../lib/systemIcons';
 import { get } from '../net/httpClient';
@@ -253,9 +254,27 @@ export function IconPreview({
   fallbackFg?: string;
 }) {
   const v = (icon ?? '').trim();
+  const isBrand = v.startsWith('brand:');
   const isUrl = v.startsWith('url:');
   const isImg = v.startsWith('img:');
   const raw = isUrl ? v.slice(4).trim() : '';
+
+  /* brand: 引用码 → 内置 glyph 即时渲染（v1.0.19，零网络零数据）。 */
+  const brandGlyph = useMemo(() => (isBrand ? glyphBySlug(v.slice(6)) : null), [isBrand, v]);
+  if (isBrand) {
+    if (brandGlyph) {
+      return (
+        <span
+          className={`flex items-center justify-center ${className ?? ''}`}
+          style={{ width: size, height: size }}
+        >
+          <GlyphImg item={brandGlyph} size={Math.round(size * 0.92)} />
+        </span>
+      );
+    }
+    const Fb = subIconOf('tag');
+    return <Fb size={size} className={className} />;
+  }
 
   const chain = useMemo<string[]>(() => {
     if (!isUrl || !raw) return [];
@@ -455,6 +474,21 @@ export default function IconPicker({
   const searchRef = useRef<HTMLInputElement | null>(null);
   const base = useMemo(iconBaseOf, []);
 
+  /**
+   * 切 tab：★v1.0.19 修复「搜完品牌切系统图标没法选」——
+   * 搜索词跨 tab 残留会让 lib tab 卡在（空的）搜索态，只有退出重进。
+   * 切换即清空全部搜索状态并重置输入框 DOM 值。
+   */
+  const switchTab = (k: Tab): void => {
+    if (k === tab) return;
+    setTab(k);
+    setQuery('');
+    setOnlineHits(null);
+    setImgHits(null);
+    setOnlineBusy(false);
+    if (searchRef.current) searchRef.current.value = '';
+  };
+
   const q = query.trim().toLowerCase();
 
   /** 图标库过滤（订阅模式用；物品模式系统图标不搜索）。 */
@@ -477,6 +511,16 @@ export default function IconPicker({
     () => (q && tab === 'web' && !glyphHits?.length && !brandHits?.length ? normalizeDomainInput(query) : null),
     [q, glyphHits, brandHits, query, tab],
   );
+
+  /** 品牌搜索结果即时预热缓存（下次点开秒显，利用本机网络并行抓取）。 */
+  useEffect(() => {
+    if (!brandHits || brandHits.length === 0) return;
+    void warmIconCache(
+      brandHits.slice(0, 12).map((b) => iconApiUrl(base, b.domain)),
+      base,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandHits, base]);
 
   /* 在线搜索：走统一网络层 get()（CapacitorHttp 原生通道不受 CORS 限制）。 */
   const runOnlineSearch = (kwRaw: string): void => {
@@ -517,10 +561,11 @@ export default function IconPicker({
           .filter(Boolean);
         if (urls.length > 0) void warmIconCache(urls, base);
       })
-      .catch(() => setOnlineHits([]));
+      .catch(() => setOnlineHits([]))
+      .finally(() => setOnlineBusy(false));
   };
 
-  /** 点选商品图片：原生通道抓原图 → 中心方裁 ≤512 → 存 img: dataURL。 */
+  /** 点选商品图片：原生通道抓原图 → 中心方裁 ≤512 → 压缩 ≤100KB → 存 img: dataURL。 */
   const pickProductImage = async (raw: string): Promise<void> => {
     const abs = absIconUrl(imgProxyUrl(raw), base);
     try {
@@ -530,23 +575,22 @@ export default function IconPicker({
         return;
       }
       const square = await cropSquareDataUrl(data, 512);
+      const slim = await compressDataUrlUnder(square, IMAGE_MAX_KB, 512);
       void haptic('select');
-      onChange(toImgIcon(square));
+      onChange(toImgIcon(slim));
       void warmIconCache([abs], base);
     } catch {
       toastError('图片处理失败，换一张试试');
     }
   };
 
-  /** 点选内置品牌 glyph → 光栅化 dataURL（零网络、随备份走）。 */
-  const pickGlyph = async (g: GlyphItem): Promise<void> => {
-    try {
-      const icon = await glyphToImgIcon(g);
-      void haptic('select');
-      onChange(icon);
-    } catch {
-      toastError('图标处理失败');
-    }
+  /**
+   * 点选内置品牌 glyph → 存 `brand:slug` 引用码（v1.0.19）。
+   * 渲染时由 IconPreview / 分享海报即时绘制，备份只带几个字节（原 dataURL 方案一套头像就几十 KB）。
+   */
+  const pickGlyph = (g: GlyphItem): void => {
+    void haptic('select');
+    onChange(`brand:${g.slug}`);
   };
 
   /** 点选图标：写值 + 立即预热入库。 */
@@ -624,9 +668,9 @@ export default function IconPicker({
   };
 
   /* —— 搜索态派生 —— */
-  /** 物品模式 lib tab：无搜索框（需求 v1.0.18③），永远浏览态。 */
+  /** 物品模式 lib tab：无搜索框（需求 v1.0.18③），永远浏览态（不受残留搜索词影响）。 */
   const sysLib = systemMode && tab === 'lib';
-  const searching = q !== '' && (tab === 'lib' || tab === 'web');
+  const searching = q !== '' && !sysLib && (tab === 'lib' || tab === 'web');
   const imgSearching = q !== '' && tab === 'img';
   const iconHits = useMemo(
     () => (onlineHits ?? []).filter((h) => h.type === 'icon' && h.url),
@@ -723,7 +767,7 @@ export default function IconPicker({
         <LazySection key={g.label} label={`${g.label} · 内置`} count={g.items.length} cols={5} rowH={64}>
           <div className="grid grid-cols-5 gap-2">
             {g.items.map((it) => (
-              <GlyphButton key={it.slug} item={it} active={value.startsWith('img:')} onPick={() => void pickGlyph(it)} />
+              <GlyphButton key={it.slug} item={it} active={value === `brand:${it.slug}`} onPick={() => pickGlyph(it)} />
             ))}
           </div>
         </LazySection>
@@ -777,7 +821,7 @@ export default function IconPicker({
           <button
             key={key}
             type="button"
-            onClick={() => setTab(key)}
+            onClick={() => switchTab(key)}
             className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-btn text-xs font-medium ${
               tab === key ? 'bg-surface text-accent shadow-sm' : 'text-ink-3'
             }`}
@@ -938,7 +982,7 @@ export default function IconPicker({
                   <SectionLabel>内置品牌</SectionLabel>
                   <div className="grid grid-cols-5 gap-2">
                     {glyphHits.map((g) => (
-                      <GlyphButton key={g.slug} item={g} active={value.startsWith('img:')} onPick={() => void pickGlyph(g)} />
+                      <GlyphButton key={g.slug} item={g} active={value === `brand:${g.slug}`} onPick={() => pickGlyph(g)} />
                     ))}
                   </div>
                 </div>

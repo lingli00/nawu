@@ -1,7 +1,9 @@
 import { createBackup, deleteBackup, deviceLabel, getBackup, listBackups } from '../api/backups';
 import { backupLabel, shouldAutoBackup } from '../domain/backupPolicy';
-import { humanMessage } from '../lib/error';
-import { iconCacheExport, iconCacheImport } from '../lib/iconCache';
+import { ApiError, humanMessage } from '../lib/error';
+import { iconCacheExportReferenced, iconCacheImport } from '../lib/iconCache';
+import { collectUrlRefKeys, slimCollectionsIcons } from '../lib/imageCompress';
+import { normIconKey } from '../lib/iconCache';
 import logger from '../lib/log';
 import { applySnapshot, buildSnapshot } from '../storage/snapshot';
 import { COLLECTIONS } from '../types/entities';
@@ -20,9 +22,13 @@ import { currentServer } from './useServerStore';
  *
  * ★v1.0.15：快照携带 `icons`（本地图标缓存）——
  * 「凡是设置过/搜索过的图标全部随备份走」，恢复后离线秒显，无需重新找图。
+ *
+ * ★v1.0.19 备份瘦身（用户反馈：备份从几百 KB 膨胀到 10MB+）：
+ * ① img: dataURL 全部压缩 ≤100KB（用户上传/网络图才算数据，自带图标走引用码不占体积）；
+ * ② icons 只导出**被物品/订阅实际引用**的缓存条目（不再全量带搜索缓存）。
  */
 
-/** 从 store 组装快照（含图标缓存导出）。 */
+/** 从 store 组装快照（图片压缩 + 引用型图标缓存导出）。 */
 export async function buildCurrentSnapshot(): Promise<SnapshotPayload> {
   const data = useDataStore.getState();
   const settings = useSettingsStore.getState().settings;
@@ -30,9 +36,11 @@ export async function buildCurrentSnapshot(): Promise<SnapshotPayload> {
   for (const name of COLLECTIONS) {
     collections[name] = (data[name] as unknown as unknown[]) ?? [];
   }
-  const snapshot = buildSnapshot({ collections, settings });
+  const slimmed = await slimCollectionsIcons(collections as Record<string, unknown[]>);
+  const snapshot = buildSnapshot({ collections: slimmed, settings });
   try {
-    snapshot.icons = await iconCacheExport();
+    const refKeys = collectUrlRefKeys(slimmed, (src) => normIconKey(src));
+    snapshot.icons = await iconCacheExportReferenced(refKeys);
   } catch (e) {
     logger.warn('backup', '图标缓存导出失败（快照继续，不含 icons）', e);
     snapshot.icons = null;
@@ -92,10 +100,33 @@ export async function restoreBackup(id: number | string): Promise<RestoreResult>
   if (!server) throw new Error('未配置服务器');
 
   const detail = await getBackup(server, id);
+
+  /* ★v1.0.19：恢复前先压缩快照里的 img: 大图（≤100KB）——
+     旧版大备份在网页端会把 localStorage（guifou.goods）撑爆，报 quota 错。 */
+  let payload = detail.payload;
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload) as SnapshotPayload;
+    } catch {
+      /* 保持字符串，applySnapshot 会给出 parse 错误 */
+    }
+  }
+  if (payload && typeof payload === 'object') {
+    const p = payload as SnapshotPayload;
+    p.collections = await slimCollectionsIcons(p.collections as Record<string, unknown[]>);
+  }
+
   // 传入本机当前 settings：恢复时保留快照里没有的本机自定义键（如 archivedSubIds）
   const currentSettings = useSettingsStore.getState().settings;
-  const applied = applySnapshot(detail.payload, currentSettings);
-  await useDataStore.getState().setAllCollections(applied.collections);
+  const applied = applySnapshot(payload, currentSettings);
+  try {
+    await useDataStore.getState().setAllCollections(applied.collections);
+  } catch (e) {
+    if (/quota|exceeded/i.test(String(e))) {
+      throw new ApiError('parse', '本机存储空间不足：请清理浏览器其他站点数据后重试（新备份已自动压缩图片，正常不会再触发）');
+    }
+    throw e;
+  }
   await useSettingsStore.getState().replace(applied.settings);
 
   /* ★v1.0.15：随备份恢复图标缓存 —— 恢复完成后所有网络图标离线秒显，

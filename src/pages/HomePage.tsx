@@ -24,6 +24,7 @@ import { dailyCost, holdDays, perUseCost, sortGoods, totalInvest, achieveRate } 
 import { formatMoney, symbolOf } from '../lib/money';
 import { fmtDate, today } from '../lib/date';
 import { drawGoodsCard, shareOrDownload } from '../lib/shareCard';
+import { compressDataUrlUnder, IMAGE_MAX_KB } from '../lib/imageCompress';
 import { getCategoryIcon } from '../lib/categoryIcons';
 import type { Goods, GoodsImage } from '../types/entities';
 
@@ -334,7 +335,7 @@ function CropSheet({
     dragRef.current = null;
   };
 
-  /** 确认裁剪：视口 → 原图逆映射，裁出方形区域，输出 ≤512px JPEG。 */
+  /** 确认裁剪：视口 → 原图逆映射，裁出方形区域，输出 ≤512px JPEG 并压到 ≤100KB（备份瘦身铁律）。 */
   const confirmCrop = (): void => {
     const img = imgRef.current;
     const d = dimsRef.current;
@@ -356,7 +357,7 @@ function CropSheet({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(img, sx0, sy0, sw, sh, 0, 0, out, out);
-    onConfirm(canvas.toDataURL('image/jpeg', 0.85));
+    void compressDataUrlUnder(canvas.toDataURL('image/jpeg', 0.85), IMAGE_MAX_KB, 512).then(onConfirm);
   };
 
   const corner = 'pointer-events-none absolute h-6 w-6 border-white/90';
@@ -467,13 +468,19 @@ function GoodsFormSheet({ initial, onClose }: { initial?: Goods; onClose: () => 
 
   /* —— 统一图标选择器（与订阅完全同一组件）：GoodsImage ↔ icon 字符串互转 —— */
   const goodsIconValue = image
-    ? image.ref.startsWith('http')
+    ? image.ref.startsWith('brand:')
+      ? image.ref // v1.0.19 内置品牌引用码原样透传（IconPreview 即时渲染）
+      : image.ref.startsWith('http')
       ? `url:${image.ref}`
       : image.ref.startsWith('data:')
         ? `img:${image.ref}`
         : ''
     : '';
   const onIconChange = (v: string): void => {
+    if (v.startsWith('brand:')) {
+      setImage({ source: 'brand', ref: v }); // 内置品牌只存引用码，备份只带几个字节
+      return;
+    }
     const kind = iconKindOf(v);
     if (kind === 'img') setImage({ source: 'local', ref: v.slice(4) });
     else if (kind === 'url') setImage({ source: 'web', ref: v.slice(4) });

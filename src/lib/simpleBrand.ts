@@ -1424,6 +1424,17 @@ export const GLYPH_GROUPS: GlyphGroup[] = [
 
 const ALL_GLYPHS: GlyphItem[] = GLYPH_GROUPS.flatMap((g) => g.items);
 
+/** slug → glyph 反查表（brand: 引用码渲染用）。 */
+const GLYPH_MAP: Map<string, GlyphItem> = new Map(ALL_GLYPHS.map((g) => [g.slug, g]));
+
+/** 按 slug 取内置品牌 glyph；不存在返回 null。 */
+export function glyphBySlug(slug: string): GlyphItem | null {
+  return GLYPH_MAP.get((slug ?? '').trim()) ?? null;
+}
+
+/** brand: 引用码前缀（v1.0.19：内置品牌只存引用码，渲染时即时绘制，备份只带几个字节）。 */
+export const BRAND_ICON_PREFIX = 'brand:';
+
 /** 关键词搜内置品牌（名称/别名/slug，不分大小写，多词 AND）。 */
 export function searchGlyphs(query: string): GlyphItem[] {
   const words = (query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
