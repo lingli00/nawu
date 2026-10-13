@@ -21,7 +21,7 @@
     "build:apk": "scripts\\build-android.bat"
   },
   "dependencies": {
-    "@capacitor-community/media": "^9.1.0",
+    "@capacitor-community/media": "^7.0.1",
     "@capacitor/app": "7.1.2",
     "@capacitor/browser": "^7.0.5",
     "@capacitor/core": "7.6.9",

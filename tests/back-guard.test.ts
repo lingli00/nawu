@@ -17,7 +17,7 @@ const origRemove = window.removeEventListener.bind(window);
 
 beforeAll(() => {
   window.addEventListener = ((type: string, fn: EventListener) => {
-    if (type === 'popstate') popListeners.push(fn);
+    if (type === 'popstate') popListeners.push(fn as () => void);
     return origAdd(type as never, fn as never);
   }) as typeof window.addEventListener;
   window.removeEventListener = ((type: string, fn: EventListener) => {
