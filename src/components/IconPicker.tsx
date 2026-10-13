@@ -13,6 +13,7 @@ import {
   type BrandItem,
 } from '../lib/brandIcon';
 import { currentServer, toastError } from '../store';
+import { get } from '../net/httpClient';
 
 /**
  * 统一图标选择器（订阅 / 物品共用，v1.0.5）。
@@ -94,7 +95,17 @@ export function BrandImg({
   );
 }
 
-/** 预览：任意 icon 值（builtin / url: / img:）→ 可视节点。 */
+/** 相对代理路径（/api/icon/proxy?u=…）→ 绝对 URL；已是绝对原样返回。 */
+export function absIconUrl(u: string | undefined, base: string): string {
+  if (!u) return '';
+  return u.startsWith('/') ? `${base}${u}` : u;
+}
+
+/** 预览：任意 icon 值（builtin / url: / img:）→ 可视节点。
+ *  v1.0.14：url: 值带多源回退链，任何一源成功即显示，全败才落兜底图标 ——
+ *  ① Iconify 直链 → 优先换自建代理（api.iconify.design 在国内手机网络经常不可达）；
+ *  ② 自建域名代理 → 追加 icon.horse / favicon.im 公共源；
+ *  ③ 兜底 = Tag（不再出现「破图」占位）。 */
 export function IconPreview({
   icon,
   size = 22,
@@ -108,22 +119,48 @@ export function IconPreview({
   fallbackBg?: string;
   fallbackFg?: string;
 }) {
-  const [broken, setBroken] = useState(false);
   const v = (icon ?? '').trim();
-  if (v.startsWith('url:') && !broken) {
+  const isUrl = v.startsWith('url:');
+  const isImg = v.startsWith('img:');
+  const raw = isUrl ? v.slice(4).trim() : '';
+
+  const srcs = useMemo<string[]>(() => {
+    if (!isUrl || !raw) return [];
+    const list = [raw];
+    if (raw.includes('api.iconify.design')) {
+      const base = iconBaseOf();
+      if (base) list.unshift(`${base}/api/icon/proxy?u=${encodeURIComponent(raw)}`);
+    } else {
+      const m = raw.match(/[?&]d=([^&]+)/);
+      if (m) {
+        const d = decodeURIComponent(m[1]);
+        list.push(`https://icon.horse/i/${d}`, `https://favicon.im/${d}`);
+      }
+    }
+    return list;
+  }, [isUrl, raw]);
+
+  const [idx, setIdx] = useState(0);
+  const [imgBroken, setImgBroken] = useState(false);
+  useEffect(() => {
+    setIdx(0);
+    setImgBroken(false);
+  }, [v]);
+
+  if (isUrl && idx < srcs.length) {
     return (
       <img
-        src={v.slice(4).trim()}
+        src={srcs[idx]}
         width={size}
         height={size}
         alt=""
         className={className}
         style={{ borderRadius: 6, objectFit: 'contain', background: fallbackBg }}
-        onError={() => setBroken(true)}
+        onError={() => setIdx(idx + 1)}
       />
     );
   }
-  if (v.startsWith('img:') && !broken) {
+  if (isImg && !imgBroken) {
     return (
       <img
         src={v.slice(4).trim()}
@@ -132,7 +169,7 @@ export function IconPreview({
         alt=""
         className={className}
         style={{ borderRadius: 6, objectFit: 'cover' }}
-        onError={() => setBroken(true)}
+        onError={() => setImgBroken(true)}
       />
     );
   }
@@ -209,7 +246,10 @@ export default function IconPicker({
     [q, brandHits, query],
   );
 
-  /* 在线搜索：立即执行版（回车 / 点放大镜 / 防抖共用同一实现）。 */
+  /* 在线搜索：立即执行版（回车 / 点放大镜 / 防抖共用同一实现）。
+     ★必须走统一网络层 get()（v1.0.14）：此前用裸 fetch，App WebView(https 源)
+     跨域请求被 CORS 拦截 → catch → 永远空结果（用户实测「搜索结果空白」）。
+     CapacitorHttp 原生层发请求不受同源策略限制。 */
   const runOnlineSearch = (kwRaw: string): void => {
     const kw = kwRaw.trim();
     setOnlineHits(null);
@@ -218,16 +258,10 @@ export default function IconPicker({
       return;
     }
     setOnlineBusy(true);
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
-    fetch(`${base}/api/icon/search?q=${encodeURIComponent(kw)}`, { signal: ctrl.signal })
-      .then((r) => r.json())
-      .then((j: { ok?: boolean; items?: OnlineHit[] }) => setOnlineHits(j.ok && j.items ? j.items : []))
+    get<{ ok?: boolean; items?: OnlineHit[] }>({ url: base }, '/api/icon/search', { q: kw }, 8000)
+      .then((res) => setOnlineHits(res.data?.ok && Array.isArray(res.data.items) ? res.data.items : []))
       .catch(() => setOnlineHits([]))
-      .finally(() => {
-        clearTimeout(timer);
-        setOnlineBusy(false);
-      });
+      .finally(() => setOnlineBusy(false));
   };
 
   /* 防抖 300ms 自动检索；query 的来源见下方「事件 + 轮询」双保险。
@@ -532,26 +566,29 @@ export default function IconPicker({
                       {/* 图形图标（Iconify：数码/生活用品的具体图形，物品/生活流首选） */}
                       {iconHits.length > 0 ? (
                         <div className="mb-2 grid grid-cols-8 gap-2">
-                          {iconHits.map((h) => (
-                            <button
-                              key={h.icon}
-                              type="button"
-                              onClick={() => onChange(`url:${h.url}`)}
-                              title={h.icon}
-                              aria-label={h.icon}
-                              className={`flex h-10 items-center justify-center rounded-btn border bg-surface p-1.5 transition-all active:scale-95 ${
-                                value === `url:${h.url}` ? 'border-accent bg-accent-soft' : 'border-line'
-                              }`}
-                            >
-                              <img
-                                src={h.url}
-                                alt={h.icon}
-                                loading="lazy"
-                                className="h-full w-full"
-                                style={{ objectFit: 'contain' }}
-                              />
-                            </button>
-                          ))}
+                      {iconHits.map((h) => {
+                        const abs = absIconUrl(h.url, base);
+                        return (
+                          <button
+                            key={h.icon}
+                            type="button"
+                            onClick={() => onChange(`url:${abs}`)}
+                            title={h.icon}
+                            aria-label={h.icon}
+                            className={`flex h-10 items-center justify-center rounded-btn border bg-surface p-1.5 transition-all active:scale-95 ${
+                              value === `url:${abs}` ? 'border-accent bg-accent-soft' : 'border-line'
+                            }`}
+                          >
+                            <img
+                              src={abs}
+                              alt={h.icon}
+                              loading="lazy"
+                              className="h-full w-full"
+                              style={{ objectFit: 'contain' }}
+                            />
+                          </button>
+                        );
+                      })}
                         </div>
                       ) : null}
 

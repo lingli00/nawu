@@ -1,4 +1,5 @@
 import type { Category, Settings } from '../types/entities';
+import { isKnownCategoryIcon } from '../lib/categoryIcons';
 import { getKV, setKV } from './kv';
 import { K_SEEDED, KV_SETTINGS } from './keys';
 import { loadCollection, saveCollectionNow } from './repo';
@@ -136,11 +137,13 @@ export function mergeSeedCategories(existing: Category[]): { list: Category[]; c
   }
 
   // ★v1.0.3 图标极简化迁移：种子分类若仍是旧 emoji 图标 → 换成统一 lucide id。
-  // 只动「还是 emoji」的（用户已自选 lucide 图标的不碰），名称/排序等用户数据不动。
+  // ★v1.0.14 补漏：icon 为空或未知值（旧版残留）也一并补成种子图标 ——
+  // 只动「非用户自选 lucide 图标」的，名称/排序等用户数据不动。
   const isEmojiIcon = (v: string): boolean => /\p{Extended_Pictographic}/u.test(v);
   for (const seed of SEED_CATEGORIES) {
     const cur = byId.get(seed.id);
-    if (cur && cur.icon !== seed.icon && isEmojiIcon(cur.icon)) {
+    if (cur && cur.icon !== seed.icon && !cur.icon.startsWith('url:') && !cur.icon.startsWith('img:')
+      && (isEmojiIcon(cur.icon) || !isKnownCategoryIcon(cur.icon))) {
       list = list.map((c) => (c.id === seed.id ? { ...c, icon: seed.icon } : c));
       changed = true;
     }

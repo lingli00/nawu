@@ -346,3 +346,8 @@ const CATEGORY_ICON_MAP: Map<string, LucideIcon> = new Map(
 export function getCategoryIcon(id: string | undefined | null): LucideIcon {
   return (id && CATEGORY_ICON_MAP.get(id)) || FALLBACK_CATEGORY_ICON;
 }
+
+/** 该值是否为可渲染的已知分类图标 id（v1.0.14 种子迁移用：空值/未知值都要补）。 */
+export function isKnownCategoryIcon(id: string | null | undefined): boolean {
+  return !!id && CATEGORY_ICON_MAP.has(id);
+}

@@ -1,4 +1,5 @@
 import type { Goods } from '../types/entities';
+import { currentServer } from '../store';
 
 /**
  * 分享生图（v1.0.10）：把物品画成 900×1200 的竖版分享海报（纯 canvas，无依赖）。
@@ -44,14 +45,22 @@ function iconSrcOf(icon: string | undefined): string | null {
   if (!v) return null;
   if (v.startsWith('img:')) return v.slice(4).trim();
   if (v.startsWith('url:')) {
-    const u = v.slice(4).trim();
-    if (/^https?:\/\//i.test(u)) return u;
-    try {
-      const origin = (typeof window !== 'undefined' ? window.location.origin : '') || '';
-      return origin ? `${origin}${u.startsWith('/') ? '' : '/'}${u}` : null;
-    } catch {
-      return null;
+    let u = v.slice(4).trim();
+    if (!/^https?:\/\//i.test(u)) {
+      try {
+        const origin = (typeof window !== 'undefined' ? window.location.origin : '') || '';
+        if (!origin) return null;
+        u = `${origin}${u.startsWith('/') ? '' : '/'}${u}`;
+      } catch {
+        return null;
+      }
     }
+    // Iconify 直链在部分手机网络不可达 → 换自建代理（服务器有 CORS 头，canvas 不脏）
+    if (u.includes('api.iconify.design')) {
+      const base = currentServer()?.url ?? (typeof window !== 'undefined' ? window.location.origin : '');
+      if (base) u = `${base}/api/icon/proxy?u=${encodeURIComponent(u)}`;
+    }
+    return u;
   }
   return null; // 裸 lucide id：canvas 无法画矢量，走首字兜底
 }

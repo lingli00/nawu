@@ -17,7 +17,7 @@ import PageField from '../components/ui/PageField';
 import { useBackGuard } from '../lib/backGuard';
 import SubListPage from './SubListPage';
 import CategoryManageSheet from '../components/CategoryManageSheet';
-import IconPicker from '../components/IconPicker';
+import IconPicker, { IconPreview } from '../components/IconPicker';
 import { iconKindOf } from '../lib/brandIcon';
 import { GLASS_STYLE } from '../components/layout/MainShell';
 import { useDataStore, useSettingsStore, useUiStore, toastSuccess, toastError } from '../store';
@@ -1097,12 +1097,7 @@ export default function HomePage() {
                           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
                           style={{ background: FALLBACK_BG }}
                         >
-                          <img
-                            src={g.image?.ref}
-                            alt={g.name}
-                            className="h-7 w-7 rounded object-contain"
-                            loading="lazy"
-                          />
+                          <IconPreview icon={`url:${g.image?.ref}`} size={28} className="h-7 w-7" />
                         </span>
                       ) : (
                         <span
@@ -1163,12 +1158,7 @@ export default function HomePage() {
                           <img src={g.image?.ref} alt={g.name} className="h-full w-full object-cover" />
                         ) : isWebImage(g) ? (
                           <span className="flex h-full w-full items-center justify-center" style={{ background: FALLBACK_BG }}>
-                            <img
-                              src={g.image?.ref}
-                              alt={g.name}
-                              className="h-3/5 w-3/5 object-contain"
-                              loading="lazy"
-                            />
+                            <IconPreview icon={`url:${g.image?.ref}`} size={96} className="h-3/5 w-3/5" />
                           </span>
                         ) : (
                           <span className="flex h-full w-full items-center justify-center text-ink-3">
