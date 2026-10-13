@@ -1,10 +1,11 @@
 import { createBackup, deleteBackup, deviceLabel, getBackup, listBackups } from '../api/backups';
 import { backupLabel, shouldAutoBackup } from '../domain/backupPolicy';
 import { humanMessage } from '../lib/error';
+import { iconCacheExport, iconCacheImport } from '../lib/iconCache';
 import logger from '../lib/log';
 import { applySnapshot, buildSnapshot } from '../storage/snapshot';
 import { COLLECTIONS } from '../types/entities';
-import type { BackupRow } from '../types/api';
+import type { BackupRow, SnapshotPayload } from '../types/api';
 import type { CollectionName } from '../types/entities';
 import { isLoggedIn, useAuthStore } from './useAuthStore';
 import { useDataStore } from './useDataStore';
@@ -16,17 +17,27 @@ import { currentServer } from './useServerStore';
  *
  * ★服务端**只保留最近 3 份**备份（PHP 侧 trimBackups(3)），
  * 因此自动备份走 24h 节流 + 变更阈值，手动备份不限。
+ *
+ * ★v1.0.15：快照携带 `icons`（本地图标缓存）——
+ * 「凡是设置过/搜索过的图标全部随备份走」，恢复后离线秒显，无需重新找图。
  */
 
-/** 从 store 组装快照。 */
-export function buildCurrentSnapshot() {
+/** 从 store 组装快照（含图标缓存导出）。 */
+export async function buildCurrentSnapshot(): Promise<SnapshotPayload> {
   const data = useDataStore.getState();
   const settings = useSettingsStore.getState().settings;
   const collections: Partial<Record<CollectionName, unknown[]>> = {};
   for (const name of COLLECTIONS) {
     collections[name] = (data[name] as unknown as unknown[]) ?? [];
   }
-  return buildSnapshot({ collections, settings });
+  const snapshot = buildSnapshot({ collections, settings });
+  try {
+    snapshot.icons = await iconCacheExport();
+  } catch (e) {
+    logger.warn('backup', '图标缓存导出失败（快照继续，不含 icons）', e);
+    snapshot.icons = null;
+  }
+  return snapshot;
 }
 
 /**
@@ -38,7 +49,7 @@ export async function uploadBackup(kind: 'manual' | 'auto' = 'manual'): Promise<
   const server = currentServer();
   if (!server) throw new Error('未配置服务器');
 
-  const payload = buildCurrentSnapshot();
+  const payload = await buildCurrentSnapshot();
   const device = await deviceLabel();
   const id = await createBackup(server, {
     payload,
@@ -69,6 +80,8 @@ export interface RestoreResult {
   exportedAt: string;
   /** 快照里的订阅条数（>0 时提示「停用」状态不随 Web 备份保存） */
   subCount: number;
+  /** 随备份恢复的图标缓存条数（v1.0.15） */
+  restoredIcons: number;
 }
 
 /**
@@ -85,12 +98,32 @@ export async function restoreBackup(id: number | string): Promise<RestoreResult>
   await useDataStore.getState().setAllCollections(applied.collections);
   await useSettingsStore.getState().replace(applied.settings);
 
+  /* ★v1.0.15：随备份恢复图标缓存 —— 恢复完成后所有网络图标离线秒显，
+     不再「等很久慢慢缓存」，网络差也不会永远显示不出来。 */
+  let restoredIcons = 0;
+  try {
+    let icons: unknown = null;
+    if (typeof detail.payload === 'string') {
+      try {
+        icons = (JSON.parse(detail.payload) as { icons?: unknown }).icons ?? null;
+      } catch {
+        /* 整体 JSON 损坏时 applySnapshot 已抛错，这里静默 */
+      }
+    } else if (detail.payload && typeof detail.payload === 'object') {
+      icons = (detail.payload as { icons?: unknown }).icons ?? null;
+    }
+    restoredIcons = await iconCacheImport(icons);
+  } catch (e) {
+    logger.warn('backup', '图标缓存恢复失败（不影响数据恢复）', e);
+  }
+
   let total = 0;
   for (const name of COLLECTIONS) total += applied.collections[name]?.length ?? 0;
   return {
     total,
     exportedAt: applied.exportedAt,
     subCount: applied.collections.subscriptions?.length ?? 0,
+    restoredIcons,
   };
 }
 

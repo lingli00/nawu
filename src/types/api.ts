@@ -80,6 +80,9 @@ export interface SnapshotPayload {
   app: 'guifou-web';
   version: number;
   exportedAt: string;
+  /** v1.0.15：本地图标缓存快照（键=归一化 src，值=dataURL）。
+   *  老版本备份/网页版没有此字段 —— 可选，恢复端按缺省跳过。 */
+  icons?: Record<string, string> | null;
 }
 
 /** `POST /api/user/backups` 请求体。 */

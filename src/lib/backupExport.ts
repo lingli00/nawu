@@ -29,7 +29,7 @@ export interface BackupExportResult {
  * @param password 密码（可留空 = 不加密）
  */
 export async function exportLocalBackup(password = ''): Promise<BackupExportResult> {
-  const snapshot = buildCurrentSnapshot();
+  const snapshot = await buildCurrentSnapshot();
   return exportBytes(snapshot, password, flymeLocalName());
 }
 

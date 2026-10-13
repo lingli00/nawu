@@ -14,6 +14,7 @@ import {
 } from '../lib/brandIcon';
 import { currentServer, toastError } from '../store';
 import { get } from '../net/httpClient';
+import { iconCacheFetchAndStore, iconCacheLookup, normIconKey, warmIconCache } from '../lib/iconCache';
 
 /**
  * 统一图标选择器（订阅 / 物品共用，v1.0.5）。
@@ -26,6 +27,10 @@ import { get } from '../net/httpClient';
  *      再由 /api/icon/img 服务端解析目标站真实 <link icon>）—— 无需换框重输。
  * 本地上传：选图自动压缩（默认 96px 方形裁边；传入 onFilePicked 可接管，
  * 物品表单用它走大图裁剪流程）。
+ *
+ * ★v1.0.15 渲染铁律：网络图标**一律不吃 WebView 直连**——
+ * 缓存 dataURL 优先 → 未命中走统一网络层抓取入库再渲染 → 全败才落兜底。
+ * （用户实测：WebView 加载 http 图极慢且重启即失，缓存层根治。）
  *
  * ⚠️ 铁律：搜索框文本输入非受控（defaultValue + onInput 存 state 仅供过滤，
  * 不回写 DOM）——IME 铁律。
@@ -52,7 +57,38 @@ interface OnlineHit {
   url?: string;
 }
 
-/** 网络图标（多源回退）+ 固定尺寸容器：任何站点的图标都显示成一样大。 */
+/** 候选链 → 缓存 dataURL（命中即用；未命中走网络层抓取入库）。 */
+function useCachedIconSrc(chain: string[]): { src: string | null; done: boolean } {
+  const key = chain.map((c) => normIconKey(c)).join('|');
+  const [state, setState] = useState<{ src: string | null; done: boolean }>({ src: null, done: false });
+  useEffect(() => {
+    let alive = true;
+    setState({ src: null, done: false });
+    void (async () => {
+      const hit = await iconCacheLookup(key.split('|'));
+      if (hit) {
+        if (alive) setState({ src: hit, done: true });
+        return;
+      }
+      const data = await iconCacheFetchAndStore(key.split('|').map((k) => absFromKey(k)));
+      if (alive) setState({ src: data, done: true });
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return state;
+}
+
+/** 相对键 → 抓取用绝对 URL。 */
+function absFromKey(k: string): string {
+  if (/^https?:\/\//i.test(k)) return k;
+  const base = iconBaseOf();
+  return base ? `${base}${k.startsWith('/') ? '' : '/'}${k}` : k;
+}
+
+/** 网络图标（缓存 dataURL 优先）+ 固定尺寸容器：任何站点的图标都显示成一样大。 */
 export function BrandImg({
   base,
   domain,
@@ -65,32 +101,39 @@ export function BrandImg({
   alt?: string;
 }) {
   const chain = useMemo(() => faviconChain(base, domain), [base, domain]);
-  const [idx, setIdx] = useState(0);
-  useEffect(() => setIdx(0), [base, domain]);
-  if (idx >= chain.length) {
-    // 全部源失败：中性兜底（域名首字符），不再是突兀的灰色方块
+  const { src, done } = useCachedIconSrc(chain);
+  if (!done) {
+    // 加载中：占位底（无破图、无闪烁破图标）
     return (
       <span
-        className="flex shrink-0 items-center justify-center rounded-md bg-surface-2 text-ink-3"
-        style={{ width: size, height: size, fontSize: size * 0.5 }}
+        className="flex shrink-0 items-center justify-center rounded-md bg-surface-2 text-ink-3/40"
+        style={{ width: size, height: size }}
         aria-label={alt}
-      >
-        {domain.charAt(0).toUpperCase()}
+      />
+    );
+  }
+  if (src) {
+    return (
+      <span className="flex shrink-0 items-center justify-center overflow-hidden" style={{ width: size, height: size }}>
+        <img
+          src={src}
+          width={size}
+          height={size}
+          alt={alt ?? domain}
+          className="h-full w-full"
+          style={{ objectFit: 'contain' }}
+        />
       </span>
     );
   }
+  // 全部源失败：中性兜底（域名首字符）
   return (
-    <span className="flex shrink-0 items-center justify-center overflow-hidden" style={{ width: size, height: size }}>
-      <img
-        src={chain[idx]}
-        width={size}
-        height={size}
-        alt={alt ?? domain}
-        loading="lazy"
-        className="h-full w-full"
-        style={{ objectFit: 'contain' }}
-        onError={() => setIdx(idx + 1)}
-      />
+    <span
+      className="flex shrink-0 items-center justify-center rounded-md bg-surface-2 text-ink-3"
+      style={{ width: size, height: size, fontSize: size * 0.5 }}
+      aria-label={alt}
+    >
+      {domain.charAt(0).toUpperCase()}
     </span>
   );
 }
@@ -102,10 +145,11 @@ export function absIconUrl(u: string | undefined, base: string): string {
 }
 
 /** 预览：任意 icon 值（builtin / url: / img:）→ 可视节点。
- *  v1.0.14：url: 值带多源回退链，任何一源成功即显示，全败才落兜底图标 ——
- *  ① Iconify 直链 → 优先换自建代理（api.iconify.design 在国内手机网络经常不可达）；
- *  ② 自建域名代理 → 追加 icon.horse / favicon.im 公共源；
- *  ③ 兜底 = Tag（不再出现「破图」占位）。 */
+ *  v1.0.15：url: 值不再让 WebView 直连网络 ——
+ *  ① 本地缓存 dataURL 命中 → 直接渲染（离线可用、重进秒显、恢复备份即显）；
+ *  ② 未命中 → 候选链（自建代理 → Iconify 直链 → 公共 favicon 源）走统一网络层
+ *     抓取入库后渲染（App 走 CapacitorHttp 原生通道，不受 WebView 网络栈拖累）；
+ *  ③ 全败 → 兜底 Tag / 首字符（永不出现「破图」占位）。 */
 export function IconPreview({
   icon,
   size = 22,
@@ -124,7 +168,7 @@ export function IconPreview({
   const isImg = v.startsWith('img:');
   const raw = isUrl ? v.slice(4).trim() : '';
 
-  const srcs = useMemo<string[]>(() => {
+  const chain = useMemo<string[]>(() => {
     if (!isUrl || !raw) return [];
     const list = [raw];
     if (raw.includes('api.iconify.design')) {
@@ -140,26 +184,10 @@ export function IconPreview({
     return list;
   }, [isUrl, raw]);
 
-  const [idx, setIdx] = useState(0);
+  const { src, done } = useCachedIconSrc(chain);
   const [imgBroken, setImgBroken] = useState(false);
-  useEffect(() => {
-    setIdx(0);
-    setImgBroken(false);
-  }, [v]);
+  useEffect(() => setImgBroken(false), [v]);
 
-  if (isUrl && idx < srcs.length) {
-    return (
-      <img
-        src={srcs[idx]}
-        width={size}
-        height={size}
-        alt=""
-        className={className}
-        style={{ borderRadius: 6, objectFit: 'contain', background: fallbackBg }}
-        onError={() => setIdx(idx + 1)}
-      />
-    );
-  }
   if (isImg && !imgBroken) {
     return (
       <img
@@ -172,6 +200,26 @@ export function IconPreview({
         onError={() => setImgBroken(true)}
       />
     );
+  }
+  if (isUrl) {
+    if (src) {
+      return (
+        <img
+          src={src}
+          width={size}
+          height={size}
+          alt=""
+          className={className}
+          style={{ borderRadius: 6, objectFit: 'contain', background: fallbackBg }}
+        />
+      );
+    }
+    if (!done) {
+      // 加载中：半透明兜底占位（避免列表跳动，也绝不出现破图）
+      const Placeholder = subIconOf(v);
+      return <Placeholder size={size} className={`${className ?? ''} opacity-30`} style={fallbackFg ? { color: fallbackFg } : undefined} />;
+    }
+    // 全部源失败 → 兜底图标
   }
   const Cmp = subIconOf(v);
   return <Cmp size={size} className={className} style={fallbackFg ? { color: fallbackFg } : undefined} />;
@@ -259,9 +307,30 @@ export default function IconPicker({
     }
     setOnlineBusy(true);
     get<{ ok?: boolean; items?: OnlineHit[] }>({ url: base }, '/api/icon/search', { q: kw }, 8000)
-      .then((res) => setOnlineHits(res.data?.ok && Array.isArray(res.data.items) ? res.data.items : []))
+      .then((res) => {
+        const items = res.data?.ok && Array.isArray(res.data.items) ? res.data.items : [];
+        setOnlineHits(items);
+        /* ★搜索到的图标全量后台预热进本地缓存（v1.0.15 用户约定）：
+           本次没选的图标也先缓存，之后选用/恢复备份都离线秒显。 */
+        const urls = items
+          .map((h) =>
+            h.type === 'icon' && h.url
+              ? absIconUrl(h.url, base)
+              : h.domain
+                ? iconApiUrl(base, h.domain)
+                : '',
+          )
+          .filter(Boolean);
+        if (urls.length > 0) void warmIconCache(urls, base);
+      })
       .catch(() => setOnlineHits([]))
       .finally(() => setOnlineBusy(false));
+  };
+
+  /** 点选图标：写值 + 立即预热入库（设置过一次，终身离线可用）。 */
+  const pickIcon = (iconValue: string, warmSrc?: string): void => {
+    onChange(iconValue);
+    if (warmSrc) void warmIconCache([warmSrc], base);
   };
 
   /* 防抖 300ms 自动检索；query 的来源见下方「事件 + 轮询」双保险。
@@ -392,7 +461,7 @@ export default function IconPicker({
                 brand={b}
                 base={base}
                 active={value === toUrlIcon(iconApiUrl(base, b.domain))}
-                onPick={() => onChange(toUrlIcon(iconApiUrl(base, b.domain)))}
+                onPick={() => pickIcon(toUrlIcon(iconApiUrl(base, b.domain)), iconApiUrl(base, b.domain))}
               />
             ))}
           </div>
@@ -533,7 +602,7 @@ export default function IconPicker({
                         brand={b}
                         base={base}
                         active={value === toUrlIcon(iconApiUrl(base, b.domain))}
-                        onPick={() => onChange(toUrlIcon(iconApiUrl(base, b.domain)))}
+                        onPick={() => pickIcon(toUrlIcon(iconApiUrl(base, b.domain)), iconApiUrl(base, b.domain))}
                       />
                     ))}
                   </div>
@@ -543,7 +612,7 @@ export default function IconPicker({
                   <SectionLabel>域名直取</SectionLabel>
                   <button
                     type="button"
-                    onClick={() => onChange(toUrlIcon(iconApiUrl(base, domainHit)))}
+                    onClick={() => pickIcon(toUrlIcon(iconApiUrl(base, domainHit)), iconApiUrl(base, domainHit))}
                     className="flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-surface-2 py-3 text-xs text-ink-2 active:scale-[0.99]"
                   >
                     <BrandImg base={base} domain={domainHit} size={20} />
@@ -572,7 +641,7 @@ export default function IconPicker({
                           <button
                             key={h.icon}
                             type="button"
-                            onClick={() => onChange(`url:${abs}`)}
+                            onClick={() => pickIcon(`url:${abs}`, abs)}
                             title={h.icon}
                             aria-label={h.icon}
                             className={`flex h-10 items-center justify-center rounded-btn border bg-surface p-1.5 transition-all active:scale-95 ${
@@ -599,7 +668,7 @@ export default function IconPicker({
                             <li key={h.domain}>
                               <button
                                 type="button"
-                                onClick={() => onChange(toUrlIcon(iconApiUrl(base, h.domain!)))}
+                                onClick={() => pickIcon(toUrlIcon(iconApiUrl(base, h.domain!)), iconApiUrl(base, h.domain!))}
                                 className={`flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-surface-2 ${
                                   value === toUrlIcon(iconApiUrl(base, h.domain!)) ? 'bg-accent-soft' : ''
                                 }`}

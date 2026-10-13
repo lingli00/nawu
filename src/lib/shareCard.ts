@@ -1,5 +1,6 @@
 import type { Goods } from '../types/entities';
 import { currentServer } from '../store';
+import { iconCacheLookup } from './iconCache';
 
 /**
  * 分享生图（v1.0.10）：把物品画成 900×1200 的竖版分享海报（纯 canvas，无依赖）。
@@ -47,13 +48,10 @@ function iconSrcOf(icon: string | undefined): string | null {
   if (v.startsWith('url:')) {
     let u = v.slice(4).trim();
     if (!/^https?:\/\//i.test(u)) {
-      try {
-        const origin = (typeof window !== 'undefined' ? window.location.origin : '') || '';
-        if (!origin) return null;
-        u = `${origin}${u.startsWith('/') ? '' : '/'}${u}`;
-      } catch {
-        return null;
-      }
+      // 相对路径补 origin：优先真实服务器（App 内 window.origin 是 https://localhost，拼上去必然 404）
+      const origin = currentServer()?.url || (typeof window !== 'undefined' ? window.location.origin : '') || '';
+      if (!origin) return null;
+      u = `${origin}${u.startsWith('/') ? '' : '/'}${u}`;
     }
     // Iconify 直链在部分手机网络不可达 → 换自建代理（服务器有 CORS 头，canvas 不脏）
     if (u.includes('api.iconify.design')) {
@@ -63,6 +61,17 @@ function iconSrcOf(icon: string | undefined): string | null {
     return u;
   }
   return null; // 裸 lucide id：canvas 无法画矢量，走首字兜底
+}
+
+/** canvas 用的图标 src：本地缓存 dataURL 优先（v1.0.15），
+ *  未命中才回落 URL（dataURL 画 canvas 不存在跨域污染，WebView 加载 http 图
+ *  慢/不稳的问题也一并绕开）。 */
+async function resolveIconSrc(icon: string | undefined): Promise<string | null> {
+  const urlSrc = iconSrcOf(icon);
+  if (!urlSrc) return null;
+  if (urlSrc.startsWith('data:')) return urlSrc;
+  const cached = await iconCacheLookup([urlSrc]);
+  return cached ?? urlSrc;
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -109,7 +118,7 @@ export async function drawGoodsCard(g: Goods, categoryName: string | null): Prom
   roundRect(ctx, cardX, cardY, cardW, cardH, 32);
   ctx.stroke();
 
-  const src = iconSrcOf(goodsIconValue(g));
+  const src = await resolveIconSrc(goodsIconValue(g));
   let drawn = false;
   if (src) {
     const img = await loadImage(src);
@@ -188,7 +197,7 @@ async function drawIconInto(
   h: number,
   r = 0,
 ): Promise<boolean> {
-  const src = iconSrcOf(goodsIconValue(g));
+  const src = await resolveIconSrc(goodsIconValue(g));
   if (src) {
     const img = await loadImage(src);
     if (img) {

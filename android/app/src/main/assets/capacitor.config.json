@@ -1,6 +1,6 @@
 {
 	"appId": "com.guifou.app",
-	"appName": "归否",
+	"appName": "纳物",
 	"webDir": "dist",
 	"android": {
 		"allowMixedContent": true,
