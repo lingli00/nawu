@@ -77,3 +77,33 @@ describe('backGuard · 嵌套弹层', () => {
     unmount();
   });
 });
+
+/**
+ * v1.0.22 回归：「加号菜单点卡片没反应」恶性 bug。
+ * 根因：弹层关闭（cleanup 主动 history.back()）与点击里的前进导航
+ * （nav → pushState）竞争 —— back 把刚 push 的目标页弹回原位。
+ * 修复：守卫挂载后记录 history.length，cleanup 时长度变了就跳过回退。
+ */
+describe('backGuard · 守卫期间的前进导航', () => {
+  it('UI 关闭时若发生过 pushState（前进导航），cleanup 不再 back', async () => {
+    await wait();
+    const close = vi.fn();
+    const backSpy = vi.spyOn(window.history, 'back');
+    const unmount = mountBackGuard(close);
+    // 模拟菜单点击后的前进导航（react-router nav → history.push）
+    window.history.pushState({ route: '/ai' }, '');
+    unmount(); // 弹层卸载：长度已变 → 不应再 back（否则会把 /ai 弹掉）
+    expect(backSpy).not.toHaveBeenCalled();
+    backSpy.mockRestore();
+  });
+
+  it('无导航时纯 UI 关闭照旧撤占位（back 被调用）', async () => {
+    await wait();
+    const close = vi.fn();
+    const backSpy = vi.spyOn(window.history, 'back');
+    const unmount = mountBackGuard(close);
+    unmount();
+    expect(backSpy).toHaveBeenCalledTimes(1);
+    backSpy.mockRestore();
+  });
+});

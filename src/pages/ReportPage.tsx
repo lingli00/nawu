@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Brain, Heart, Hourglass, Snowflake, Sprout } from 'lucide-react';
 import CategoryGlyph from '../components/CategoryGlyph';
+import { cooldownExpired } from '../components/LifeSheets';
 import { useDataStore, useSettingsStore } from '../store';
 import { categoryShare, judgementBreakdown } from '../domain/stats';
 import type { CategorySlice } from '../domain/stats';
@@ -7,6 +10,7 @@ import { ofMonth, sumExpense, sumIncome } from '../domain/ledger';
 import { formatMoney, formatCompactMoney } from '../lib/money';
 import { addDays, fmtDate, lastNDays, lastNMonths, monthKey, monthLabel, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
 import type { ValueRecord } from '../types/entities';
+import type { SheetKey } from '../lib/sheetBus';
 
 /** P08 报表：按日/月/年三态粒度看分类环图 + 趋势 + 归/需/否（全部只统计生活流记账）。 */
 
@@ -23,6 +27,24 @@ const J_META = {
   xu: { label: '需', desc: '必要的花销' },
   fou: { label: '否', desc: '本可避免' },
 } as const;
+
+/** 生活流「查看记录」→ 账本页对应弹层（跨路由走 sessionStorage 标志）。 */
+const LIFE_ROUTE: Record<SheetKey, string> = {
+  goods: 'gf.open.goods',
+  sub: 'gf.open.sub',
+  wish: 'gf.open.wish',
+  cooldown: 'gf.open.cooldown',
+  mood: 'gf.open.mood',
+  time: 'gf.open.time',
+};
+
+/** 分钟 → 「3h40m / 50m」人类可读。 */
+function fmtMin(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h${m}m`;
+}
 
 /** 环图（自绘 SVG，stroke-dasharray 分段）。 */
 function Donut({ slices, total }: { slices: CategorySlice[]; total: number }) {
@@ -61,11 +83,111 @@ function Donut({ slices, total }: { slices: CategorySlice[]; total: number }) {
   );
 }
 
+/**
+ * v1.0.21 · M3.2 净值趋势：折线 + 面积（净额 = 收入 − 支出）。
+ * 正 → var(--gui)，负 → var(--fou)；零轴虚线参考。
+ * SVG 用 preserveAspectRatio="none" 撑满容器宽度，所有描边加
+ * vector-effect="non-scaling-stroke"，避免横向拉伸把线宽也拉变形。
+ */
+function NetTrend({
+  points,
+  currency,
+}: {
+  points: Array<{ key: string; label: string; net: number }>;
+  currency: string;
+}) {
+  const W = 320;
+  const H = 92;
+  const PAD = 8;
+  const nets = points.map((p) => p.net);
+  const lo = Math.min(0, ...nets);
+  const hi = Math.max(0, ...nets);
+  const span = hi - lo || 1;
+  const stepX = points.length > 1 ? (W - PAD * 2) / (points.length - 1) : 0;
+  const yOf = (v: number): number => PAD + (H - PAD * 2) * ((hi - v) / span);
+  const zeroY = yOf(0);
+  const line = points.map((p, i) => `${(PAD + i * stepX).toFixed(1)},${yOf(p.net).toFixed(1)}`).join(' ');
+  const last = nets[nets.length - 1] ?? 0;
+  const color = last >= 0 ? 'var(--gui)' : 'var(--fou)';
+  const total = Math.round(nets.reduce((a, b) => a + b, 0) * 100) / 100;
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[92px] w-full" style={{ overflow: 'visible' }}>
+        <defs>
+          <linearGradient id="netTrendFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.26" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <line
+          x1={PAD}
+          x2={W - PAD}
+          y1={zeroY}
+          y2={zeroY}
+          stroke="var(--line-2)"
+          strokeWidth={1}
+          strokeDasharray="3 3"
+          vectorEffect="non-scaling-stroke"
+        />
+        <polygon points={`${PAD},${zeroY} ${line} ${W - PAD},${zeroY}`} fill="url(#netTrendFill)" />
+        <polyline
+          points={line}
+          fill="none"
+          stroke={color}
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        {points.map((p, i) => (
+          <line
+            key={p.key}
+            x1={PAD + i * stepX}
+            x2={PAD + i * stepX}
+            y1={yOf(p.net)}
+            y2={zeroY}
+            stroke={color}
+            strokeOpacity={0.22}
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
+      <div className="mt-1 flex justify-between px-1">
+        {points.map((p) => (
+          <span key={p.key} className="truncate text-[10px] text-ink-3">
+            {p.label}
+          </span>
+        ))}
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[11px] text-ink-3">
+        <span>
+          本期净额{' '}
+          <b style={{ color }}>
+            {last >= 0 ? '+' : ''}
+            {formatMoney(last, currency)}
+          </b>
+        </span>
+        <span>
+          区间累计 <b className="text-ink-2">{formatMoney(total, currency)}</b>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** P08 报表：分类环图 + 趋势 + 归/需/否结构（支持日/月/年三种粒度）。 */
 export default function ReportPage() {
+  const nav = useNavigate();
   const records = useDataStore((s) => s.valueRecords);
   const categories = useDataStore((s) => s.categories);
   const currency = useSettingsStore((s) => s.settings.currency);
+  /* v1.0.24 · 生活流四集合（报表理智指数板块数据源）。 */
+  const wishlist = useDataStore((s) => s.wishlist);
+  const cooldowns = useDataStore((s) => s.cooldowns);
+  const moods = useDataStore((s) => s.moods);
+  const times = useDataStore((s) => s.times);
 
   const [grain, setGrain] = useState<Grain>('month');
   const [day, setDay] = useState(() => today());
@@ -108,12 +230,66 @@ export default function ReportPage() {
 
   const maxBar = Math.max(...trend.map((b) => Math.max(b.expense, b.income)), 1);
 
+  /** v1.0.21 · M3.2：净值序列（收入 − 支出），供折线图使用。 */
+  const netPoints = useMemo(
+    () => trend.map((b) => ({ key: b.key, label: b.label, net: Math.round((b.income - b.expense) * 100) / 100 })),
+    [trend],
+  );
+
   /** 粒度切换器的 ‹ › 步进。 */
   const step = (dir: -1 | 1) => {
     if (grain === 'day') setDay(addDays(day, dir));
     else if (grain === 'month') setYm(dir === -1 ? prevMonth(ym) : nextMonth(ym));
     else setYear((y) => y + dir);
   };
+
+  /** v1.0.24 · 生活流统计：理智指数（时间健康度）+ 心动 + 冲动拦截 + 情绪晴雨。
+   *  口径：times/moods 按 date（YYYY-MM-DD）；wishlist/cooldowns 按 createdAt（ISO）切片。 */
+  const life = useMemo(() => {
+    // 旧备份（v1.0.22 前）的 moods/times 没有 date 字段 → 兜底空串，绝不给 undefined 用
+    const inWin = (d: string | undefined) => {
+      const k = d ?? '';
+      return grain === 'day' ? k === day : grain === 'month' ? k.startsWith(ym) : k.startsWith(String(year));
+    };
+    const ts = times.filter((t) => inWin(t.date));
+    const ms = moods.filter((m) => inWin(m.date));
+    const wl = wishlist.filter((w) => inWin(w.createdAt.slice(0, 10)));
+    const cl = cooldowns.filter((c) => inWin(c.createdAt.slice(0, 10)));
+    const guiMin = ts.filter((t) => t.meaning === 'gui').reduce((s, t) => s + t.durationMin, 0);
+    const xuMin = ts.filter((t) => t.meaning === 'xu').reduce((s, t) => s + t.durationMin, 0);
+    const fouMin = ts.filter((t) => t.meaning === 'fou').reduce((s, t) => s + t.durationMin, 0);
+    const totalMin = guiMin + xuMin + fouMin;
+    const health = totalMin > 0 ? Math.round(((guiMin + xuMin) / totalMin) * 100) : null;
+    return {
+      tsCount: ts.length,
+      guiMin,
+      xuMin,
+      fouMin,
+      totalMin,
+      health,
+      wishCount: wl.length,
+      wishSum: wl.reduce((s, w) => s + (w.price ?? 0), 0),
+      coolCount: cl.length,
+      coolAmount: cl.reduce((s, c) => s + (c.amount ?? 0), 0),
+      coolHold: cooldowns.filter((c) => cooldownExpired(c)).length,
+      moodCount: ms.length,
+      moodHeart: ms.filter((m) => m.inHeart).length,
+      moodCrush: ms.filter((m) => m.crushed).length,
+    };
+  }, [grain, day, ym, year, times, moods, wishlist, cooldowns]);
+
+  /** 「查看记录」→ 账本页并自动展开对应生活流弹层。 */
+  const openLife = (key: SheetKey): void => {
+    try {
+      sessionStorage.setItem(LIFE_ROUTE[key], '1');
+    } catch {
+      /* 忽略 */
+    }
+    nav('/ledger');
+  };
+
+  const healthTint =
+    life.health === null ? 'var(--ink-3)' : life.health >= 70 ? 'var(--gui)' : life.health >= 40 ? '#c98a2d' : 'var(--fou)';
 
   const windowLabel =
     grain === 'day'
@@ -252,6 +428,17 @@ export default function ReportPage() {
           </div>
         </div>
 
+        {/* v1.0.21 · M3.2：净值趋势（收入 − 支出） */}
+        <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4 lg:col-span-2">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold">净值趋势</h2>
+            <p className="text-[11px] text-ink-3">{trendTitle.replace('趋势', '')} · 收入 − 支出</p>
+          </div>
+          <div className="mt-3">
+            <NetTrend points={netPoints} currency={currency} />
+          </div>
+        </div>
+
         {/* 归 / 需 / 否 */}
         <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4 lg:col-span-2 lg:mt-0">
           <h2 className="text-sm font-semibold">归 / 需 / 否 结构</h2>
@@ -284,6 +471,101 @@ export default function ReportPage() {
               {grain === 'day' ? '今天' : grain === 'month' ? '本月' : '本年'}暂无支出，先去记一笔吧
             </p>
           ) : null}
+        </div>
+
+        {/* v1.0.24 · 生活流板块：理智指数（时间健康度）+ 心动清单 + 冲动拦截 + 情绪晴雨 */}
+        <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4 lg:col-span-2">
+          <div className="flex items-baseline justify-between">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+              <Brain size={15} style={{ color: 'var(--accent)' }} />
+              生活流 · 理智指数
+            </h2>
+            <div className="flex shrink-0 gap-1">
+              {(
+                [
+                  ['time', '时间', Hourglass],
+                  ['wish', '心动', Sprout],
+                  ['mood', '情绪', Heart],
+                ] as Array<[SheetKey, string, typeof Hourglass]>
+              ).map(([key, label, Icon]) => (
+                <button
+                  key={key}
+                  onClick={() => openLife(key)}
+                  className="flex h-7 items-center gap-1 rounded-full border border-line bg-surface-2 px-2.5 text-[11px] text-ink-2 active:scale-95"
+                >
+                  <Icon size={12} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="mt-0.5 text-[11px] text-ink-3">统计心动清单 / 购物冷静 / 时间切片 / 情绪速写（随上方粒度切换）</p>
+
+          {/* 主指标：时间健康度 = 归 + 需 时长占全部时间切片之比 */}
+          <div className="mt-3 flex items-center gap-4 rounded-card bg-surface-2 p-3.5">
+            <div className="shrink-0 text-center">
+              <p className="tnum text-3xl font-bold leading-none" style={{ color: healthTint }}>
+                {life.health ?? '—'}
+              </p>
+              <p className="mt-1 text-[10px] text-ink-3">时间健康度</p>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] text-ink-2">归 + 需 时长占全部时间切片的比例</p>
+              {life.totalMin > 0 ? (
+                <>
+                  <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-surface">
+                    <div style={{ width: `${(life.guiMin / life.totalMin) * 100}%`, background: 'var(--gui)' }} />
+                    <div style={{ width: `${(life.xuMin / life.totalMin) * 100}%`, background: 'var(--xu)' }} />
+                    <div style={{ width: `${(life.fouMin / life.totalMin) * 100}%`, background: 'var(--fou)' }} />
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-ink-3">
+                    归 {fmtMin(life.guiMin)} · 需 {fmtMin(life.xuMin)} · 否 {fmtMin(life.fouMin)}（共 {life.tsCount} 段 ·{' '}
+                    {fmtMin(life.totalMin)}）
+                  </p>
+                </>
+              ) : (
+                <p className="mt-2 text-[11px] text-ink-3">本期还没有时间切片，记一段试试</p>
+              )}
+            </div>
+          </div>
+
+          {/* 三小卡：心动清单 / 冲动拦截 / 情绪晴雨 */}
+          <div className="mt-2.5 grid grid-cols-3 gap-2.5">
+            <div className="rounded-card border border-line p-3" style={{ borderColor: 'color-mix(in srgb, #c98a2d 28%, transparent)' }}>
+              <p className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color: '#c98a2d' }}>
+                <Sprout size={13} />
+                心动清单
+              </p>
+              <p className="mt-1.5 text-lg font-semibold leading-none">{life.wishCount} 件</p>
+              <p className="mt-1 text-[10px] text-ink-3">合计 {formatMoney(life.wishSum, currency)}</p>
+            </div>
+            <div
+              className="rounded-card border border-line p-3"
+              style={{ borderColor: 'color-mix(in srgb, #2e9e8a 28%, transparent)' }}
+            >
+              <p className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color: '#2e9e8a' }}>
+                <Snowflake size={13} />
+                冲动拦截
+              </p>
+              <p className="mt-1.5 text-lg font-semibold leading-none">入池 {life.coolCount} 件</p>
+              <p className="mt-1 text-[10px] text-ink-3">
+                到期未动 {life.coolHold} 件 · 涉及 {formatMoney(life.coolAmount, currency)}
+              </p>
+            </div>
+            <div
+              className="rounded-card border border-line p-3"
+              style={{ borderColor: 'color-mix(in srgb, #c2603f 28%, transparent)' }}
+            >
+              <p className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color: '#c2603f' }}>
+                <Heart size={13} />
+                情绪晴雨
+              </p>
+              <p className="mt-1.5 text-lg font-semibold leading-none">{life.moodCount} 次</p>
+              <p className="mt-1 text-[10px] text-ink-3">
+                归入心底 {life.moodHeart} · 粉碎 {life.moodCrush}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -128,6 +128,18 @@ export async function slimCollectionsIcons(
           }),
         );
       }
+      // v1.0.24：裸 img: 字符串字段（心动清单 image / 冷静池 image ——
+      // v1.0.22 加字段时漏了这里，导致这两类图不压缩直接进备份）
+      if (typeof row.image === 'string' && row.image.startsWith('img:')) {
+        const rowRef = row;
+        const idx = i;
+        const coll = name;
+        jobs.push(
+          compressVal(row.image).then((image) => {
+            (out[coll][idx] as Record<string, unknown>) = { ...rowRef, image };
+          }),
+        );
+      }
     }
   }
   await Promise.all(jobs);
@@ -163,6 +175,8 @@ export function collectUrlRefKeys(
       if (!r || typeof r !== 'object') continue;
       const image = r.image as { ref?: unknown } | null | undefined;
       if (image && typeof image === 'object') feed(image.ref);
+      // v1.0.24：裸字符串形态（心动清单 / 冷静池的 image 字段）
+      if (typeof r.image === 'string') feed(r.image);
       feed(r.icon);
     }
   }

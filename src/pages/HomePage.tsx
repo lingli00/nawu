@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
+import { onSheetOpen } from '../lib/sheetBus';
 import {
   LayoutGrid,
   Grid2x2,
@@ -884,6 +885,40 @@ export default function HomePage() {
       /* 忽略 */
     }
   }, []);
+
+  /** v1.0.22：加号菜单「手动录入 / 新增订阅」跨页展开（gf.open.goods / gf.open.sub）。 */
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('gf.open.goods')) {
+        sessionStorage.removeItem('gf.open.goods');
+        setAdding(true);
+      }
+      if (sessionStorage.getItem('gf.open.sub')) {
+        sessionStorage.removeItem('gf.open.sub');
+        setTab('subs');
+        setSubAdding(true);
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }, []);
+
+  /** v1.0.22：同路由时加号菜单走 sheetBus 信号即时开层（不依赖 navigate 重装）。 */
+  useEffect(
+    () =>
+      onSheetOpen('goods', () => {
+        setAdding(true);
+      }),
+    [],
+  );
+  useEffect(
+    () =>
+      onSheetOpen('sub', () => {
+        setTab('subs');
+        setSubAdding(true);
+      }),
+    [],
+  );
 
   /* AI 记一笔创建物品/订阅后导航过来（location.state 带目标 id）：
      自动弹出对应编辑面板，消费一次后立即清掉 state，防止返回键重弹。 */

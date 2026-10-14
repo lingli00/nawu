@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Heart, Leaf, PenLine, ReceiptText, ShoppingBag, Timer } from 'lucide-react';
+import { CooldownSheet, MoodSheet, TimeSheet, WishSheet, cooldownExpired } from '../components/LifeSheets';
 import CategoryGlyph from '../components/CategoryGlyph';
-import { CooldownSheet, WishSheet, cooldownLeftDays } from '../components/LifeSheets';
+import { onSheetOpen } from '../lib/sheetBus';
 import {
   useDataStore,
   useSettingsStore,
@@ -13,7 +14,7 @@ import { formatSignedMoney, formatMoney } from '../lib/money';
 import { addDays, monthKey, monthLabel, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
 import type { Judgement, ValueRecord } from '../types/entities';
 
-/** P09 生活流：按日/周/月/年粒度查看流水 + 四张生活小卡（种草/冷静池最小闭环）。 */
+/** P09 生活流：按日/周/月/年粒度查看流水 + 四张生活小卡（心动清单/冷静池等）。 */
 
 type Grain = 'day' | 'week' | 'month' | 'year';
 
@@ -123,12 +124,42 @@ export default function LedgerPage() {
   const cooldowns = useDataStore((s) => s.cooldowns);
   const [wishOpen, setWishOpen] = useState(false);
   const [coolOpen, setCoolOpen] = useState(false);
+  /** v1.0.21 · M3.3：情绪 / 时间两张卡也做落库闭环。 */
+  const [moodOpen, setMoodOpen] = useState(false);
+  const [timeOpen, setTimeOpen] = useState(false);
+
+  /* 加号菜单（RecordMenu）跨页打开生活流 sheet：sessionStorage 标志消费一次。 */
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('gf.open.wish')) {
+        sessionStorage.removeItem('gf.open.wish');
+        setWishOpen(true);
+      }
+      if (sessionStorage.getItem('gf.open.cooldown')) {
+        sessionStorage.removeItem('gf.open.cooldown');
+        setCoolOpen(true);
+      }
+      if (sessionStorage.getItem('gf.open.mood')) {
+        sessionStorage.removeItem('gf.open.mood');
+        setMoodOpen(true);
+      }
+      if (sessionStorage.getItem('gf.open.time')) {
+        sessionStorage.removeItem('gf.open.time');
+        setTimeOpen(true);
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }, []);
+
+  /* v1.0.22：同路由时加号菜单走 sheetBus 信号即时开层（不依赖 navigate 重装）。 */
+  useEffect(() => onSheetOpen('wish', () => setWishOpen(true)), []);
+  useEffect(() => onSheetOpen('cooldown', () => setCoolOpen(true)), []);
+  useEffect(() => onSheetOpen('mood', () => setMoodOpen(true)), []);
+  useEffect(() => onSheetOpen('time', () => setTimeOpen(true)), []);
 
   const wishTotal = useMemo(() => wishlist.reduce((a, w) => a + (w.price || 0), 0), [wishlist]);
-  const coolingSoon = useMemo(() => {
-    const lefts = cooldowns.map((c) => cooldownLeftDays(c.until));
-    return lefts.filter((l) => l <= 0).length;
-  }, [cooldowns]);
+  const coolingSoon = useMemo(() => cooldowns.filter((c) => cooldownExpired(c)).length, [cooldowns]);
   const totalMin = useMemo(() => times.reduce((a, t) => a + (t.durationMin || 0), 0), [times]);
 
   const lifeCards = [
@@ -139,7 +170,7 @@ export default function LedgerPage() {
       title: '情绪',
       main: moods.length > 0 ? `${moods.length} 条心情` : '还没记录',
       sub: moods.length > 0 ? (moods[0]?.crushed ? '最新：粉碎' : '最新：归入心底') : '记下每一次心动与后悔',
-      onClick: undefined as (() => void) | undefined,
+      onClick: () => setMoodOpen(true),
     },
     {
       key: 'time',
@@ -148,15 +179,15 @@ export default function LedgerPage() {
       title: '时间',
       main: times.length > 0 ? `${Math.round(totalMin / 60)} 小时` : '还没记录',
       sub: times.length > 0 ? `${times.length} 段时光` : '时间花在哪，生活就在哪',
-      onClick: undefined,
+      onClick: () => setTimeOpen(true),
     },
     {
       key: 'wish',
       Icon: ShoppingBag,
       tint: '#F59E0B',
-      title: '种草清单',
+      title: '心动清单',
       main: wishlist.length > 0 ? `${wishlist.length} 件想要` : '清单空空',
-      sub: wishTotal > 0 ? `合计 ¥${wishTotal.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}` : '想买的先记下来',
+      sub: wishTotal > 0 ? `合计 ¥${wishTotal.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}` : '心动的先记下来',
       onClick: () => setWishOpen(true),
     },
     {
@@ -323,7 +354,7 @@ export default function LedgerPage() {
         ) : null}
       </div>
 
-      {/* v1.0.20 四张生活小卡（情绪/时间/种草/冷静池；种草与冷静池可点开管理） */}
+      {/* v1.0.20 四张生活小卡（情绪/时间/心动清单/冷静池，全部可点开管理） */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         {lifeCards.map(({ key, Icon, tint, title, main, sub, onClick }) => {
           const clickable = typeof onClick === 'function';
@@ -398,9 +429,11 @@ export default function LedgerPage() {
         {grain === 'year' ? renderYearGroups() : renderDayGroups(activeRows)}
       </div>
 
-      {/* 种草 / 冷静池管理弹层 */}
+      {/* 心动清单 / 冷静池管理弹层 */}
       {wishOpen ? <WishSheet onClose={() => setWishOpen(false)} /> : null}
       {coolOpen ? <CooldownSheet onClose={() => setCoolOpen(false)} /> : null}
+      {moodOpen ? <MoodSheet onClose={() => setMoodOpen(false)} /> : null}
+      {timeOpen ? <TimeSheet onClose={() => setTimeOpen(false)} /> : null}
     </div>
   );
 }

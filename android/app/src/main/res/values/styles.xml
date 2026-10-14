@@ -21,6 +21,11 @@
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
         <item name="android:windowTranslucentStatus">false</item>
+        <!-- ★v1.0.21：Android 15 对 targetSdk 35 应用强制 edge-to-edge，
+             WebView 会延伸到状态栏下导致顶栏被状态栏盖住。此处显式申请豁免，
+             让系统栏重新占位（与 capacitor.config 的 adjustMarginsForEdgeToEdge:'auto' 双保险）。 -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+        <item name="android:statusBarColor">#f4f5f3</item>
     </style>
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">

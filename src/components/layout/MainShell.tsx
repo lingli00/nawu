@@ -1,9 +1,10 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Compass, Home, ScrollText, Shield, Smartphone, Sparkles, User } from 'lucide-react';
+import { BarChart3, Compass, Home, Plus, ScrollText, Shield, Smartphone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { APP_VERSION } from '../../lib/appVersion';
 import { haptic } from '../../lib/haptics';
+import RecordMenu from '../RecordMenu';
 
 /**
  * 主壳（v1.0.6：三端一码，PC 网页重构完成）：
@@ -134,6 +135,8 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
   const narrow = !useMediaQuery('(min-width: 1024px)'); // 手机上强制 PC 版 → 图标窄栏
   const inShell = SHELL_PATHS.has(pathname);
   const rail = narrow ? 'w-14' : 'w-60';
+  /** v1.0.22：主行动钮改开「加号动作菜单」（与移动壳 FAB 同一组件）。 */
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="flex min-h-screen bg-paper text-ink">
@@ -156,19 +159,19 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
           ) : null}
         </div>
 
-        {/* AI 记一笔（桌面主行动） */}
+        {/* 记一笔（桌面主行动：开加号动作菜单，同移动壳 FAB） */}
         <div className={narrow ? 'px-2' : 'px-4'}>
           <button
             onClick={() => {
               void haptic('medium');
-              nav('/ai');
+              setMenuOpen(true);
             }}
-            aria-label="AI 记一笔"
+            aria-label="记一笔"
             className={`flex items-center font-medium transition-transform active:scale-95 ${narrow ? 'h-10 w-10 justify-center rounded-xl' : 'h-10 w-full justify-center gap-2 rounded-xl text-sm'}`}
             style={{ background: 'var(--accent)', color: '#fff' }}
           >
-            <Sparkles size={18} strokeWidth={1.8} aria-hidden />
-            {!narrow ? 'AI 记一笔' : null}
+            <Plus size={18} strokeWidth={2.2} aria-hidden />
+            {!narrow ? '记一笔' : null}
           </button>
         </div>
 
@@ -208,6 +211,8 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
           <div className="mx-auto w-full max-w-3xl px-6 pb-20 pt-8">{children}</div>
         )}
       </div>
+
+      {menuOpen ? <RecordMenu onClose={() => setMenuOpen(false)} /> : null}
     </div>
   );
 }
@@ -253,7 +258,8 @@ function SideAction({ Icon, label, narrow, onClick }: { Icon: LucideIcon; label:
 
 function MobileShell({ children }: { children: ReactNode }): JSX.Element {
   const { pathname } = useLocation();
-  const nav = useNavigate();
+  /** v1.0.22：中央 FAB 改开「加号动作菜单」（对标竞品），不再直跳 AI 页。 */
+  const [menuOpen, setMenuOpen] = useState(false);
 
   if (!SHELL_PATHS.has(pathname)) {
     return <>{children}</>;
@@ -281,9 +287,9 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
           <button
             onClick={() => {
               void haptic('medium');
-              nav('/ai');
+              setMenuOpen(true);
             }}
-            aria-label="AI 记一笔"
+            aria-label="记一笔"
             className="absolute -top-7 left-1/2 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full bg-accent text-3xl font-light text-white shadow-lg shadow-accent/40 active:scale-95"
             style={{ boxShadow: '0 10px 24px color-mix(in srgb, var(--accent) 40%, transparent)' }}
           >
@@ -295,6 +301,8 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
           <Tab key={t.to} {...t} />
         ))}
       </nav>
+
+      {menuOpen ? <RecordMenu onClose={() => setMenuOpen(false)} /> : null}
     </div>
   );
 }

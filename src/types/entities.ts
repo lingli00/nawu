@@ -109,7 +109,8 @@ export interface Subscription {
   updatedAt: string;
 }
 
-/** 订阅扣款流水。 */
+/** 订阅扣款流水。
+ *  ★v1.0.21 账单四态（对标归否）：pending=待确认 / paid=已支付 / skipped=已跳过 / failed=失败（待补记）。 */
 export interface Bill {
   id: string;
   subId: string;
@@ -117,7 +118,7 @@ export interface Bill {
   dueDate: string;
   amount: number;
   currency: string;
-  status: 'paid' | 'pending';
+  status: 'paid' | 'pending' | 'skipped' | 'failed';
   paidDate?: string;
   refund?: number;
   createdAt: string;
@@ -160,6 +161,12 @@ export interface WishItem {
   price?: number;
   url?: string;
   note?: string;
+  /** v1.0.22 对标竞品「种下一颗草」：商品图（icon 三形态值：img: / url: / brand:）。 */
+  image?: string;
+  /** 心动理由（多选标签，lucide 语义 key）。 */
+  reasons?: string[];
+  /** 渠道（淘宝/京东…，也可并入 note，独立存便于筛选）。 */
+  channel?: string;
   createdAt: string;
 }
 
@@ -167,8 +174,18 @@ export interface WishItem {
 export interface Cooldown {
   id: string;
   name: string;
-  /** ISO 日期 */
+  /** ISO 日期（天数冷静期）；小时级冷静期用 untilAt 精确到时刻。 */
   until: string;
+  /** v1.0.22「冲动冷冻」：小时级冷静（3h/24h/3d/7d/30d），untilAt = 精确到期时刻（ISO）。 */
+  hours?: number;
+  untilAt?: string;
+  /** 冲动金额（选填）。 */
+  amount?: number;
+  /** 冲动来源（限时打折/压力发泄…）。 */
+  reason?: string;
+  /** 商品链接 / 商品图（选填）。 */
+  url?: string;
+  image?: string;
   createdAt: string;
 }
 

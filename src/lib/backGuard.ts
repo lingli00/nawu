@@ -13,6 +13,11 @@ import { useEffect } from 'react';
  *   ① 内层主动 back 前设置 150ms 抑制窗，其他层收到 popstate 直接忽略
  *     （它们自己的占位历史还在，守卫继续生效）；
  *   ② 真实返回手势只会弹出栈顶（最近压入）的占位，非栈顶的守卫同样忽略。
+ *
+ * ★ v1.0.22 修复「加号菜单点卡片点击没反应」：
+ * 弹层关闭的同时若发生了前进导航（菜单点击 → nav 目标路由），
+ * cleanup 不再主动 history.back()（否则会把刚 push 的目标页弹回去）。
+ * 判定方式：挂载后记录 history.length，cleanup 时长度变了就跳过回退。
  */
 type Guard = { onClose: () => void };
 
@@ -32,6 +37,11 @@ export function mountBackGuard(onClose: () => void): () => void {
   } catch {
     return () => undefined;
   }
+  // ★ v1.0.22 修复「加号菜单点卡片没反应」：守卫存活期间若发生了前进导航
+  // （菜单点击后 nav 到目标路由），cleanup 不再主动 history.back()——
+  // 那个 back 会把刚 push 进去的目标页弹回原位，用户看到的就是「点了没反应」。
+  // 用 length 判定：pushState 会同步 +1；正常 UI 关闭时长度不变，照旧回退撤占位。
+  const lenAtMount = window.history.length;
   const self: Guard = { onClose };
   stack.push(self);
   let consumed = false;
@@ -53,7 +63,8 @@ export function mountBackGuard(onClose: () => void): () => void {
     window.removeEventListener('popstate', onPop);
     const i = stack.indexOf(self);
     if (i !== -1) stack.splice(i, 1);
-    if (!consumed) {
+    // 仅当守卫期间没有发生前进导航才撤占位（详见 lenAtMount 注释）。
+    if (!consumed && window.history.length === lenAtMount) {
       // 本层经 UI 途径关闭：主动撤掉占位历史；抑制窗让外层守卫忽略随之而来的 popstate。
       suppressUntil = Date.now() + 150;
       try {

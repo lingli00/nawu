@@ -1,7 +1,7 @@
 {
   "name": "guifou-app",
   "private": true,
-  "version": "1.0.20",
+  "version": "1.0.24",
   "description": "归否 Guifou · 物品与消费复盘 Android App（Capacitor + React + Vite）",
   "type": "module",
   "engines": {

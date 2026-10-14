@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, Receipt } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import PageShell from '../components/layout/PageShell';
 import PageField from '../components/ui/PageField';
 import IconPicker, { IconPreview } from '../components/IconPicker';
 import CategoryManageSheet from '../components/CategoryManageSheet';
+import BillSheet from '../components/BillSheet';
+import SubCalendar from '../components/SubCalendar';
 import { useDataStore, useSettingsStore, useUiStore, toastSuccess, toastError } from '../store';
 import { monthlyAvg, nextRenewCountdown } from '../domain/subscription';
 import { formatMoney } from '../lib/money';
@@ -86,6 +88,9 @@ export default function SubListPage({
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
   /** 就地管理订阅分类（不打断添加流程）。 */
   const [managingCats, setManagingCats] = useState(false);
+  /** v1.0.21 · M3.1：账单四态管理弹层（补记 / 退款 / 跳过 / 失败）。 */
+  const [billOpen, setBillOpen] = useState(false);
+  useBackGuard(billOpen, () => setBillOpen(false));
   /** openEditId 消费标记：只自动弹一次，用户手关后不因数据变化重弹。 */
   const consumedHintRef = useRef<string | null>(null);
 
@@ -110,6 +115,8 @@ export default function SubListPage({
   const active = subs.filter((s) => !isArchived(s));
   const archived = subs.filter((s) => isArchived(s));
   const pendingBills = useMemo(() => bills.filter((b) => b.status === 'pending'), [bills]);
+  /** v1.0.21：扣款失败的账单（需补记或跳过），在汇总卡上给出红点提示。 */
+  const failedBills = useMemo(() => bills.filter((b) => b.status === 'failed'), [bills]);
 
   /* —— v1.0 对标竞品的订阅汇总 —— */
   /** 分类筛选 chips（'all' = 全部订阅）。 */
@@ -233,9 +240,16 @@ export default function SubListPage({
         </div>
         {pendingBills.some((b) => b.subId === s.id) ? (
           <div className="flex items-center justify-between border-t border-line-2 px-3.5 py-2">
-            <p className="text-xs" style={{ color: 'var(--xu)' }}>
-              有待付账单
-            </p>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setBillOpen(true);
+              }}
+              className="text-xs underline-offset-2 active:underline"
+              style={{ color: 'var(--xu)' }}
+            >
+              有待付账单 · 去处理
+            </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -273,6 +287,30 @@ export default function SubListPage({
             预计年化 <b className="text-sm text-ink">{formatMoney(monthlyAvg(active) * 12, currency)}</b>
           </span>
         </div>
+        {/* v1.0.21 · M3.1：账单流水入口（待确认 / 失败 需人工处理） */}
+        <button
+          onClick={() => setBillOpen(true)}
+          className="mt-2.5 flex w-full items-center justify-between rounded-btn border border-line px-3 py-2 text-xs active:scale-[0.99]"
+        >
+          <span className="flex items-center gap-1.5 text-ink-2">
+            <Receipt size={13} />
+            账单流水
+            <span className="text-ink-3">{bills.length} 笔</span>
+          </span>
+          <span className="flex items-center gap-2">
+            {pendingBills.length ? (
+              <b className="text-[11px]" style={{ color: 'var(--xu)' }}>
+                待确认 {pendingBills.length}
+              </b>
+            ) : null}
+            {failedBills.length ? (
+              <b className="text-[11px]" style={{ color: 'var(--fou)' }}>
+                失败 {failedBills.length}
+              </b>
+            ) : null}
+            <span className="text-ink-3">›</span>
+          </span>
+        </button>
       </div>
 
       {/* 未来 30 天续费预告 */}
@@ -302,6 +340,9 @@ export default function SubListPage({
           </ul>
         </div>
       ) : null}
+
+      {/* v1.0.21 · M3.1：续费日历（按月网格看扣款安排，点日期出明细） */}
+      {active.length > 0 ? <SubCalendar onOpenBills={() => setBillOpen(true)} /> : null}
 
       {/* 分类筛选 chips */}
       <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
@@ -412,6 +453,9 @@ export default function SubListPage({
 
       {/* 就地管理订阅分类（新增/编辑表单内都能唤起） */}
       {managingCats ? <CategoryManageSheet kind="sub" onClose={() => setManagingCats(false)} /> : null}
+
+      {/* v1.0.21 · M3.1：账单四态弹层 */}
+      {billOpen ? <BillSheet onClose={() => setBillOpen(false)} /> : null}
     </>
   );
 

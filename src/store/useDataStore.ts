@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { newId } from '../lib/id';
 import { nowISO, today } from '../lib/date';
+import { round } from '../lib/money';
 import { COLLECTIONS } from '../types/entities';
 import type {
   Bill,
@@ -82,6 +83,10 @@ interface DataState {
   addBill: (draft: Partial<Bill> & { subId: string; amount: number }) => Promise<Bill>;
   /** 标记已扣款。 */
   markBillPaid: (id: string, paidDate?: string, refund?: number) => Promise<void>;
+  /** v1.0.21 账单四态迁移：skipped/failed/pending（paid 走 markBillPaid）。 */
+  setBillStatus: (id: string, status: Bill['status']) => Promise<void>;
+  /** v1.0.21 退款：paid 账单记退款金额（部分/全额）。 */
+  refundBill: (id: string, refund: number) => Promise<void>;
 
   /* —— 其它集合 —— */
   addMood: (draft: Partial<Mood> & { feeling: string; text: string }) => Promise<Mood>;
@@ -353,6 +358,28 @@ export const useDataStore = create<DataState>()((set, get) => {
       await commit('bills', rows, { label: '标记已扣款', prev });
     },
 
+    setBillStatus: async (id, status) => {
+      const prev = get().bills;
+      const rows = prev.map((b) =>
+        b.id === id
+          ? {
+              ...b,
+              status,
+              // 非 paid 状态清掉实付日与退款（补记/撤销时重置）
+              paidDate: status === 'paid' ? b.paidDate ?? today() : undefined,
+              refund: status === 'paid' ? b.refund : undefined,
+            }
+          : b,
+      );
+      await commit('bills', rows, { label: '更新账单状态', prev });
+    },
+
+    refundBill: async (id, refund) => {
+      const prev = get().bills;
+      const rows = prev.map((b) => (b.id === id ? { ...b, refund: Math.max(0, round(refund)) } : b));
+      await commit('bills', rows, { label: '登记退款', prev });
+    },
+
     /* —— 其它集合 —— */
     addMood: async (draft) => {
       const row: Mood = {
@@ -391,6 +418,9 @@ export const useDataStore = create<DataState>()((set, get) => {
         price: draft.price,
         url: draft.url,
         note: draft.note,
+        image: draft.image,
+        reasons: draft.reasons,
+        channel: draft.channel,
         createdAt: nowISO(),
       };
       const prev = get().wishlist;
@@ -399,7 +429,18 @@ export const useDataStore = create<DataState>()((set, get) => {
     },
 
     addCooldown: async (draft) => {
-      const row: Cooldown = { id: newId(), name: draft.name, until: draft.until, createdAt: nowISO() };
+      const row: Cooldown = {
+        id: newId(),
+        name: draft.name,
+        until: draft.until,
+        hours: draft.hours,
+        untilAt: draft.untilAt,
+        amount: draft.amount,
+        reason: draft.reason,
+        url: draft.url,
+        image: draft.image,
+        createdAt: nowISO(),
+      };
       const prev = get().cooldowns;
       await commit('cooldowns', [row, ...prev], { label: '加入冷却期', prev });
       return row;

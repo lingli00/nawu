@@ -16,6 +16,10 @@ const config: CapacitorConfig = {
     allowMixedContent: true,
     captureInput: true,
     webContentsDebuggingEnabled: false, // 发布版务必 false
+    // ★v1.0.21：Android 15 强制 edge-to-edge（WebView 延伸到状态栏/手势条下），
+    // 'auto' = 检测到强制 e2e 时给 WebView 加原生 margin 避开系统栏——
+    // 修复「页面顶部超出到状态栏」；低版本不受影响（overlay:false 已占位）。
+    adjustMarginsForEdgeToEdge: 'auto',
   },
   plugins: {
     Keyboard: {
