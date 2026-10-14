@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 
 /**
- * 触觉反馈统一出口（v1.0.17，参考归否「设置 → 显示偏好 → 震动」）。
+ * 触觉反馈统一出口（v1.0.17，设置 → 显示偏好 → 震动）。
  *
  * 设计要点：
  * - **不读 store**：开关状态由 App 根组件 `setHapticsEnabled()` 注入，避免 `lib → store` 反向依赖

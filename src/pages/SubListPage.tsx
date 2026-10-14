@@ -84,7 +84,7 @@ export default function SubListPage({
   const [startDate, setStartDate] = useState(today());
   const [icon, setIcon] = useState('');
   const [addCatId, setAddCatId] = useState('');
-  /** 正在编辑的订阅（点条目即编辑，对齐原版归否）。 */
+  /** 正在编辑的订阅（点条目即编辑，对齐原版竞品）。 */
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
   /** 就地管理订阅分类（不打断添加流程）。 */
   const [managingCats, setManagingCats] = useState(false);

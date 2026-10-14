@@ -30,7 +30,7 @@ import { getCategoryIcon } from '../lib/categoryIcons';
 import type { Goods, GoodsImage } from '../types/entities';
 
 /* ============================================================================
- * 首页（对齐原版归否布局）：
+ * 首页（对齐原版竞品布局）：
  * 大字标题 + 视图/搜索/新增 三按钮 → 物品/订阅 pill tab → 我的资产卡 →
  * 筛选与排序 chips → 三列/两列网格 或 列表。
  * 交互：单击物品卡 → 详情卡片（纯查看）；长按 500ms → 编辑（GoodsFormSheet）。
@@ -83,7 +83,7 @@ function isLocalImage(g: Goods): boolean {
   return Boolean(g.image?.ref && g.image.ref.startsWith('data:'));
 }
 
-/** 图片 ref 是否为网络品牌图标（favicon 热链；对标归否「品牌图/网络图标」来源）。 */
+/** 图片 ref 是否为网络品牌图标（favicon 热链；对标竞品「品牌图/网络图标」来源）。 */
 function isWebImage(g: { image?: GoodsImage }): boolean {
   return Boolean(g.image?.ref && g.image.ref.startsWith('http'));
 }
@@ -473,7 +473,7 @@ function GoodsFormSheet({
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   /** 裁剪弹层里「换一张」用（IconPicker 的 input 在其内部，这里自持一个）。 */
   const cropFileRef = useRef<HTMLInputElement>(null);
-  /** 就地管理物品分类（对标归否：不打断添加流程）。 */
+  /** 就地管理物品分类（对标竞品：不打断添加流程）。 */
   const [managingCats, setManagingCats] = useState(false);
   /** v1.0.18：点图标区直接开 picker（跳过五来源 sheet），默认系统图标。 */
   const [pickerTab, setPickerTab] = useState<PickerTab | null>(null);

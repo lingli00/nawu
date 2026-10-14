@@ -166,7 +166,7 @@ export function mergeSeedCategories(existing: Category[]): { list: Category[]; c
 /**
  * 首次启动灌种子：分类 43 条 + 默认设置；已灌过则做增量补齐。
  *
- * 幂等：`guifou.seeded.v1` 存在则跳过；分类为空时也会补灌（防误删后无法使用）。
+ * 幂等：`flyme.seeded.v1` 存在则跳过；分类为空时也会补灌（防误删后无法使用）。
  * ★Q6：只灌分类与设置，**不灌示例物品/订阅**，避免污染真实备份。
  */
 export async function ensureSeeded(): Promise<void> {

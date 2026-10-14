@@ -42,7 +42,7 @@ function emit(level: 'log' | 'warn' | 'error', tag: string, args: unknown[]): vo
   if (!enabled()) return;
   const safe = args.map((a) => sanitize(a));
   // eslint-disable-next-line no-console
-  (console[level] as (...a: unknown[]) => void)(`[guifou:${tag}]`, ...safe);
+  (console[level] as (...a: unknown[]) => void)(`[flyme:${tag}]`, ...safe);
 }
 
 export const logger = {

@@ -23,7 +23,7 @@ function fakePayload(): SnapshotPayload {
     collections: { goods: [{ id: 'g1', name: '雨伞' }], subscriptions: [], valueRecords: [] },
     settings: null,
     count: 1,
-    app: 'guifou-web',
+    app: 'flyme-web',
     version: 1,
     exportedAt: '2026-10-07T08:00:00.000Z',
   } as unknown as SnapshotPayload;
@@ -69,8 +69,8 @@ describe('lib/flymeFile · .flyme 备份格式（导出互通）', () => {
   });
 
   it('非 .flyme 内容：纯 JSON 兜底解析；垃圾数据报「无法识别」', async () => {
-    const json = await decodeFlyme(new TextEncoder().encode('{"app":"guifou-web"}'));
-    expect(json).toEqual({ app: 'guifou-web' });
+    const json = await decodeFlyme(new TextEncoder().encode('{"app":"flyme-web"}'));
+    expect(json).toEqual({ app: 'flyme-web' });
 
     await expect(decodeFlyme(new TextEncoder().encode('not-flyme-not-json'))).rejects.toThrow(
       '无法识别的文件（不是 .flyme 备份）',

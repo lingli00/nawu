@@ -69,7 +69,7 @@ export interface ProfileResp {
  * --------------------------------------------------------------------------*/
 
 /**
- * 备份快照（★`app` 固定写 `guifou-web`，不能写 guifou-android，
+ * 备份快照（★`app` 固定写 `flyme-web`，不能写 flyme-android，
  * 否则与 Web 版备份互斥，跨端恢复直接失败）。
  */
 export interface SnapshotPayload {
@@ -77,7 +77,7 @@ export interface SnapshotPayload {
   settings: Settings | null;
   /** 只算 goods + subscriptions + valueRecords，与 Web 版同口径 */
   count: number;
-  app: 'guifou-web';
+  app: 'flyme-web';
   version: number;
   exportedAt: string;
   /** v1.0.15：本地图标缓存快照（键=归一化 src，值=dataURL）。

@@ -12,7 +12,7 @@ const NETWORK_RE =
   /unknownhost|connectexception|econnrefused|econnreset|failed to connect|network|unreachable|no address associated|cleartext|socket|host/i;
 const TLS_RE = /ssl|sslhandshake|certificate|trust anchor|not trusted|cert path|javax\.net/i;
 
-/** 从后端响应体里取中文原因（后端 `guifou_fail` 统一返回 `{ok:false,error}`）。 */
+/** 从后端响应体里取中文原因（后端 `flyme_fail` 统一返回 `{ok:false,error}`）。 */
 export function extractServerError(body: unknown): string | undefined {
   if (!body || typeof body !== 'object') return undefined;
   const err = (body as Record<string, unknown>).error;

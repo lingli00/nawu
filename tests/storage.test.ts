@@ -33,9 +33,9 @@ describe('storage/repo · 12 集合读写往返（验收 5）', () => {
   });
 
   it('空的 / 损坏的集合读取为空数组而不是抛错', async () => {
-    await removeKV('guifou.walls');
+    await removeKV('flyme.walls');
     expect(await loadCollection('walls')).toEqual([]);
-    await setKV('guifou.times', { broken: true });
+    await setKV('flyme.times', { broken: true });
     expect(await loadCollection('times')).toEqual([]);
   });
 
@@ -57,7 +57,7 @@ describe('storage/repo · 12 集合读写往返（验收 5）', () => {
 describe('storage/seed · 分类种子（验收 5）', () => {
   it('43 条分类齐全，id 与 kind 正确', async () => {
     await saveCollectionNow('categories', []);
-    await removeKV('guifou.seeded.v1');
+    await removeKV('flyme.seeded.v1');
     await removeKV(KV_SETTINGS);
     await ensureSeeded();
 

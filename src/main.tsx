@@ -28,8 +28,11 @@ async function initNativePlugins(theme: 'light' | 'dark'): Promise<void> {
   }
 }
 
-/** 冷启动：先 hydrate 本地数据，再挂载 UI。 */
+/** 冷启动：先迁移旧数据键 → hydrate 本地数据，再挂载 UI。 */
 async function bootstrap(): Promise<void> {
+  // ★v1.0.26：旧 flyme.* localStorage 键一次性迁移到 flyme.*（必须在 hydrate 之前）
+  const { migrateLegacyKeys } = await import('./storage/keys');
+  migrateLegacyKeys();
   const store = useAppStore.getState();
   await store.init();
   const theme = useAppStore.getState().theme;

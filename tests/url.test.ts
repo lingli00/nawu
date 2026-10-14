@@ -7,8 +7,8 @@ describe('lib/url · 服务器地址归一化', () => {
   });
 
   it('保留 https 与端口', () => {
-    expect(normalizeServerUrl('https://guifou.example.com:8443/app/index.php').url).toBe(
-      'https://guifou.example.com:8443',
+    expect(normalizeServerUrl('https://flyme.example.com:8443/app/index.php').url).toBe(
+      'https://flyme.example.com:8443',
     );
   });
 

@@ -20,7 +20,7 @@ import type { Category, Judgement } from '../types/entities';
  *   页内已注明「保存后云同步生效」。
  */
 
-/** 单条识别规则（与网页版 `guifou.parse.rules` 云端镜像互通）。 */
+/** 单条识别规则（与网页版 `flyme.parse.rules` 云端镜像互通）。 */
 export interface ParseRule {
   /** 命中关键词（包含匹配即生效）。 */
   keyword: string;

@@ -172,7 +172,7 @@ export default function SettingsPage() {
         </button>
       </section>
 
-      {/* 显示偏好（v1.0.17，对标归否「更多设置 → 显示偏好 → 震动 / 开屏」） */}
+      {/* 显示偏好（v1.0.17，对标竞品「更多设置 → 显示偏好 → 震动 / 开屏」） */}
       <section className="mt-3 rounded-card border border-line bg-surface p-4">
         <h2 className="text-sm font-semibold">显示偏好</h2>
         <div className="mt-3 space-y-4">

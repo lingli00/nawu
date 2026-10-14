@@ -5,7 +5,7 @@ import type { AiResultItem } from './ai';
  * 纳物 · 本地数据模型
  *
  * ⚠️ 字段与键名必须与 Web 版字节级一致，否则 App 与 Web 的备份无法互通。
- *    12 个集合键名：`guifou.<collection>`；KV 前缀：`guifou.kv.`。
+ *    12 个集合键名：`flyme.<collection>`；KV 前缀：`flyme.kv.`。
  * ==========================================================================*/
 
 /** 归 / 需 / 否 —— 每一笔支出的价值判断。 */
@@ -110,7 +110,7 @@ export interface Subscription {
 }
 
 /** 订阅扣款流水。
- *  ★v1.0.21 账单四态（对标归否）：pending=待确认 / paid=已支付 / skipped=已跳过 / failed=失败（待补记）。 */
+ *  ★v1.0.21 账单四态：pending=待确认 / paid=已支付 / skipped=已跳过 / failed=失败（待补记）。 */
 export interface Bill {
   id: string;
   subId: string;
@@ -261,7 +261,7 @@ export interface Settings {
   showWarrantyCountdown: boolean;
   formatDaysAsYmd: boolean;
   vibrate: boolean;
-  /** v1.0.17：品牌开屏动画开关（参考归否「显示偏好 → 开屏」）。 */
+  /** v1.0.17：品牌开屏动画开关（参考竞品「显示偏好 → 开屏」）。 */
   splash: boolean;
   reminderMaster: boolean;
   homeTab: string;
@@ -320,14 +320,14 @@ export type ProbeState =
   | { kind: 'online'; dbOk: boolean; serverTime: string }
   | { kind: 'error'; error: ApiError };
 
-/** `guifou.ui` 内容。 */
+/** `flyme.ui` 内容。 */
 export interface UiState {
   offlineMode: boolean;
   homeTab: string;
   lastRoute: string;
 }
 
-/** `guifou.kv.backupMeta` 内容（自动备份节流用）。 */
+/** `flyme.kv.backupMeta` 内容（自动备份节流用）。 */
 export interface BackupMeta {
   lastBackupAt: string;
   lastCount: number;

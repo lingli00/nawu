@@ -5,10 +5,10 @@ import type { ServerConfig } from '../types/entities';
 import { EP } from './endpoints';
 
 /**
- * 用户资料与自定义解析规则（对应 Web 版 `guifou.parse.rules`）。
+ * 用户资料与自定义解析规则（对应 Web 版 `flyme.parse.rules`）。
  */
 
-/** 读取自定义识别规则（本地键 `guifou.parse.rules` 的云端镜像）。 */
+/** 读取自定义识别规则（本地键 `flyme.parse.rules` 的云端镜像）。 */
 export async function getRules(server: ServerConfig | null): Promise<unknown> {
   const res = await get<RulesResp>(server, EP.rules);
   if (!res.data || res.data.ok !== true) {
@@ -38,7 +38,7 @@ export async function getProfile(server: ServerConfig | null): Promise<Record<st
  * 保存用户资料。
  *
  * ★v0.7.0：**扁平提交** `POST {display_name, avatar_url, plan}`——
- * 旧实现包了一层 `{ profile: {...} }`，而后端 `guifou_param('display_name')` 只读
+ * 旧实现包了一层 `{ profile: {...} }`，而后端 `flyme_param('display_name')` 只读
  * 顶层参数，读到 null 存库，导致「昵称改了不保存」。后端已同时兼容两种形状。
  */
 export async function saveProfile(

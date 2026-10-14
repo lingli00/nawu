@@ -10,7 +10,7 @@ import type { Bill, Subscription } from '../types/entities';
 /**
  * 订阅账单管理弹层（v1.0.21 · M3.1 账单四态最小闭环）。
  *
- * 四态（对标归否）：pending=待确认 / paid=已支付 / skipped=已跳过 / failed=失败（待补记）。
+ * 四态：pending=待确认 / paid=已支付 / skipped=已跳过 / failed=失败（待补记）。
  * 行内操作：
  * - 待确认：标记已付 / 跳过本期 / 标记失败
  * - 失败：补记已付 / 跳过本期

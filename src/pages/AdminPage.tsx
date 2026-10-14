@@ -12,7 +12,7 @@ import { compressIconFile } from '../lib/brandIcon';
 
 /**
  * 管理后台（v1.0.7 起并入统一代码库，替代旧 PC 网页的 /#/admin）：
- * - 管理员账号与用户账号相互独立（guifou_admins 表，X-Admin-Token 鉴权）；
+ * - 管理员账号与用户账号相互独立（flyme_admins 表，X-Admin-Token 鉴权）；
  * - 功能：注册/登录控制 · 功能开关 · 站点名称/图标 · 全站公告 · 用户管理
  *   （验证/停用/重置密码/删除）· 邮件服务（SMTP 配置/测试/清除）
  *   · 数据库（连接信息/手动改连/测试连接）· 管理员改密。

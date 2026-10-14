@@ -47,7 +47,7 @@ export const AppRoutes: AppRoute[] = [
   { path: '/servers/:id', element: <ServerEditPage /> },
 
   // —— 主流程（P07–P13）——
-  // 首页 = 物品 + 订阅 合一（对齐原版归否）；旧路由全部重定向回来。
+  // 首页 = 物品 + 订阅 合一（对齐原版竞品）；旧路由全部重定向回来。
   { path: '/home', element: <HomePage /> },
   { path: '/overview', element: <Navigate to="/home" replace /> },
   { path: '/report', element: <ReportPage /> },

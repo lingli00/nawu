@@ -206,7 +206,7 @@ export async function request<T = unknown>(
   const fullUrl = joinUrl(norm.url, opts.path, opts.query);
 
   const headers: Record<string, string> = {
-    // ★F1：后端 guifou_param() 只读 php://input 做 json_decode，
+    // ★F1：后端 flyme_param() 只读 php://input 做 json_decode，
     // 必须无条件声明 JSON，否则参数被静默忽略（表现为「请输入正确的邮箱地址」）。
     'Content-Type': 'application/json',
     Accept: 'application/json',

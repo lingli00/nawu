@@ -9,7 +9,7 @@ import { createDefaultSettings } from './seed';
  * 备份快照序列化 / 反序列化。
  *
  * ★两条硬约束：
- * 1. `app` 固定写 `'guifou-web'`（不能写 guifou-android，否则与 Web 版备份互斥）
+ * 1. `app` 固定写 `'flyme-web'`（不能写 flyme-android，否则与 Web 版备份互斥）
  * 2. `count` 只算 `goods + subscriptions + valueRecords`（与 Web 版同口径）
  */
 
@@ -20,7 +20,7 @@ export interface SnapshotInput {
 }
 
 /** 快照里的 app 标识（★固定值）。 */
-export const SNAPSHOT_APP = 'guifou-web' as const;
+export const SNAPSHOT_APP = 'flyme-web' as const;
 /** 快照格式版本。 */
 export const SNAPSHOT_VERSION = 1;
 

@@ -104,7 +104,7 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
 
   const cards: Array<{ label: string; sub: string; Icon: typeof Sparkles; tint: string; run: () => void }> = [
     { label: 'AI 记一笔', sub: '说一句话 / 贴图自动归档', Icon: Sparkles, tint: TINT.ai, run: () => nav('/ai') },
-    { label: '价值记账', sub: '消费 / 归否判断', Icon: NotebookPen, tint: TINT.ledger, run: () => nav('/record') },
+    { label: '价值记账', sub: '消费 / 归需否判断', Icon: NotebookPen, tint: TINT.ledger, run: () => nav('/record') },
     {
       label: '手动录入',
       sub: '搜索 / 填写',

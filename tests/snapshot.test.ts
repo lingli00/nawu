@@ -28,9 +28,9 @@ function fakeCollections(): Record<string, unknown[]> {
 }
 
 describe('storage/snapshot · 快照序列化（验收 6）', () => {
-  it('app 固定为 guifou-web，count 只算 3 个集合', () => {
+  it('app 固定为 flyme-web，count 只算 3 个集合', () => {
     const snap = buildSnapshot({ collections: fakeCollections(), settings: createDefaultSettings() });
-    expect(snap.app).toBe('guifou-web');
+    expect(snap.app).toBe('flyme-web');
     expect(snap.version).toBe(1);
     // goods(2) + subscriptions(1) + valueRecords(3) = 6
     expect(snap.count).toBe(6);
@@ -54,11 +54,11 @@ describe('storage/snapshot · 快照序列化（验收 6）', () => {
     const applied = applySnapshot(text);
     expect(applied.collections.goods).toHaveLength(2);
     expect(applied.count).toBe(6);
-    expect(snapshotFromJson(text).app).toBe('guifou-web');
+    expect(snapshotFromJson(text).app).toBe('flyme-web');
   });
 
   it('缺失集合补空数组，绝不中断', () => {
-    const partial = { collections: { goods: [{ id: 'g1' }] }, settings: null, count: 1, app: 'guifou-web', version: 1, exportedAt: '' } as SnapshotPayload;
+    const partial = { collections: { goods: [{ id: 'g1' }] }, settings: null, count: 1, app: 'flyme-web', version: 1, exportedAt: '' } as SnapshotPayload;
     const applied = applySnapshot(partial);
     expect(applied.collections.goods).toHaveLength(1);
     expect(applied.collections.walls).toEqual([]);

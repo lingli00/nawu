@@ -187,7 +187,7 @@ textarea {
 }
 
 /* 页面转场：200ms 淡入（架构 §10.7） */
-@keyframes guifou-page-in {
+@keyframes flyme-page-in {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -198,11 +198,11 @@ textarea {
   }
 }
 .page-enter {
-  animation: guifou-page-in 200ms ease-out both;
+  animation: flyme-page-in 200ms ease-out both;
 }
 
-/* 居中弹窗弹入（首页物品详情大卡，对齐原版归否手感） */
-@keyframes guifou-pop-in {
+/* 居中弹窗弹入（首页物品详情大卡，对齐原版手感） */
+@keyframes flyme-pop-in {
   from {
     opacity: 0;
     transform: scale(0.92);
@@ -213,11 +213,11 @@ textarea {
   }
 }
 .pop-enter {
-  animation: guifou-pop-in 200ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: flyme-pop-in 200ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
 /* 弹窗遮罩淡入 */
-@keyframes guifou-fade-in {
+@keyframes flyme-fade-in {
   from {
     opacity: 0;
   }
@@ -226,11 +226,11 @@ textarea {
   }
 }
 .fade-enter {
-  animation: guifou-fade-in 160ms ease-out both;
+  animation: flyme-fade-in 160ms ease-out both;
 }
 
 /* 骨架屏 shimmer */
-@keyframes guifou-shimmer {
+@keyframes flyme-shimmer {
   0% {
     background-position: -200% 0;
   }
@@ -246,11 +246,11 @@ textarea {
     var(--surface-2) 63%
   );
   background-size: 200% 100%;
-  animation: guifou-shimmer 1.4s ease-in-out infinite;
+  animation: flyme-shimmer 1.4s ease-in-out infinite;
 }
 
 /* Sheet 上滑 250ms */
-@keyframes guifou-sheet-in {
+@keyframes flyme-sheet-in {
   from {
     transform: translateY(100%);
   }
@@ -259,14 +259,14 @@ textarea {
   }
 }
 .sheet-enter {
-  animation: guifou-sheet-in 250ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: flyme-sheet-in 250ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
 /* ============================================================
-   品牌开屏动画（v1.0.17，参考归否 SplashPage）
+   品牌开屏动画（v1.0.17，开屏动画）
    rhythm：logo 缩放淡入 700ms → 名称/口号阶梯上浮 → 停留 → 整体淡出
    ============================================================ */
-@keyframes guifou-splash-logo {
+@keyframes flyme-splash-logo {
   from {
     opacity: 0;
     transform: scale(0.72) rotate(-10deg);
@@ -276,7 +276,7 @@ textarea {
     transform: none;
   }
 }
-@keyframes guifou-splash-up {
+@keyframes flyme-splash-up {
   from {
     opacity: 0;
     transform: translateY(14px);
@@ -286,24 +286,24 @@ textarea {
     transform: none;
   }
 }
-@keyframes guifou-splash-out {
+@keyframes flyme-splash-out {
   to {
     opacity: 0;
     transform: scale(1.05);
   }
 }
 .splash-logo {
-  animation: guifou-splash-logo 700ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: flyme-splash-logo 700ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 .splash-up {
-  animation: guifou-splash-up 520ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: flyme-splash-up 520ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 .splash-out {
-  animation: guifou-splash-out 420ms ease-in both;
+  animation: flyme-splash-out 420ms ease-in both;
 }
 
 /* Toast 淡入 */
-@keyframes guifou-toast-in {
+@keyframes flyme-toast-in {
   from {
     opacity: 0;
     transform: translateY(-8px);
@@ -314,7 +314,7 @@ textarea {
   }
 }
 .toast-enter {
-  animation: guifou-toast-in 180ms ease-out both;
+  animation: flyme-toast-in 180ms ease-out both;
 }
 
 /* 滚动条隐藏（移动端观感） */

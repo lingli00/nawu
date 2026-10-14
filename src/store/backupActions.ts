@@ -102,7 +102,7 @@ export async function restoreBackup(id: number | string): Promise<RestoreResult>
   const detail = await getBackup(server, id);
 
   /* ★v1.0.19：恢复前先压缩快照里的 img: 大图（≤100KB）——
-     旧版大备份在网页端会把 localStorage（guifou.goods）撑爆，报 quota 错。 */
+     旧版大备份在网页端会把 localStorage（flyme.goods）撑爆，报 quota 错。 */
   let payload = detail.payload;
   if (typeof payload === 'string') {
     try {

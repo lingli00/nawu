@@ -5,9 +5,9 @@ import { APP_VERSION } from '../lib/appVersion';
 import { isNative } from '../net/env';
 
 /**
- * 品牌开屏动画（v1.0.17，参考归否 `_GuiFouSplashPage` + 「显示偏好 → 开屏」开关）。
+ * 品牌开屏动画（v1.0.17，参考早期开屏方案 + 「显示偏好 → 开屏」开关）。
  *
- * - 归否方案：`SingleTickerProviderStateMixin` 驱动 logo 缩放淡入 → 停留 → 淡出，
+ * - 实现要点：`SingleTickerProviderStateMixin` 驱动 logo 缩放淡入 → 停留 → 淡出，
  *   本版用 CSS keyframes 复刻同一节奏（700ms 入场 + 停留 + 400ms 淡出）；
  * - **App 每次冷启动都播**；网页端同会话只播一次（sessionStorage），避免刷新一次看一次；
  * - 遵循 `prefers-reduced-motion`；

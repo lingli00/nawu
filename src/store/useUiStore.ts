@@ -138,7 +138,7 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
 }));
 
 /**
- * 便捷：成功提示（v1.0.17 附带「成功」触感，归否同款：保存即轻震一下）。
+ * 便捷：成功提示（v1.0.17 附带「成功」触感，竞品同款：保存即轻震一下）。
  * haptic 内部已节流且静默失败，不需要 await。
  */
 export const toastSuccess = (message: string): string => {

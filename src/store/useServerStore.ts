@@ -11,7 +11,7 @@ import type { ProbeState, ServerConfig } from '../types/entities';
 /**
  * 服务器 store：列表 / 当前 / 探测状态。
  *
- * 持久化：`guifou.kv.servers`（列表）+ `guifou.selfhost`（当前，与 Web 版兼容）。
+ * 持久化：`flyme.kv.servers`（列表）+ `flyme.selfhost`（当前，与 Web 版兼容）。
  */
 
 /** 切换服务器时的回调（由 `useAppStore` 注册为「清空登录态」）。 */

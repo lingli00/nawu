@@ -87,6 +87,6 @@ describe('qa · settings 合并语义铁律', () => {
     });
     const json = JSON.stringify(payload);
     expect(json).toContain('"archivedSubIds":["s1"]');
-    expect(payload.app).toBe('guifou-web');
+    expect(payload.app).toBe('flyme-web');
   });
 });
