@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Compass,
   CreditCard,
@@ -14,7 +15,8 @@ import {
 import { useBackGuard } from '../lib/backGuard';
 import { haptic } from '../lib/haptics';
 import { useMediaQuery } from '../lib/useMediaQuery';
-import { emitSheetOpen, type SheetKey } from '../lib/sheetBus';
+import type { SheetKey } from '../lib/sheetBus';
+import QuickSheetHost from './QuickSheets';
 
 /**
  * 加号动作菜单（v1.0.22 起 · 文案与视觉全部自有语言）。
@@ -22,11 +24,11 @@ import { emitSheetOpen, type SheetKey } from '../lib/sheetBus';
  * 结构：2×2 记录卡（AI 记一笔 / 价值记账 / 手动录入 / 新增订阅）
  *      + 2×2 生活流入口（购物冷静 / 心动清单 / 时间切片 / 情绪速写）+ 取消。
  *
- * ★ v1.0.24 修复「新增订阅第一次点击没反应，反复点才能进」：
- * 旧实现在 onClick 里同步 emitSheetOpen —— 而同一轮批处理中 RecordMenu 卸载，
- * backGuard 的 cleanup 执行 history.back() 撤占位历史，其 popstate 与 emit
- * 的 setState 交错，首次开层被吞。现在同路由 emit 推迟一个宏任务
- * （back()/popstate 先落地），且 emit 无订阅者时自动退回「标志 + 导航」自愈。
+ * ★ v1.0.28 就地弹层：六类弹层不再跨路由跳转——在哪个页面点加号，
+ * 弹层就地出现在哪个页面（QuickSheetHost），关闭后仍停留在原页面。
+ * 实现：组件保持挂载，点卡片后切到「弹层模式」（菜单面板换成 QuickSheetHost），
+ * 弹层关闭时先撤弹层占位历史，再延迟一拍关闭菜单（见 closeAll 注释）。
+ * 「AI 记一笔 / 价值记账」是页面导航，仍走路由跳转。
  *
  * PC 适配：≥1024px 居中对话框（pop-enter），移动端底部 sheet（sheet-enter）。
  */
@@ -42,23 +44,15 @@ const TINT = {
   mood: '#c2603f', // 陶土
 };
 
-/** 生活流/记录弹层的路由归属：同路由发信号，跨路由走标志 + 导航。 */
-const SHEET_ROUTE: Record<SheetKey, { route: string; flag: string }> = {
-  goods: { route: '/home', flag: 'gf.open.goods' },
-  sub: { route: '/home', flag: 'gf.open.sub' },
-  wish: { route: '/ledger', flag: 'gf.open.wish' },
-  cooldown: { route: '/ledger', flag: 'gf.open.cooldown' },
-  mood: { route: '/ledger', flag: 'gf.open.mood' },
-  time: { route: '/ledger', flag: 'gf.open.time' },
+/** 旧跨路由方案的 sessionStorage 标志名（v1.0.28 起只做清理，不再写入）。 */
+const SHEET_FLAG: Record<SheetKey, string> = {
+  goods: 'gf.open.goods',
+  sub: 'gf.open.sub',
+  wish: 'gf.open.wish',
+  cooldown: 'gf.open.cooldown',
+  mood: 'gf.open.mood',
+  time: 'gf.open.time',
 };
-
-function setFlag(key: string): void {
-  try {
-    sessionStorage.setItem(key, '1');
-  } catch {
-    /* 忽略 */
-  }
-}
 
 function clearFlag(key: string): void {
   try {
@@ -70,47 +64,53 @@ function clearFlag(key: string): void {
 
 export default function RecordMenu({ onClose }: { onClose: () => void }) {
   const nav = useNavigate();
-  const { pathname } = useLocation();
   const wide = useMediaQuery('(min-width: 1024px)');
   useBackGuard(true, onClose);
+  /* v1.0.28 就地弹层：非 null 时菜单面板换成对应弹层；leaving 时整层静默等卸载。 */
+  const [sheet, setSheet] = useState<SheetKey | null>(null);
+  const [leaving, setLeaving] = useState(false);
 
+  /**
+   * 弹层关闭（保存成功 / 点遮罩 / 返回键）→ 关弹层 + 关菜单。
+   * 延迟一拍：让弹层 backGuard cleanup 的 history.back() 先落地，
+   * 菜单卸载撤占位时的 length 判定才准确（否则菜单占位历史残留，
+   * 用户之后按返回会感觉「要多按一次」）。
+   */
+  const closeAll = (): void => {
+    if (leaving) return;
+    setSheet(null);
+    setLeaving(true);
+    setTimeout(onClose, 60);
+  };
+
+  /** 六类弹层全部就地打开（任意页面），不再跳路由。 */
+  const openSheet = (key: SheetKey): void => {
+    clearFlag(SHEET_FLAG[key]);
+    setSheet(key);
+  };
+
+  /** 页面跳转类入口（AI 记一笔 / 价值记账）：关菜单 + 导航。
+   *  就地弹层类入口（手动录入 / 新增订阅 / 生活流四键）：不关菜单，切到弹层模式。 */
   const go = (fn: () => void): void => {
     void haptic('select');
     onClose();
     fn();
   };
-
-  /**
-   * 同路由发信号即时开层；跨路由写标志 + 导航（目标页挂载消费）。
-   * 同路由的 emit 推迟一个宏任务：关菜单时 backGuard 的 history.back()
-   * 派发的 popstate 与 emit 的 setState 同帧交错会吞掉首次开层
-   * （v1.0.24 修复「第一次点击没反应」）。
-   */
-  const openSheet = (key: SheetKey): void => {
-    const { route, flag } = SHEET_ROUTE[key];
-    if (pathname === route) {
-      clearFlag(flag);
-      setTimeout(() => {
-        if (emitSheetOpen(key)) return;
-        // 无订阅者（目标页未挂载）：退回「标志 + 导航」自愈
-        setFlag(flag);
-        nav(route);
-      }, 0);
-    } else {
-      setFlag(flag);
-      nav(route);
-    }
+  const pick = (fn: () => void): void => {
+    void haptic('select');
+    fn();
   };
 
-  const cards: Array<{ label: string; sub: string; Icon: typeof Sparkles; tint: string; run: () => void }> = [
-    { label: 'AI 记一笔', sub: '说一句话 / 贴图自动归档', Icon: Sparkles, tint: TINT.ai, run: () => nav('/ai') },
-    { label: '价值记账', sub: '消费 / 归需否判断', Icon: NotebookPen, tint: TINT.ledger, run: () => nav('/record') },
+  const cards: Array<{ label: string; sub: string; Icon: typeof Sparkles; tint: string; run: () => void; inPlace: boolean }> = [
+    { label: 'AI 记一笔', sub: '说一句话 / 贴图自动归档', Icon: Sparkles, tint: TINT.ai, run: () => nav('/ai'), inPlace: false },
+    { label: '价值记账', sub: '消费 / 归需否判断', Icon: NotebookPen, tint: TINT.ledger, run: () => nav('/record'), inPlace: false },
     {
       label: '手动录入',
       sub: '搜索 / 填写',
       Icon: PenLine,
       tint: TINT.manual,
       run: () => openSheet('goods'),
+      inPlace: true,
     },
     {
       label: '新增订阅',
@@ -118,6 +118,7 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
       Icon: CreditCard,
       tint: TINT.sub,
       run: () => openSheet('sub'),
+      inPlace: true,
     },
   ];
 
@@ -142,10 +143,10 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
 
       {/* 2×2 记录卡 */}
       <div className="grid grid-cols-2 gap-2.5">
-        {cards.map(({ label, sub, Icon, tint, run }) => (
+        {cards.map(({ label, sub, Icon, tint, run, inPlace }) => (
           <button
             key={label}
-            onClick={() => go(run)}
+            onClick={() => (inPlace ? pick(run) : go(run))}
             className="rounded-card border border-line p-3.5 text-left transition-all active:scale-[0.98]"
             style={{ background: `color-mix(in srgb, ${tint} 8%, var(--surface))` }}
           >
@@ -168,7 +169,7 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
         {rows.map(({ label, sub, Icon, tint, key }) => (
           <button
             key={label}
-            onClick={() => go(() => openSheet(key))}
+            onClick={() => pick(() => openSheet(key))}
             className="flex items-center gap-2.5 rounded-card border px-3 py-2.5 text-left transition-all active:scale-[0.98]"
             style={{
               borderColor: `color-mix(in srgb, ${tint} 28%, transparent)`,
@@ -197,6 +198,13 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
       </button>
     </>
   );
+
+  /* —— v1.0.28 弹层模式：菜单面板换成对应弹层（组件保持挂载，菜单守卫占位仍在栈底）—— */
+  if (sheet && !leaving) {
+    return <QuickSheetHost sheetKey={sheet} onClose={closeAll} />;
+  }
+  /* 弹层已关、菜单即将卸载：渲染空，避免菜单面板闪现一帧。 */
+  if (leaving) return null;
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex bg-black/40" onClick={onClose} style={wide ? { alignItems: 'center', justifyContent: 'center' } : { alignItems: 'flex-end' }}>

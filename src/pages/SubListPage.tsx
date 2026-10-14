@@ -34,6 +34,119 @@ function catTint(id: string): string {
 
 /** 订阅图标统一中性底版（v1.0.3 极简化：不再按 id 上彩色）。 */
 
+/**
+ * v1.0.28 · 新增订阅表单抽成独立 sheet（此前内嵌在 SubListPage JSX 里）：
+ * RecordMenu 在任意页面就地弹层 + 本页新增入口共用同一组件。
+ * 自带 backGuard / 分类就地管理；保存成功后关闭弹层（防重复记录）。
+ */
+export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNode {
+  useBackGuard(true, onClose);
+  const addSubscription = useDataStore((s) => s.addSubscription);
+  const categories = useDataStore((s) => s.categories);
+  /* 新增表单（文本非受控收集；关闭即卸载，无需重置） */
+  const [name, setName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [period, setPeriod] = useState<Subscription['period']>('month');
+  const [startDate, setStartDate] = useState(today());
+  const [icon, setIcon] = useState('');
+  const [addCatId, setAddCatId] = useState('');
+  /** 就地管理订阅分类（不打断添加流程）。 */
+  const [managingCats, setManagingCats] = useState(false);
+
+  const submitAdd = async (): Promise<void> => {
+    const amt = Number(amount);
+    if (!name.trim() || !Number.isFinite(amt) || amt <= 0) {
+      toastError('请填写名称和大于 0 的金额');
+      return;
+    }
+    await addSubscription({
+      name: name.trim(),
+      amount: amt,
+      period,
+      every: 1,
+      startDate,
+      nextRenewDate: startDate,
+      categoryId: addCatId || categories.filter((c) => c.kind === 'sub').sort((a, b) => a.order - b.order)[0]?.id,
+      icon: icon || undefined,
+    });
+    toastSuccess('已添加订阅');
+    onClose();
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={onClose}>
+      <div
+        className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-surface p-4"
+        onClick={(e) => e.stopPropagation()}
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
+      >
+        <h2 className="mb-3 text-base font-semibold">添加订阅</h2>
+        <div className="space-y-3">
+          <div>
+            <p className="text-xs font-medium text-ink-2">图标</p>
+            <div className="mt-1.5">
+              <IconPicker value={icon} onChange={setIcon} />
+            </div>
+          </div>
+          <SubCatChips value={addCatId} onChange={setAddCatId} onManage={() => setManagingCats(true)} />
+          <PageField label="名称">
+            <input
+              defaultValue={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="例如：B 站大会员"
+              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+            />
+          </PageField>
+          <div className="grid grid-cols-2 gap-3">
+            <PageField label="金额">
+              <input
+                defaultValue={amount}
+                onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                inputMode="decimal"
+                placeholder="0.00"
+                className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              />
+            </PageField>
+            <PageField label="周期">
+              <div className="flex gap-1">
+                {(['month', 'year', 'week'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={`h-11 flex-1 rounded-btn border text-sm ${
+                      period === p ? 'border-accent bg-accent-soft text-accent' : 'border-line text-ink-2'
+                    }`}
+                  >
+                    {PERIOD_LABEL[p]}
+                  </button>
+                ))}
+              </div>
+            </PageField>
+          </div>
+          <PageField label="开始日期">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none"
+            />
+          </PageField>
+          <button
+            onClick={() => void submitAdd()}
+            disabled={!name.trim() || !Number(amount)}
+            className="h-12 w-full rounded-btn bg-accent text-base font-semibold text-white disabled:opacity-40"
+          >
+            添加
+          </button>
+        </div>
+      </div>
+      {/* 就地管理订阅分类（不打断添加流程） */}
+      {managingCats ? <CategoryManageSheet kind="sub" onClose={() => setManagingCats(false)} /> : null}
+    </div>,
+    document.body,
+  );
+}
+
 /** 订阅图标渲染：builtin / url: / img: 三形态统一走 IconPreview（网络图标加载失败自动回落）。 */
 function SubIcon({ icon, size = 18, className }: { icon?: string; size?: number; className?: string }) {
   return <IconPreview icon={icon ?? ''} size={size} className={className} />;
@@ -62,7 +175,6 @@ export default function SubListPage({
   const subs = useDataStore((s) => s.subscriptions);
   const categories = useDataStore((s) => s.categories);
   const bills = useDataStore((s) => s.bills);
-  const addSubscription = useDataStore((s) => s.addSubscription);
   const markBillPaid = useDataStore((s) => s.markBillPaid);
   const settings = useSettingsStore((s) => s.settings);
   const updateSettings = useSettingsStore((s) => s.update);
@@ -72,22 +184,13 @@ export default function SubListPage({
   /** 新增 sheet 开关：外部传了 addOpen 就走受控，否则自管。 */
   const adding = addOpen ?? addingInner;
   // 注意：受控模式（父级传 addOpen）下 setAddingInner 无效，必须走统一入口 setAdding
-  useBackGuard(adding, () => setAdding(false));
+  // v1.0.28：返回键守卫由 SubAddSheet 自带（useBackGuard(true, onClose)），此处不再重复挂
   const setAdding = (open: boolean): void => {
     setAddingInner(open);
     onAddOpenChange?.(open);
   };
-  /* 新增表单（文本非受控收集；关闭即卸载，无需重置） */
-  const [name, setName] = useState('');
-  const [amount, setAmount] = useState('');
-  const [period, setPeriod] = useState<Subscription['period']>('month');
-  const [startDate, setStartDate] = useState(today());
-  const [icon, setIcon] = useState('');
-  const [addCatId, setAddCatId] = useState('');
   /** 正在编辑的订阅（点条目即编辑，对齐原版竞品）。 */
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
-  /** 就地管理订阅分类（不打断添加流程）。 */
-  const [managingCats, setManagingCats] = useState(false);
   /** v1.0.21 · M3.1：账单四态管理弹层（补记 / 退款 / 跳过 / 失败）。 */
   const [billOpen, setBillOpen] = useState(false);
   useBackGuard(billOpen, () => setBillOpen(false));
@@ -166,26 +269,6 @@ export default function SubListPage({
     const next = cur.includes(s.id) ? cur.filter((x) => x !== s.id) : [...cur, s.id];
     await updateSettings({ archivedSubIds: next });
     toastSuccess(next.includes(s.id) ? '已停用（不再计入月均）' : '已恢复在用');
-  };
-
-  const submitAdd = async () => {
-    const amt = Number(amount);
-    if (!name.trim() || !Number.isFinite(amt) || amt <= 0) {
-      toastError('请填写名称和大于 0 的金额');
-      return;
-    }
-    await addSubscription({
-      name: name.trim(),
-      amount: amt,
-      period,
-      every: 1,
-      startDate,
-      nextRenewDate: startDate,
-      categoryId: addCatId || subCats[0]?.id,
-      icon: icon || undefined,
-    });
-    toastSuccess('已添加订阅');
-    setAdding(false);
   };
 
   const subRow = (s: Subscription) => {
@@ -374,85 +457,11 @@ export default function SubListPage({
         </>
       ) : null}
 
-      {/* 新增 sheet（portal 挂 body：embedded 模式下也在动画祖先里，fixed 会被 transform 祖先劫持） */}
-      {adding
-        ? createPortal(
-            <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={() => setAdding(false)}>
-              <div
-                className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-surface p-4"
-                onClick={(e) => e.stopPropagation()}
-                style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
-              >
-                <h2 className="mb-3 text-base font-semibold">添加订阅</h2>
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs font-medium text-ink-2">图标</p>
-                <div className="mt-1.5">
-                  <IconPicker value={icon} onChange={setIcon} />
-                </div>
-              </div>
-              <SubCatChips value={addCatId} onChange={setAddCatId} onManage={() => setManagingCats(true)} />
-              <PageField label="名称">
-                <input
-                  defaultValue={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="例如：B 站大会员"
-                  className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
-                />
-              </PageField>
-              <div className="grid grid-cols-2 gap-3">
-                <PageField label="金额">
-                  <input
-                    defaultValue={amount}
-                    onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
-                  />
-                </PageField>
-                <PageField label="周期">
-                  <div className="flex gap-1">
-                    {(['month', 'year', 'week'] as const).map((p) => (
-                      <button
-                        key={p}
-                        onClick={() => setPeriod(p)}
-                        className={`h-11 flex-1 rounded-btn border text-sm ${
-                          period === p ? 'border-accent bg-accent-soft text-accent' : 'border-line text-ink-2'
-                        }`}
-                      >
-                        {PERIOD_LABEL[p]}
-                      </button>
-                    ))}
-                  </div>
-                </PageField>
-              </div>
-              <PageField label="开始日期">
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none"
-                />
-              </PageField>
-              <button
-                onClick={() => void submitAdd()}
-                disabled={!name.trim() || !Number(amount)}
-                className="h-12 w-full rounded-btn bg-accent text-base font-semibold text-white disabled:opacity-40"
-              >
-                添加
-              </button>
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      {/* 新增 sheet（v1.0.28 抽成独立组件；portal 挂 body 的规则在组件内保证） */}
+      {adding ? <SubAddSheet onClose={() => setAdding(false)} /> : null}
 
       {/* 编辑 sheet（portal 挂 body；embedded 与独立访问模式都生效） */}
       {editingSub ? <SubEditSheet initial={editingSub} onClose={() => setEditingSub(null)} /> : null}
-
-      {/* 就地管理订阅分类（新增/编辑表单内都能唤起） */}
-      {managingCats ? <CategoryManageSheet kind="sub" onClose={() => setManagingCats(false)} /> : null}
 
       {/* v1.0.21 · M3.1：账单四态弹层 */}
       {billOpen ? <BillSheet onClose={() => setBillOpen(false)} /> : null}

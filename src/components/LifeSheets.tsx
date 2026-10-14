@@ -308,6 +308,8 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
       setImage('');
       setReasons([]);
       toastSuccess('已记下心动');
+      // v1.0.28：保存成功后关闭弹层（明确反馈已记录，防重复添加）
+      onClose();
     } finally {
       setBusy(false);
     }
@@ -517,6 +519,8 @@ export function CooldownSheet({ onClose }: { onClose: () => void }) {
       await addCooldown({ name, ...coolUntil(COOL_OPTIONS.find((o) => o.days === days) ?? COOL_OPTIONS[3]) });
       if (nameRef.current) nameRef.current.value = '';
       toastSuccess(`已进入 ${days} 天冷静期`);
+      // v1.0.28：保存成功后关闭弹层（明确反馈已记录，防重复添加）
+      onClose();
     } finally {
       setBusy(false);
     }
@@ -836,6 +840,8 @@ export function MoodSheet({ onClose }: { onClose: () => void }) {
       });
       if (textRef.current) textRef.current.value = '';
       toastSuccess(mode === 'crush' ? '已粉碎，翻篇' : '已归入心底');
+      // v1.0.28：保存成功后关闭弹层（明确反馈已记录，防重复添加）
+      onClose();
     } finally {
       setBusy(false);
     }
@@ -1045,6 +1051,8 @@ export function TimeSheet({ onClose }: { onClose: () => void }) {
       setCustom('');
       if (noteRef.current) noteRef.current.value = '';
       toastSuccess(`已记下 ${minutes} 分钟`);
+      // v1.0.28：保存成功后关闭弹层（明确反馈已记录，防重复添加）
+      onClose();
     } finally {
       setBusy(false);
     }

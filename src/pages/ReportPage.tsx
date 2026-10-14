@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Brain, Heart, Hourglass, Snowflake, Sprout } from 'lucide-react';
 import CategoryGlyph from '../components/CategoryGlyph';
 import { cooldownExpired } from '../components/LifeSheets';
+import QuickSheetHost from '../components/QuickSheets';
 import { useDataStore, useSettingsStore } from '../store';
 import { categoryShare, judgementBreakdown } from '../domain/stats';
 import type { CategorySlice } from '../domain/stats';
@@ -27,16 +27,6 @@ const J_META = {
   xu: { label: '需', desc: '必要的花销' },
   fou: { label: '否', desc: '本可避免' },
 } as const;
-
-/** 生活流「查看记录」→ 账本页对应弹层（跨路由走 sessionStorage 标志）。 */
-const LIFE_ROUTE: Record<SheetKey, string> = {
-  goods: 'gf.open.goods',
-  sub: 'gf.open.sub',
-  wish: 'gf.open.wish',
-  cooldown: 'gf.open.cooldown',
-  mood: 'gf.open.mood',
-  time: 'gf.open.time',
-};
 
 /** 分钟 → 「3h40m / 50m」人类可读。 */
 function fmtMin(min: number): string {
@@ -179,7 +169,6 @@ function NetTrend({
 
 /** P08 报表：分类环图 + 趋势 + 归/需/否结构（支持日/月/年三种粒度）。 */
 export default function ReportPage() {
-  const nav = useNavigate();
   const records = useDataStore((s) => s.valueRecords);
   const categories = useDataStore((s) => s.categories);
   const currency = useSettingsStore((s) => s.settings.currency);
@@ -278,14 +267,10 @@ export default function ReportPage() {
     };
   }, [grain, day, ym, year, times, moods, wishlist, cooldowns]);
 
-  /** 「查看记录」→ 账本页并自动展开对应生活流弹层。 */
+  /** v1.0.28 · 生活流 chips 就地弹层：不再跳转账本页，关闭后停留在报表页。 */
+  const [lifeSheet, setLifeSheet] = useState<SheetKey | null>(null);
   const openLife = (key: SheetKey): void => {
-    try {
-      sessionStorage.setItem(LIFE_ROUTE[key], '1');
-    } catch {
-      /* 忽略 */
-    }
-    nav('/ledger');
+    setLifeSheet(key);
   };
 
   const healthTint =
@@ -569,6 +554,9 @@ export default function ReportPage() {
           </div>
         </div>
       </div>
+
+      {/* v1.0.28 · 生活流 chips 就地弹层（时间/心动/情绪），关闭后停留在报表页 */}
+      {lifeSheet ? <QuickSheetHost sheetKey={lifeSheet} onClose={() => setLifeSheet(null)} /> : null}
     </div>
   );
 }

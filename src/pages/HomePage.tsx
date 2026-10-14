@@ -442,7 +442,7 @@ function CropSheet({
  *   dailyCost/netInvest/totalInvest 消费，本文件不自造任何公式；
  *   incomes（unknown[]）全项目无消费处、无定义形状，编辑时不展示、原样保留。
  * ==========================================================================*/
-function GoodsFormSheet({
+export function GoodsFormSheet({
   initial,
   prefill,
   onClose,
