@@ -206,7 +206,8 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
 
       <div className="min-w-0 flex-1" style={{ paddingLeft: narrow ? 56 : 240 }}>
         {inShell ? (
-          <div className="mx-auto w-full max-w-5xl px-8 pb-20 pt-8">{children}</div>
+          // ★v1.0.25：宽屏内容放宽到 1240px（原 5xl=1024 在 1080p+ 下留白过大，像手机页拉伸）
+          <div className="mx-auto w-full max-w-[1240px] px-8 pb-20 pt-8 2xl:max-w-[1320px]">{children}</div>
         ) : (
           <div className="mx-auto w-full max-w-3xl px-6 pb-20 pt-8">{children}</div>
         )}

@@ -25,6 +25,9 @@ const ENTRIES: Array<{ to: string; Icon: LucideIcon; label: string; desc: string
   { to: '/settings', Icon: Settings, label: '设置', desc: '主题 · AI · 同步 · 货币' },
 ];
 
+/** ★v1.0.25：会话级昵称缓存——进页先显示上次结果，后台静默刷新，杜绝名字跳动。 */
+let profileNameCache = '';
+
 /** P20 我的：登录态 + 功能入口。 */
 export default function MePage() {
   const nav = useNavigate();
@@ -38,14 +41,22 @@ export default function MePage() {
 
   // ★v0.7.0：昵称优先取云端 profile（session 里的 display_name 是登录时的快照，
   // 资料改完不重新登录会一直显示旧值）。拉取失败静默回落 session/邮箱。
-  const [profileName, setProfileName] = useState('');
+  // ★v1.0.25：初值用会话缓存，后台刷新仅在实际变化时才写入——修复每次进页
+  // 「先快照后云端名」的闪跳（录屏 156af08c）。
+  const [profileName, setProfileName] = useState(profileNameCache);
   useEffect(() => {
-    if (!loggedIn || !server) return;
+    if (!loggedIn || !server) {
+      profileNameCache = ''; // 登出/切服务器时清缓存，避免串号
+      return;
+    }
     let alive = true;
     getProfile(server)
       .then((raw) => {
         const dn = typeof raw.display_name === 'string' ? raw.display_name.trim() : '';
-        if (alive && dn) setProfileName(dn);
+        if (alive && dn && dn !== profileNameCache) {
+          profileNameCache = dn;
+          setProfileName(dn);
+        }
       })
       .catch(() => {
         // 静默：昵称显示回落即可
@@ -68,115 +79,121 @@ export default function MePage() {
   const name = profileName || session?.user?.display_name || session?.user?.email || '未登录';
 
   return (
-    <div className="space-y-3">
-      {/* 头部：账号卡（点击头像/信息行进入账号编辑：资料 / 改密码） */}
-      <div className="rounded-card border border-line bg-surface p-4">
-        <button onClick={() => nav('/account')} className="flex w-full items-center gap-3 text-left">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">
-            {loggedIn ? <CircleUser size={26} strokeWidth={1.8} aria-hidden /> : <Compass size={26} strokeWidth={1.8} aria-hidden />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-base font-semibold">{name}</p>
-            <p className="text-xs text-ink-3">
-              {STATE_LABEL[sessionState] ?? '未登录'}
-              {serverName ? ` · ${serverName}` : ' · 未连接服务器'}
-              {offlineMode ? ' · 离线记账' : ''}
-            </p>
-          </div>
-          <ChevronRight size={18} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
-        </button>
-        {session && !session.user.verified ? (
-          <p className="mt-2 rounded-btn bg-accent-soft px-3 py-2 text-xs text-accent">邮箱还未验证，部分同步功能可能受限</p>
-        ) : null}
+    // ★v1.0.25 PC 重构：桌面左右分栏（左 340px 账号区 / 右功能入口网格），移动端保持纵向列表
+    <div className="space-y-3 lg:grid lg:grid-cols-[340px_1fr] lg:items-start lg:gap-4 lg:space-y-0">
+      {/* 左列：账号卡 + 未登录提示 + 退出登录 */}
+      <div className="space-y-3">
+        {/* 头部：账号卡（点击头像/信息行进入账号编辑：资料 / 改密码） */}
+        <div className="rounded-card border border-line bg-surface p-4">
+          <button onClick={() => nav('/account')} className="flex w-full items-center gap-3 text-left">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent lg:h-14 lg:w-14">
+              {loggedIn ? <CircleUser size={26} strokeWidth={1.8} aria-hidden /> : <Compass size={26} strokeWidth={1.8} aria-hidden />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-base font-semibold lg:text-lg">{name}</p>
+              <p className="text-xs text-ink-3">
+                {STATE_LABEL[sessionState] ?? '未登录'}
+                {serverName ? ` · ${serverName}` : ' · 未连接服务器'}
+                {offlineMode ? ' · 离线记账' : ''}
+              </p>
+            </div>
+            <ChevronRight size={18} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
+          </button>
+          {session && !session.user.verified ? (
+            <p className="mt-2 rounded-btn bg-accent-soft px-3 py-2 text-xs text-accent">邮箱还未验证，部分同步功能可能受限</p>
+          ) : null}
+          {!loggedIn ? (
+            <div className="mt-3 flex gap-2">
+              <button onClick={() => nav('/login')} className="h-10 flex-1 rounded-btn bg-accent text-sm font-medium text-white">
+                登录
+              </button>
+              <button onClick={() => nav('/login')} className="h-10 flex-1 rounded-btn border border-line text-sm text-ink-2">
+                注册新账号
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {/* 未登录提示 */}
         {!loggedIn ? (
-          <div className="mt-3 flex gap-2">
-            <button onClick={() => nav('/login')} className="h-10 flex-1 rounded-btn bg-accent text-sm font-medium text-white">
-              登录
-            </button>
-            <button onClick={() => nav('/login')} className="h-10 flex-1 rounded-btn border border-line text-sm text-ink-2">
-              注册新账号
-            </button>
-          </div>
+          <p className="px-1 text-xs text-ink-3">不登录也可以离线记账；登录后才能使用云备份与多端同步。</p>
+        ) : null}
+
+        {loggedIn ? (
+          <button
+            onClick={() => void logout()}
+            className="w-full rounded-card border border-line bg-surface py-3 text-sm"
+            style={{ color: 'var(--fou)' }}
+          >
+            退出登录
+          </button>
         ) : null}
       </div>
 
-      {/* 未登录提示 */}
-      {!loggedIn ? (
-        <p className="px-1 text-xs text-ink-3">不登录也可以离线记账；登录后才能使用云备份与多端同步。</p>
-      ) : null}
-
-      {/* 功能入口 */}
-      <ul className="overflow-hidden rounded-card border border-line bg-surface">
-        {ENTRIES.map((e, i) => (
-          <li key={e.to}>
-            <button
-              onClick={() => nav(e.to)}
-              className={`flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 ${
-                i > 0 ? 'border-t border-line-2' : ''
-              }`}
-            >
-              <span className="text-accent">
-                <e.Icon size={20} strokeWidth={1.8} aria-hidden />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">{e.label}</span>
-                <span className="block text-[11px] text-ink-3">{e.desc}</span>
-              </span>
-              <span className="text-ink-3">›</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      {/* 网页专属入口（App 端不显示）：手机版/电脑版手动切换 + 管理后台 */}
-      {!isNative() ? (
-        <ul className="overflow-hidden rounded-card border border-line bg-surface">
-          <li>
-            <button
-              onClick={() => setShellPref(shellMode === 'mobile' ? 'pc' : 'mobile')}
-              className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2"
-            >
-              <span className="text-accent">
-                {shellMode === 'mobile' ? <Monitor size={20} strokeWidth={1.8} aria-hidden /> : <Smartphone size={20} strokeWidth={1.8} aria-hidden />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">{shellMode === 'mobile' ? '电脑版网页' : '手机版网页'}</span>
-                <span className="block text-[11px] text-ink-3">
-                  {shellMode === 'mobile' ? '切换到桌面布局（侧边栏宽屏版）' : '切换到移动布局（底部标签栏）'}
+      {/* 右列：功能入口（PC 两列卡片网格）+ 网页专属入口 */}
+      <div className="space-y-3">
+        <ul className="overflow-hidden rounded-card border border-line bg-surface lg:grid lg:grid-cols-2 lg:gap-3 lg:overflow-visible lg:border-0 lg:bg-transparent">
+          {ENTRIES.map((e, i) => (
+            <li key={e.to} className="lg:rounded-card lg:border lg:border-line lg:bg-surface">
+              <button
+                onClick={() => nav(e.to)}
+                className={`flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 lg:rounded-card ${
+                  i > 0 ? 'border-t border-line-2 lg:border-t-0' : ''
+                }`}
+              >
+                <span className="text-accent">
+                  <e.Icon size={20} strokeWidth={1.8} aria-hidden />
                 </span>
-              </span>
-              <span className="text-ink-3">›</span>
-            </button>
-          </li>
-          <li className="border-t border-line-2">
-            <button
-              onClick={() => nav('/admin')}
-              className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2"
-            >
-              <span className="text-accent">
-                <Shield size={20} strokeWidth={1.8} aria-hidden />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">管理后台</span>
-                <span className="block text-[11px] text-ink-3">注册登录控制 · 用户管理 · 功能开关</span>
-              </span>
-              <span className="text-ink-3">›</span>
-            </button>
-          </li>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{e.label}</span>
+                  <span className="block text-[11px] text-ink-3">{e.desc}</span>
+                </span>
+                <span className="text-ink-3">›</span>
+              </button>
+            </li>
+          ))}
         </ul>
-      ) : null}
 
-      {loggedIn ? (
-        <button
-          onClick={() => void logout()}
-          className="w-full rounded-card border border-line bg-surface py-3 text-sm"
-          style={{ color: 'var(--fou)' }}
-        >
-          退出登录
-        </button>
-      ) : null}
+        {/* 网页专属入口（App 端不显示）：手机版/电脑版手动切换 + 管理后台 */}
+        {!isNative() ? (
+          <ul className="overflow-hidden rounded-card border border-line bg-surface lg:grid lg:grid-cols-2 lg:gap-3 lg:overflow-visible lg:border-0 lg:bg-transparent">
+            <li className="lg:rounded-card lg:border lg:border-line lg:bg-surface">
+              <button
+                onClick={() => setShellPref(shellMode === 'mobile' ? 'pc' : 'mobile')}
+                className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 lg:rounded-card"
+              >
+                <span className="text-accent">
+                  {shellMode === 'mobile' ? <Monitor size={20} strokeWidth={1.8} aria-hidden /> : <Smartphone size={20} strokeWidth={1.8} aria-hidden />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{shellMode === 'mobile' ? '电脑版网页' : '手机版网页'}</span>
+                  <span className="block text-[11px] text-ink-3">
+                    {shellMode === 'mobile' ? '切换到桌面布局（侧边栏宽屏版）' : '切换到移动布局（底部标签栏）'}
+                  </span>
+                </span>
+                <span className="text-ink-3">›</span>
+              </button>
+            </li>
+            <li className="border-t border-line-2 lg:rounded-card lg:border lg:border-t lg:border-line lg:bg-surface">
+              <button
+                onClick={() => nav('/admin')}
+                className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 lg:rounded-card"
+              >
+                <span className="text-accent">
+                  <Shield size={20} strokeWidth={1.8} aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">管理后台</span>
+                  <span className="block text-[11px] text-ink-3">注册登录控制 · 用户管理 · 功能开关</span>
+                </span>
+                <span className="text-ink-3">›</span>
+              </button>
+            </li>
+          </ul>
+        ) : null}
+      </div>
 
-      <p className="pb-2 text-center text-[11px] text-ink-3">
+      <p className="pb-2 text-center text-[11px] text-ink-3 lg:col-span-2">
         纳物 · {isNative() ? 'App' : '网页版'} v{APP_VERSION}
       </p>
     </div>

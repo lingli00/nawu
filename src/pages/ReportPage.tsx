@@ -113,7 +113,7 @@ function NetTrend({
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[92px] w-full" style={{ overflow: 'visible' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[92px] w-full lg:h-[136px]" style={{ overflow: 'visible' }}>
         <defs>
           <linearGradient id="netTrendFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.26" />
@@ -338,10 +338,11 @@ export default function ReportPage() {
           </button>
         </div>
       </header>
-      {/* PC 桌面：环图 + 趋势并排两列，归/需/否占整行（对齐 PC 阅读节奏） */}
-      <div className="lg:grid lg:grid-cols-2 lg:gap-3">
+      {/* ★v1.0.25 PC 重构：12 列桌面栅格（环图5+趋势7 / 净值7+归需否5 / 生活流整行），
+          间距统一交给 grid gap，卡片不再自带 mt-3。 */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         {/* 粒度切换 chips（与首页筛选 chips 同样式） */}
-        <div className="mb-3 flex gap-2 lg:col-span-2">
+        <div className="mb-1 flex gap-2 lg:col-span-12">
           {GRAIN_CHIPS.map(([g, label]) => (
             <button
               key={g}
@@ -356,8 +357,8 @@ export default function ReportPage() {
         </div>
 
         {/* 分类环图 */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4">
-          <h2 className="text-sm font-semibold">支出分类占比</h2>
+        <div className="page-enter rounded-card border border-line bg-surface p-4 lg:col-span-5">
+          <h2 className="text-sm font-semibold lg:text-[15px]">支出分类占比</h2>
           <p className="mt-0.5 text-[11px] text-ink-3">仅统计生活流记账（物品与订阅不计入）</p>
           {slices.length === 0 ? (
             <p className="py-10 text-center text-sm text-ink-3">
@@ -387,9 +388,9 @@ export default function ReportPage() {
         </div>
 
         {/* 趋势 */}
-        <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4 lg:mt-0">
+        <div className="page-enter rounded-card border border-line bg-surface p-4 lg:col-span-7">
           <div className="flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold">{trendTitle}</h2>
+            <h2 className="text-sm font-semibold lg:text-[15px]">{trendTitle}</h2>
             <p className="text-[11px] text-ink-3">
               <span className="mr-2 inline-flex items-center gap-1">
                 <span className="inline-block h-2 w-2 rounded-full bg-accent" />
@@ -402,17 +403,17 @@ export default function ReportPage() {
             </p>
           </div>
           <p className="mt-0.5 text-[11px] text-ink-3">仅统计生活流记账</p>
-          <div className="mt-4 flex h-32 items-end justify-between gap-2">
+          <div className="mt-4 flex h-32 items-end justify-between gap-2 lg:h-48">
             {trend.map((b) => (
               <div key={b.key} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                <div className="flex h-28 w-full items-end justify-center gap-1">
+                <div className="flex h-28 w-full items-end justify-center gap-1 lg:h-[10.5rem]">
                   <div
-                    className="w-3.5 rounded-t bg-accent transition-all"
+                    className="w-3.5 rounded-t bg-accent transition-all lg:w-5"
                     style={{ height: `${Math.max((b.expense / maxBar) * 100, b.expense > 0 ? 3 : 0)}%` }}
                     title={`支出 ${formatMoney(b.expense, currency)}`}
                   />
                   <div
-                    className="w-3.5 rounded-t transition-all"
+                    className="w-3.5 rounded-t transition-all lg:w-5"
                     style={{
                       height: `${Math.max((b.income / maxBar) * 100, b.income > 0 ? 3 : 0)}%`,
                       background: 'var(--xu)',
@@ -428,10 +429,10 @@ export default function ReportPage() {
           </div>
         </div>
 
-        {/* v1.0.21 · M3.2：净值趋势（收入 − 支出） */}
-        <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4 lg:col-span-2">
+        {/* v1.0.21 · M3.2：净值趋势（收入 − 支出）；PC 与归/需/否并排（7+5） */}
+        <div className="page-enter rounded-card border border-line bg-surface p-4 lg:col-span-7">
           <div className="flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold">净值趋势</h2>
+            <h2 className="text-sm font-semibold lg:text-[15px]">净值趋势</h2>
             <p className="text-[11px] text-ink-3">{trendTitle.replace('趋势', '')} · 收入 − 支出</p>
           </div>
           <div className="mt-3">
@@ -440,15 +441,15 @@ export default function ReportPage() {
         </div>
 
         {/* 归 / 需 / 否 */}
-        <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4 lg:col-span-2 lg:mt-0">
-          <h2 className="text-sm font-semibold">归 / 需 / 否 结构</h2>
+        <div className="page-enter rounded-card border border-line bg-surface p-4 lg:col-span-5">
+          <h2 className="text-sm font-semibold lg:text-[15px]">归 / 需 / 否 结构</h2>
           <p className="mt-0.5 text-[11px] text-ink-3">仅统计生活流记账（物品与订阅不计入）</p>
           <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-surface-2">
             {stack.map((s) => (
               <div key={s.judgement} style={{ width: `${s.ratio * 100}%`, background: s.color }} />
             ))}
           </div>
-          <ul className="mt-3 space-y-2.5">
+          <ul className="mt-3 space-y-2.5 lg:grid lg:grid-cols-1 lg:gap-3 lg:space-y-0">
             {stack.map((s) => (
               <li key={s.judgement}>
                 <div className="flex items-baseline justify-between text-xs">
@@ -474,7 +475,7 @@ export default function ReportPage() {
         </div>
 
         {/* v1.0.24 · 生活流板块：理智指数（时间健康度）+ 心动清单 + 冲动拦截 + 情绪晴雨 */}
-        <div className="page-enter mt-3 rounded-card border border-line bg-surface p-4 lg:col-span-2">
+        <div className="page-enter rounded-card border border-line bg-surface p-4 lg:col-span-12">
           <div className="flex items-baseline justify-between">
             <h2 className="flex items-center gap-1.5 text-sm font-semibold">
               <Brain size={15} style={{ color: 'var(--accent)' }} />
@@ -504,7 +505,7 @@ export default function ReportPage() {
           {/* 主指标：时间健康度 = 归 + 需 时长占全部时间切片之比 */}
           <div className="mt-3 flex items-center gap-4 rounded-card bg-surface-2 p-3.5">
             <div className="shrink-0 text-center">
-              <p className="tnum text-3xl font-bold leading-none" style={{ color: healthTint }}>
+              <p className="tnum text-3xl font-bold leading-none lg:text-4xl" style={{ color: healthTint }}>
                 {life.health ?? '—'}
               </p>
               <p className="mt-1 text-[10px] text-ink-3">时间健康度</p>
