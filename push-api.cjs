@@ -8,7 +8,7 @@ const REPO = 'lingli00/nawu';
 const TOKEN = process.env.GH_TOKEN;
 const ROOT = __dirname;
 
-async function api(method, url, body) {
+async function apiOnce(method, url, body) {
   const res = await fetch(`https://api.github.com${url}`, {
     method,
     headers: {
@@ -22,6 +22,31 @@ async function api(method, url, body) {
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${url} -> ${res.status}: ${text.slice(0, 200)}`);
   return text.length ? JSON.parse(text) : null;
+}
+
+/**
+ * ★v1.0.27 带重试的 API 调用：GitHub 对大 blob（如 2.8MB 的 tesseract wasm）
+ * 间歇性返回 401/400/5xx 或直接掐断连接（fetch failed），实测均与凭证无关。
+ * 指数退避重试 5 次（2s/4s/8s/16s/32s），彻底解决反复断在 blobs 100/229 的问题。
+ */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function api(method, url, body) {
+  let lastErr;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      return await apiOnce(method, url, body);
+    } catch (e) {
+      lastErr = e;
+      const msg = String(e.message ?? e);
+      const retriable =
+        msg.includes('fetch failed') ||
+        /-> (401|400|408|429|500|502|503|504):/.test(msg);
+      if (!retriable || attempt === 5) throw e;
+      console.log(`  retry ${attempt}/5 after error: ${msg.slice(0, 120)}`);
+      await sleep(2000 * attempt);
+    }
+  }
+  throw lastErr;
 }
 
 function walk(dir, out) {

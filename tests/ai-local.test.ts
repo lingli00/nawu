@@ -3,6 +3,7 @@ import { cnToNumber } from '../src/ai/cnNumber';
 import { splitSentences } from '../src/ai/split';
 import { parseLocal } from '../src/ai/localParser';
 import { parseLocalOnly } from '../src/ai/parseService';
+import { convertItem, switchableKindOf } from '../src/ai/convert';
 import { SEED_CATEGORIES } from '../src/storage/seed';
 import type { AiResultItem } from '../src/types/ai';
 
@@ -136,5 +137,90 @@ describe('ai/localParser · 本地规则解析（验收 7）', () => {
     expect(out.source).toBe('local');
     expect(out.items.length).toBeGreaterThanOrEqual(1);
     expect(out.reason).toContain('本地规则');
+  });
+});
+
+describe('v1.0.27 · 消耗品不入物品库（买了烟/零食/日用品 → 生活流记账）', () => {
+  it('「我买了包蓝利群花了18」→ 生活流记账 cl0，金额 18，不再建物品', () => {
+    const items = parseAll('我买了包蓝利群花了18');
+    expect(items).toHaveLength(1);
+    expect(items[0]?.action).toBe('create_ledger');
+    expect(items[0]?.ledgerDraft?.amount).toBe(18);
+    expect(items[0]?.ledgerDraft?.categoryId).toBe('cl0'); // 餐饮（烟酒类）
+  });
+
+  it('「买了包烟」没说金额 → 也走生活流记账（amount 0）', () => {
+    const items = parseAll('买了包烟');
+    expect(items[0]?.action).toBe('create_ledger');
+    expect(items[0]?.ledgerDraft?.amount).toBe(0);
+  });
+
+  it('日用品/药/饮料：买纸巾→日用 cl11、买药→健康 cl4、买可乐→餐饮 cl0', () => {
+    expect(parseAll('买了包纸巾花了10')[0]?.ledgerDraft?.categoryId).toBe('cl11');
+    expect(parseAll('买药花了25')[0]?.ledgerDraft?.categoryId).toBe('cl4');
+    expect(parseAll('买了瓶可乐花了3块')[0]?.action).toBe('create_ledger');
+  });
+
+  it('耐用品保持建物品档：魅族20→数码、跑鞋→运动、杯子→厨房', () => {
+    expect(parseAll('在闲鱼买了魅族20花了两千')[0]?.action).toBe('create_goods');
+    expect(parseAll('买了双跑鞋 899')[0]?.action).toBe('create_goods');
+    expect(parseAll('买了个杯子50')[0]?.action).toBe('create_goods');
+  });
+
+  it('冲动语义优先级不变：冲动买的皮肤 129 → 生活流「否」', () => {
+    const items = parseAll('冲动买的皮肤 129');
+    expect(items[0]?.action).toBe('create_ledger');
+    expect(items[0]?.ledgerDraft?.judgement).toBe('fou');
+  });
+});
+
+describe('v1.0.27 · ai/convert 识别结果类型切换', () => {
+  const today = '2026-10-14';
+
+  it('switchableKindOf：三类可切换，情绪/时间/退役不可', () => {
+    expect(switchableKindOf({ action: 'create_goods', source: 'local' } as AiResultItem)).toBe('goods');
+    expect(switchableKindOf({ action: 'create_ledger', source: 'local' } as AiResultItem)).toBe('ledger');
+    expect(switchableKindOf({ action: 'create_subscription', source: 'local' } as AiResultItem)).toBe('sub');
+    expect(switchableKindOf({ action: 'create_mood', source: 'local' } as AiResultItem)).toBeNull();
+  });
+
+  it('物品 → 生活流：金额/日期搬运，note 取物品名', () => {
+    const goods: AiResultItem = {
+      action: 'create_goods',
+      source: 'local',
+      goodsDraft: { name: '蓝牙耳机', price: 199, currency: 'CNY', buyDate: today, categoryId: 'cg0', icon: '🎧', tags: [] },
+    };
+    const out = convertItem(goods, 'ledger', SEED_CATEGORIES, today);
+    expect(out.action).toBe('create_ledger');
+    expect(out.ledgerDraft?.amount).toBe(199);
+    expect(out.ledgerDraft?.note).toBe('蓝牙耳机');
+    expect(out.ledgerDraft?.date).toBe(today);
+  });
+
+  it('生活流 → 物品：note 变物品名，餐次前缀剥掉', () => {
+    const ledger: AiResultItem = {
+      action: 'create_ledger',
+      source: 'local',
+      ledgerDraft: { type: 'expense', amount: 30, categoryId: 'cl0', judgement: 'xu', date: today, note: '早饭·小米粥' },
+    };
+    const out = convertItem(ledger, 'goods', SEED_CATEGORIES, today);
+    expect(out.action).toBe('create_goods');
+    expect(out.goodsDraft?.name).toBe('小米粥');
+    expect(out.goodsDraft?.price).toBe(30);
+  });
+
+  it('订阅 → 生活流 / 生活流 → 订阅 双向可用', () => {
+    const sub: AiResultItem = {
+      action: 'create_subscription',
+      source: 'local',
+      subDraft: { name: 'B站会员', amount: 25, currency: 'CNY', period: 'month', every: 1, categoryId: 'cs0', icon: '📺' },
+    };
+    const asLedger = convertItem(sub, 'ledger', SEED_CATEGORIES, today);
+    expect(asLedger.action).toBe('create_ledger');
+    expect(asLedger.ledgerDraft?.amount).toBe(25);
+
+    const back = convertItem(asLedger, 'sub', SEED_CATEGORIES, today);
+    expect(back.action).toBe('create_subscription');
+    expect(back.subDraft?.name).toBe('B站会员');
   });
 });

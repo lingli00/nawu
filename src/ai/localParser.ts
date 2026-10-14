@@ -12,6 +12,7 @@ import {
   MOOD_EMOJI,
   QUANTIFIER_RE,
   RE_BUY_GOODS,
+  RE_CONSUMABLE,
   RE_DURATION,
   RE_EAT,
   RE_GROWTH,
@@ -163,6 +164,54 @@ export function defaultCategoryId(categories: Category[], kind: 'goods' | 'sub' 
   const first = categories.find((c) => c.kind === kind);
   if (first) return first.id;
   return kind === 'ledger' ? 'cl7' : kind === 'goods' ? 'cg0' : 'cs0';
+}
+
+/**
+ * ★v1.0.27 消耗型生活流分类：命中这些分类的「买了」不建物品档，走生活流记账。
+ * （服饰/饰品/数码是耐用品档除外；美妆耐用品由 GOODS_KEYWORDS 先接住）
+ */
+const CONSUMABLE_LEDGER_NAMES = new Set(
+  Object.keys(LEDGER_FALLBACK_ID).filter(
+    (n) => n !== '服饰' && n !== '饰品' && n !== '数码' && n !== '其他',
+  ),
+);
+
+/**
+ * 判断这句话是不是「日常消耗品/服务」消费（烟酒槟榔、吃喝、日用品、话费、药…）。
+ * 规则：显式消耗词命中 → 是；否则生活流分类命中且不在耐用品三类 → 是。
+ * 匹配前先剥掉量词（「买包纸巾」的「包」不再是服饰关键词的误命中）。
+ */
+function isConsumablePurchase(text: string): boolean {
+  if (RE_CONSUMABLE.test(text)) return true;
+  const goodsName = hitCategoryName(text, GOODS_KEYWORDS);
+  if (goodsName) return false; // 明确命中耐用品词 → 物品
+  const stripped = text.replace(/[个双只包盒瓶袋罐条支箱斤]+(?=[一-龥])/g, ' ');
+  const ledgerName = hitCategoryName(stripped, CATEGORY_KEYWORDS);
+  return Boolean(ledgerName) && CONSUMABLE_LEDGER_NAMES.has(ledgerName);
+}
+
+/** 构造生活流记账草稿（买入消耗品路径复用）。 */
+function buildLedgerDraft(
+  text: string,
+  cats: Category[],
+  amount: number,
+  date: string,
+  meal: string,
+): LedgerDraft {
+  const isIncome = RE_INCOME.test(text);
+  // 分类匹配用剥量词文本：「买包纸巾」的「包」不再误归服饰
+  const matchText = text.replace(/[个双只包盒瓶袋罐条支箱斤]+(?=[一-龥])/g, ' ');
+  const categoryId = matchCategoryId(matchText, cats, 'ledger');
+  const isFood = Boolean(meal) || RE_EAT.test(text) || categoryId === 'cl0';
+  const isTraffic = RE_TRAFFIC.test(text) || categoryId === 'cl1';
+  return {
+    type: isIncome ? 'income' : 'expense',
+    amount,
+    categoryId,
+    judgement: guessJudgement(text, { isIncome, isTraffic, isFood }),
+    date,
+    note: cleanNote(text, meal),
+  };
 }
 
 /** 关键词命中（大小写不敏感）。 */
@@ -359,8 +408,18 @@ export function parseLocal(
     return { action: 'create_time', timeDraft: draft, explanation: '本地规则：时间记录', source: 'local' };
   }
 
-  // 5) 买入物品（「冲动/后悔」语义除外 → 走生活流判为「否」）
+  // 5) 买入动作（「冲动/后悔」语义除外 → 走生活流判为「否」）
+  //    ★v1.0.27：日常消耗品（烟酒槟榔 / 吃喝 / 日用品 / 药…）即使说「买了」
+  //    也归生活流记账（归/需/否判定），不再错建物品档；耐用品（数码/衣物/家电…）才建物品。
   if (RE_BUY_GOODS.test(text) && !RE_IMPULSE.test(text)) {
+    if (isConsumablePurchase(text)) {
+      return {
+        action: 'create_ledger',
+        ledgerDraft: buildLedgerDraft(text, cats, amount, date, meal),
+        explanation: '本地规则：日常消费（消耗品不入物品库）',
+        source: 'local',
+      };
+    }
     const name = extractName(text, hit?.raw) || '物品';
     const draft: GoodsDraft = {
       name,
@@ -377,19 +436,12 @@ export function parseLocal(
 
   // 6) 生活流记账（有金额 / 进食 / 交通）
   if (amount > 0 || RE_EAT.test(text) || RE_TRAFFIC.test(text)) {
-    const isIncome = RE_INCOME.test(text);
-    const categoryId = matchCategoryId(text, cats, 'ledger');
-    const isFood = Boolean(meal) || RE_EAT.test(text) || categoryId === 'cl0';
-    const isTraffic = RE_TRAFFIC.test(text) || categoryId === 'cl1';
-    const draft: LedgerDraft = {
-      type: isIncome ? 'income' : 'expense',
-      amount,
-      categoryId,
-      judgement: guessJudgement(text, { isIncome, isTraffic, isFood }),
-      date,
-      note: cleanNote(text, meal),
+    return {
+      action: 'create_ledger',
+      ledgerDraft: buildLedgerDraft(text, cats, amount, date, meal),
+      explanation: '本地规则：生活流',
+      source: 'local',
     };
-    return { action: 'create_ledger', ledgerDraft: draft, explanation: '本地规则：生活流', source: 'local' };
   }
 
   // 7) 兜底时长（前面被金额规则拦下的场景）

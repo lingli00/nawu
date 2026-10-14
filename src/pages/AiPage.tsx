@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
 import { useDataStore, useSettingsStore, toastSuccess, toastError } from '../store';
 import { parse, parseImage } from '../ai/parseService';
+import { convertItem, switchableKindOf, SWITCH_KINDS } from '../ai/convert';
 import { warmUpOcr } from '../lib/localOcr';
 import { today } from '../lib/date';
 import type { AiResultItem } from '../types/ai';
@@ -125,6 +126,12 @@ export default function AiPage() {
       toastError((e as Error).message);
     }
     setBusy(false);
+  };
+
+  /** ★v1.0.27 切换某条结果的类型（生活/物品/订阅），转换只搬运可复用信息。 */
+  const switchKind = (i: number, target: ReturnType<typeof switchableKindOf>) => {
+    if (!items || !target) return;
+    setItems(items.map((it, j) => (j === i ? convertItem(it, target, categories, today()) : it)));
   };
 
   const catOf = (id: string): Category | undefined => categories.find((c) => c.id === id);
@@ -291,11 +298,35 @@ export default function AiPage() {
                 >
                   ✓
                 </span>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{summaryOf(it)}</p>
                   {it.explanation ? (
                     <p className="mt-0.5 text-xs leading-5 text-ink-3">{it.explanation}</p>
                   ) : null}
+                  {(() => {
+                    // ★v1.0.27 生活/物品/订阅 三类切换：识别错了当场改，不用去对应页面手工调
+                    const kind = switchableKindOf(it);
+                    if (!kind) return null;
+                    return (
+                      <div className="mt-2 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-[11px] text-ink-3">记为</span>
+                        {SWITCH_KINDS.map(({ kind: k, label }) => (
+                          <button
+                            key={k}
+                            type="button"
+                            onClick={() => switchKind(i, k)}
+                            className={`rounded-full border px-2.5 py-0.5 text-[11px] leading-5 ${
+                              kind === k
+                                ? 'border-accent bg-accent text-white'
+                                : 'border-line-2 text-ink-2 active:bg-surface-2'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </li>
             ))}
