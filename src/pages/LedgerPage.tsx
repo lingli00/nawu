@@ -12,6 +12,7 @@ import {
 import { groupByDay, sumExpense, sumIncome } from '../domain/ledger';
 import { formatSignedMoney, formatMoney } from '../lib/money';
 import { addDays, monthKey, monthLabel, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
+import { haptic } from '../lib/haptics';
 import type { Judgement, ValueRecord } from '../types/entities';
 
 /** P09 生活流：按日/周/月/年粒度查看流水 + 四张生活小卡（心动清单/冷静池等）。 */
@@ -113,6 +114,13 @@ export default function LedgerPage() {
           : `${year} 年`;
 
   const del = async (id: string, label: string) => {
+    // ★v1.0.33：删除先确认（此前点一下直接删）；保留撤销兜底
+    const ok = await useUiStore.getState().confirm({
+      title: `删除「${label}」这笔记录？`,
+      message: '删除后还可用提示条里的「撤销」找回。',
+    });
+    if (!ok) return;
+    void haptic('medium');
     await removeLedger(id);
     useUiStore.getState().toast(`已删除「${label}」`, 'info', { actionLabel: '撤销', onAction: () => void undo() });
   };
@@ -388,7 +396,10 @@ export default function LedgerPage() {
         {GRAIN_CHIPS.map(([g, label]) => (
           <button
             key={g}
-            onClick={() => setGrain(g)}
+            onClick={() => {
+                void haptic('select');
+                setGrain(g);
+              }}
             className={`h-8 rounded-full border px-3.5 text-xs transition-all active:scale-95 ${
               grain === g ? 'border-accent bg-accent-soft font-medium text-accent' : 'border-line bg-surface text-ink-3'
             }`}

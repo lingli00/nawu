@@ -106,3 +106,48 @@ describe('IconPreview hooks 契约（#300 回归）', () => {
     expect(() => act(() => setter('brand:kimi'))).toThrow(/fewer hooks|Rendered fewer/i);
   });
 });
+
+/**
+ * v1.0.32 · 随包品牌资产（/brand-icons/…）必须「直出」——零网络、零缓存。
+ *
+ * 用户要求图标「封装进 APP，不因网络或其他问题丢失」。首批实现里 BrandImg
+ * 仍走 `iconCacheFetchAndStore`，等于「联网抓自己包里的图」：离线必挂、还白写缓存；
+ * 更糟的是 `absFromKey()` 会把 `/brand-icons/x.png` 拼成服务器地址，
+ * APK 里拿不到随包资源。本测试锁死「bundled 一律源站相对路径直出 + 不发请求」。
+ */
+describe('BrandImg · 随包资产直出（v1.0.32）', () => {
+  const realFetch = globalThis.fetch;
+  let fetched: string[] = [];
+
+  beforeEach(() => {
+    fetched = [];
+    globalThis.fetch = ((input: unknown) => {
+      fetched.push(String(input));
+      return Promise.reject(new Error('bundled 资产不该发请求'));
+    }) as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it('已收录域名 → src 是源站相对路径 /brand-icons/…，且不触发任何 fetch', async () => {
+    const { BrandImg } = await import('../src/components/IconPicker');
+    act(() => root.render(createElement(BrandImg, { base: 'http://106.53.204.29', domain: 'aliyun.com' })));
+    const img = container.querySelector('img');
+    expect(img, '应直接渲染出 <img>').not.toBeNull();
+    expect(img?.getAttribute('src')).toBe('/brand-icons/aliyun.com.png');
+    expect(fetched).toEqual([]);
+  });
+
+  it('未收录域名 → 仍走原缓存/网络回退（不被直出分支误伤）', async () => {
+    const { BrandImg } = await import('../src/components/IconPicker');
+    act(() =>
+      root.render(createElement(BrandImg, { base: 'http://106.53.204.29', domain: 'nope-not-a-brand-xyz.com' })),
+    );
+    // 未命中直出 → 不进缓存同步索引 → 首帧是占位符，且必然会去抓网络
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.querySelector('img')).toBeNull();
+  });
+});

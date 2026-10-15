@@ -5,6 +5,7 @@ import PageField from '../components/ui/PageField';
 import { useServerStore, toastSuccess, toastError } from '../store';
 import { probeHealth } from '../api/server';
 import { displayUrl, normalizeServerUrl } from '../lib/url';
+import { haptic } from '../lib/haptics';
 import type { ProbeState } from '../types/entities';
 
 /** P06 新增 / 编辑服务器（路由 /servers/new 与 /servers/:id 复用）。 */
@@ -41,10 +42,12 @@ export default function ServerEditPage() {
     try {
       if (editing) {
         await update(editing.id, { alias: alias.trim() || '我的服务器', url: norm.url });
+        void haptic('medium');
         toastSuccess('已保存');
       } else {
         const saved = await add({ alias: alias.trim() || '我的服务器', url: norm.url });
         await setCurrent(saved.id);
+        void haptic('medium');
         toastSuccess('已添加并设为当前服务器');
       }
       nav('/servers', { replace: true });

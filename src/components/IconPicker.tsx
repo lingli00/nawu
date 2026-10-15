@@ -3,6 +3,8 @@ import { Camera, Image as ImageIcon, LayoutGrid, Link2, Search, Upload } from 'l
 import { SUB_ICON_GROUPS, subIconOf } from '../lib/subIcons';
 import {
   BRAND_GROUPS,
+  brandIconRef,
+  brandIconSrc,
   compressIconFile,
   faviconChain,
   iconApiUrl,
@@ -146,13 +148,32 @@ async function cropSquareDataUrl(dataUrl: string, max = 512): Promise<string> {
 /** 候选链 → 缓存 dataURL（命中即用；未命中走网络层抓取入库）。
  *  ★v1.0.30：初始值先走**同步** memo 命中 —— 品牌页上百按钮不再各自触发
  *  「await 查缓存 → setState」的渲染风暴（低端机主线程卡死白屏的直接来源）。 */
+/**
+ * ★v1.0.32：随包品牌资产（`/brand-icons/…`）直出。
+ *
+ * 为什么必须短路：这些图**已经在包里**（APK 的 assets / 站点的 /brand-icons/），
+ * 再走 `iconCacheFetchAndStore` 就是「联网抓自己包里的图」——离线必挂、还白写一份
+ * 缓存。且 URL 必须用**源站相对路径**而不是 `iconBaseOf()` 拼服务器地址，
+ * 这样网页端解析到站点、APK 端解析到 `https://localhost`，两边同一个字面量都对。
+ */
+function bundledDirectSrc(chain: string[]): string | null {
+  const first = chain[0];
+  return first && first.startsWith('/brand-icons/') ? first : null;
+}
+
 function useCachedIconSrc(chain: string[]): { src: string | null; done: boolean } {
+  const direct = bundledDirectSrc(chain);
   const key = chain.map((c) => normIconKey(c)).join('|');
   const [state, setState] = useState<{ src: string | null; done: boolean }>(() => {
+    if (direct) return { src: direct, done: true };
     const hit = iconCacheLookupSync(chain);
     return hit ? { src: hit, done: true } : { src: null, done: false };
   });
   useEffect(() => {
+    if (direct) {
+      setState((prev) => (prev.done && prev.src === direct ? prev : { src: direct, done: true }));
+      return;
+    }
     let alive = true;
     const syncHit = iconCacheLookupSync(chain);
     if (syncHit) {
@@ -173,7 +194,7 @@ function useCachedIconSrc(chain: string[]): { src: string | null; done: boolean 
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, direct]);
   return state;
 }
 
@@ -313,9 +334,11 @@ function IconPreviewPlain({
   const isUrl = v.startsWith('url:');
   const isImg = v.startsWith('img:');
   const raw = isUrl ? v.slice(4).trim() : '';
+  /** ★v1.0.33：随包分发的品牌图标（/brand-icons/…）——直出，零网络零缓存。 */
+  const isBundled = isUrl && raw.startsWith('/brand-icons/');
 
   const chain = useMemo<string[]>(() => {
-    if (!isUrl || !raw) return [];
+    if (!isUrl || !raw || isBundled) return [];
     const list = [raw];
     if (raw.includes('api.iconify.design')) {
       const base = iconBaseOf();
@@ -328,11 +351,22 @@ function IconPreviewPlain({
       }
     }
     return list;
-  }, [isUrl, raw]);
+  }, [isUrl, raw, isBundled]);
 
   const { src, done } = useCachedIconSrc(chain);
   const [imgBroken, setImgBroken] = useState(false);
   useEffect(() => setImgBroken(false), [v]);
+
+  if (isBundled) {
+    return (
+      <span
+        className={`flex items-center justify-center overflow-hidden ${className ?? ''}`}
+        style={{ width: size, height: size, background: fallbackBg }}
+      >
+        <img src={raw} width={size} height={size} alt="" className="h-full w-full object-contain" />
+      </span>
+    );
+  }
 
   if (isImg && !imgBroken) {
     return (
@@ -623,7 +657,11 @@ export default function IconPicker({
   useEffect(() => {
     if (!brandHits || brandHits.length === 0) return;
     void warmIconCache(
-      brandHits.slice(0, 12).map((b) => iconApiUrl(base, b.domain)),
+      brandHits
+        .slice(0, 12)
+        .map((b) => brandIconSrc(base, b.domain))
+        // ★v1.0.32：随包资产（/brand-icons/…）已在包里，预热等于联网抓自己的图
+        .filter((u) => !u.startsWith('/brand-icons/')),
       base,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -662,7 +700,7 @@ export default function IconPicker({
             h.type === 'icon' && h.url
               ? absIconUrl(h.url, base)
               : h.domain
-                ? iconApiUrl(base, h.domain)
+                ? brandIconSrc(base, h.domain)
                 : '',
           )
           .filter(Boolean);
@@ -711,6 +749,12 @@ export default function IconPicker({
     void haptic('select');
     onChange(`brand:${g.slug}`);
   };
+
+  /** ★v1.0.33：品牌点选值 = 随包资产优先（/brand-icons/…），无资产才回落代理直链。
+   *  物品与订阅共用同一份品牌库与同一套引用 → 同一品牌天然共享同一张图。 */
+  const brandValueOf = (domain: string): string => toUrlIcon(brandIconRef(base, domain));
+  const isBrandValuePicked = (domain: string): boolean =>
+    value === brandValueOf(domain) || value === toUrlIcon(iconApiUrl(base, domain)); // 兼容旧数据
 
   /** 点选图标：写值 + 立即预热入库。 */
   const pickIcon = (iconValue: string, warmSrc?: string): void => {
@@ -937,8 +981,8 @@ export default function IconPicker({
             key={b.domain + b.name}
             brand={b}
             base={base}
-            active={value === toUrlIcon(iconApiUrl(base, b.domain))}
-            onPick={() => pickIcon(toUrlIcon(iconApiUrl(base, b.domain)), iconApiUrl(base, b.domain))}
+            active={isBrandValuePicked(b.domain)}
+            onPick={() => pickIcon(toUrlIcon(brandIconRef(base, b.domain)), brandIconSrc(base, b.domain))}
           />
         ))}
       </div>
@@ -1153,8 +1197,8 @@ export default function IconPicker({
                         key={b.domain + b.name}
                         brand={b}
                         base={base}
-                        active={value === toUrlIcon(iconApiUrl(base, b.domain))}
-                        onPick={() => pickIcon(toUrlIcon(iconApiUrl(base, b.domain)), iconApiUrl(base, b.domain))}
+                        active={isBrandValuePicked(b.domain)}
+                        onPick={() => pickIcon(toUrlIcon(brandIconRef(base, b.domain)), brandIconSrc(base, b.domain))}
                       />
                     ))}
                   </div>
@@ -1164,7 +1208,7 @@ export default function IconPicker({
                   <SectionLabel>域名直取</SectionLabel>
                   <button
                     type="button"
-                    onClick={() => pickIcon(toUrlIcon(iconApiUrl(base, domainHit)), iconApiUrl(base, domainHit))}
+                    onClick={() => pickIcon(toUrlIcon(brandIconRef(base, domainHit)), brandIconSrc(base, domainHit))}
                     className="flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-surface-2 py-3 text-xs text-ink-2 active:scale-[0.99]"
                   >
                     <BrandImg base={base} domain={domainHit} size={20} />
@@ -1212,9 +1256,9 @@ export default function IconPicker({
                             <li key={h.domain}>
                               <button
                                 type="button"
-                                onClick={() => pickIcon(toUrlIcon(iconApiUrl(base, h.domain!)), iconApiUrl(base, h.domain!))}
+                                onClick={() => pickIcon(toUrlIcon(brandIconRef(base, h.domain!)), brandIconSrc(base, h.domain!))}
                                 className={`flex w-full items-center gap-2.5 px-3 py-2 text-left active:bg-surface-2 ${
-                                  value === toUrlIcon(iconApiUrl(base, h.domain!)) ? 'bg-accent-soft' : ''
+                                  value === brandValueOf(h.domain!) ? 'bg-accent-soft' : ''
                                 }`}
                               >
                                 <BrandImg base={base} domain={h.domain!} size={22} />

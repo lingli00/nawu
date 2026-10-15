@@ -6,6 +6,7 @@ import { useAppStore, useAuthStore, useServerStore, useUiStore, currentServer, t
 import { getProfile } from '../api/user';
 import { APP_VERSION } from '../lib/appVersion';
 import { isNative } from '../net/env';
+import { haptic } from '../lib/haptics';
 import { useShellMode, setShellPref } from '../components/layout/MainShell';
 
 const STATE_LABEL: Record<string, string> = {
@@ -67,6 +68,7 @@ export default function MePage() {
   }, [loggedIn, server]);
 
   const logout = async () => {
+    void haptic('medium');
     const ok = await useUiStore.getState().confirm({
       title: '退出登录？',
       message: '本地数据不会被删除，退出后可重新登录同步。',
@@ -118,16 +120,6 @@ export default function MePage() {
         {!loggedIn ? (
           <p className="px-1 text-xs text-ink-3">不登录也可以离线记账；登录后才能使用云备份与多端同步。</p>
         ) : null}
-
-        {loggedIn ? (
-          <button
-            onClick={() => void logout()}
-            className="w-full rounded-card border border-line bg-surface py-3 text-sm"
-            style={{ color: 'var(--fou)' }}
-          >
-            退出登录
-          </button>
-        ) : null}
       </div>
 
       {/* 右列：功能入口（PC 两列卡片网格）+ 网页专属入口 */}
@@ -136,7 +128,10 @@ export default function MePage() {
           {ENTRIES.map((e, i) => (
             <li key={e.to} className="dt:rounded-card dt:border dt:border-line dt:bg-surface">
               <button
-                onClick={() => nav(e.to)}
+                onClick={() => {
+                  void haptic('select');
+                  nav(e.to);
+                }}
                 className={`flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 dt:rounded-card ${
                   i > 0 ? 'border-t border-line-2 dt:border-t-0' : ''
                 }`}
@@ -192,6 +187,17 @@ export default function MePage() {
           </ul>
         ) : null}
       </div>
+
+      {/* ★v1.0.33：退出登录移到页面最底部（此前紧贴账号卡在最上方，位置反直觉） */}
+      {loggedIn ? (
+        <button
+          onClick={() => void logout()}
+          className="w-full rounded-card border border-line bg-surface py-3 text-sm active:bg-surface-2 dt:col-span-2 dt:mx-auto dt:max-w-xs"
+          style={{ color: 'var(--fou)' }}
+        >
+          退出登录
+        </button>
+      ) : null}
 
       <p className="pb-2 text-center text-[11px] text-ink-3 dt:col-span-2">
         纳物 · {isNative() ? 'App' : '网页版'} v{APP_VERSION}

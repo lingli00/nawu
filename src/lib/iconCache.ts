@@ -158,12 +158,26 @@ function memoPut(k: string, v: string): void {
   }
 }
 
+/** ★v1.0.33：坏图自愈——历史缓存里存过镜像站的灰色/字母占位图，
+ *  命中即判为未命中并顺手清掉，避免「斜杠/空白」图标永远留在用户机器上。 */
+function isBadIconData(v: string): boolean {
+  if (!v.startsWith('data:image/svg')) return false;
+  const head = v.slice(0, 600);
+  if (/<text[\s>]/i.test(head)) return true; // 字母头像占位
+  if (/Times New Roman/i.test(head)) return true;
+  return false;
+}
+
 async function readEntry(nk: string, idx: string[]): Promise<string | null> {
   const cached = memo.get(nk);
   if (cached !== undefined) return cached;
   if (idx.length > 0 && !idx.includes(nk)) return null;
   const v = await getKV<string>(ENTRY_PREFIX + nk);
   if (v && v.startsWith('data:')) {
+    if (isBadIconData(v)) {
+      void removeKV(ENTRY_PREFIX + nk).catch(() => undefined);
+      return null;
+    }
     memoPut(nk, v);
     return v;
   }

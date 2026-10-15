@@ -13,6 +13,7 @@ import { formatMoney } from '../lib/money';
 import { useBackGuard } from '../lib/backGuard';
 import { today } from '../lib/date';
 import logger from '../lib/log';
+import { haptic } from '../lib/haptics';
 import type { Subscription } from '../types/entities';
 
 /* ============================================================================
@@ -77,6 +78,7 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
       toastError('添加失败，请重试');
       return;
     }
+    void haptic('medium');
     toastSuccess('已添加订阅');
     onClose();
   };
@@ -591,6 +593,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
       toastError('保存失败，请重试');
       return;
     }
+    void haptic('medium');
     toastSuccess('已保存');
     onClose();
   };

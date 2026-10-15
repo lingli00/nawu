@@ -25,12 +25,20 @@ export function faviconUrlBackup(domain: string): string {
 import { BRAND_ICON_ASSETS } from '../generated/brandIconAssets';
 
 /**
+ * 服务端图标内容的「缓存击穿标签」。
+ * ★v1.0.33：代理返回的内容一旦变化（旧版缓存过 favicon.im 的灰色占位图，
+ * Cache-Control 长达 30 天），老客户端/浏览器会继续吃旧缓存。改内容就必须改这里，
+ * 让所有 URL 变化、绕过存量缓存。
+ */
+export const ICON_CACHE_TAG = 'v1033';
+
+/**
  * 自建图标代理直链（v1.0.4 起首选）：服务端抓目标站真实 <link icon> 并缓存。
  * 第三方镜像（favicon.im/icon.horse）对大量国内站点只会返回统一灰色占位图，
  * 自建代理国内外站点通吃、返回真实品牌图。
  */
 export function iconApiUrl(base: string, domain: string): string {
-  return `${base.replace(/\/+$/, '')}/api/icon/img?d=${encodeURIComponent(domain)}`;
+  return `${base.replace(/\/+$/, '')}/api/icon/img?d=${encodeURIComponent(domain)}&v=${ICON_CACHE_TAG}`;
 }
 
 /**
@@ -56,10 +64,14 @@ export function brandIconSrc(base: string, domain: string): string {
   return localBrandIconPath(domain) ?? iconApiUrl(base, domain);
 }
 
-/** 网络图标加载失败的回退链：本地打包资产 → 自建代理 → icon.horse → favicon.im。 */
+/**
+ * 网络图标加载失败的回退链：本地打包资产 → 自建代理 → icon.horse。
+ * ★v1.0.33：已剔除 favicon.im——实测它对大量国内站（联通/国网/云闪付/顺丰…）
+ * 只回「灰圆 + 字母 f」的假 SVG，而假图比空白更糟（用户看到的是「斜杠/花图」）。
+ */
 export function faviconChain(base: string, domain: string): string[] {
   const local = localBrandIconPath(domain);
-  return [...(local ? [local] : []), iconApiUrl(base, domain), faviconUrlBackup(domain), faviconUrl(domain)];
+  return [...(local ? [local] : []), iconApiUrl(base, domain), faviconUrlBackup(domain)];
 }
 
 /** icon 值的三种形态。 */

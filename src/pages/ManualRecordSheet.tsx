@@ -6,6 +6,7 @@ import CategoryGlyph from '../components/CategoryGlyph';
 import { QuickCooldownSheet } from '../components/LifeSheets';
 import { useDataStore, useSettingsStore, toastSuccess } from '../store';
 import { today } from '../lib/date';
+import { haptic } from '../lib/haptics';
 import type { Judgement, ValueRecord } from '../types/entities';
 
 /**
@@ -69,6 +70,7 @@ export default function ManualRecordSheet() {
     try {
       if (editing) {
         await updateLedger(editing.id, payload);
+        void haptic('medium');
         toastSuccess('已保存');
       } else {
         await addLedger(payload);

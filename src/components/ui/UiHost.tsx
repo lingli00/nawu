@@ -1,5 +1,6 @@
 import { useUiStore } from '../../store/useUiStore';
 import type { ConfirmRequest, ToastItem } from '../../store/useUiStore';
+import { haptic } from '../../lib/haptics';
 
 /**
  * 全局 UI 宿主：Toast / Dialog / Sheet 的统一挂载点（挂在 App 根节点下）。
@@ -65,6 +66,7 @@ function ToastView({
             className="min-h-[44px] px-2 t-body font-medium text-accent"
             onClick={(e) => {
               e.stopPropagation();
+              void haptic('select');
               onAction();
             }}
           >
@@ -94,14 +96,20 @@ function DialogView({
           <button
             type="button"
             className="min-h-[44px] px-4 rounded-btn t-body text-ink-2"
-            onClick={() => onResolve(false)}
+            onClick={() => {
+              void haptic('select');
+              onResolve(false);
+            }}
           >
             {request.cancelText}
           </button>
           <button
             type="button"
             className="min-h-[44px] px-4 rounded-btn t-body text-accent font-medium"
-            onClick={() => onResolve(true)}
+            onClick={() => {
+              void haptic('medium');
+              onResolve(true);
+            }}
           >
             {request.confirmText}
           </button>

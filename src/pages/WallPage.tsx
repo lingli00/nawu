@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Share2 } from 'lucide-react';
 import { useDataStore, useSettingsStore, toastSuccess, toastError } from '../store';
+import PageShell from '../components/layout/PageShell';
+import { haptic } from '../lib/haptics';
 import { IconPreview } from '../components/IconPicker';
 import { formatMoney } from '../lib/money';
 import { goodsIconValue, shareOrDownload, drawGoodsCard, drawWallSheet } from '../lib/shareCard';
@@ -91,47 +93,52 @@ export default function WallPage(): JSX.Element {
   };
 
   return (
-    <div className="page-enter min-h-full text-ink">
-      <header className="flex w-full items-end justify-between pb-1 pt-2">
-        <div className="min-w-0">
-          <h1 className="text-3xl font-bold leading-9">置物墙</h1>
-          <p className="truncate text-xs text-ink-3">
-            {active.length} 件在役 · 总投入{' '}
-            {formatMoney(
-              active.reduce((acc, g) => acc + Number(g.price ?? 0), 0),
-              currency,
-            )}
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-2">
+    /* ★v1.0.33：页头统一为子页壳（返回 + 常规字号标题 + 右侧动作）——
+       此前用 text-3xl 大标题，与「分类管理/设置」等子页明显不一致。 */
+    <PageShell
+      title="置物墙"
+      subtitle={`${active.length} 件在役 · 总投入 ${formatMoney(
+        active.reduce((acc, g) => acc + Number(g.price ?? 0), 0),
+        currency,
+      )}`}
+      right={
+        <>
           <button
-            onClick={() => void shareAll()}
+            onClick={() => {
+              void haptic('select');
+              void shareAll();
+            }}
             disabled={wallBusy}
-            className="flex h-9 items-center gap-1.5 rounded-full border border-line bg-surface px-4 text-xs text-ink-2 active:bg-surface-2 disabled:opacity-50"
+            className="flex h-9 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 text-xs text-ink-2 active:bg-surface-2 disabled:opacity-50"
           >
             <Share2 size={13} strokeWidth={1.8} aria-hidden />
             {wallBusy ? '生成中…' : '分享全部'}
           </button>
           <button
-            onClick={() => nav('/home')}
-            className="h-9 rounded-full border border-line bg-surface px-4 text-xs text-ink-2 active:bg-surface-2"
+            onClick={() => {
+              void haptic('select');
+              nav('/home');
+            }}
+            className="ml-2 h-9 rounded-full border border-line bg-surface px-3.5 text-xs text-ink-2 active:bg-surface-2"
           >
             去添置
           </button>
-        </div>
-      </header>
-
-      {active.length === 0 ? (
-        <div className="mt-3 rounded-card border border-dashed border-line bg-surface p-10 text-center text-sm text-ink-3">
-          墙上还空着，先去首页入库第一件物品
-        </div>
-      ) : (
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 dt:grid-cols-4 dtxl:grid-cols-5">
-          {active.map((g) => (
-            <WallCard key={g.id} g={g} categoryName={catNameOf(g.categoryId)} symbol={symbol} onShare={(x) => void share(x)} />
-          ))}
-        </div>
-      )}
-    </div>
+        </>
+      }
+    >
+      <div className="page-enter">
+        {active.length === 0 ? (
+          <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center text-sm text-ink-3">
+            墙上还空着，先去首页入库第一件物品
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 dt:grid-cols-4 dtxl:grid-cols-5">
+            {active.map((g) => (
+              <WallCard key={g.id} g={g} categoryName={catNameOf(g.categoryId)} symbol={symbol} onShare={(x) => void share(x)} />
+            ))}
+          </div>
+        )}
+      </div>
+    </PageShell>
   );
 }

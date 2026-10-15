@@ -36,6 +36,7 @@ import { compressDataUrlUnder, IMAGE_MAX_KB } from '../lib/imageCompress';
 import { getCategoryIcon } from '../lib/categoryIcons';
 import type { Goods, GoodsImage } from '../types/entities';
 import logger from '../lib/log';
+import { haptic } from '../lib/haptics';
 
 /* ============================================================================
  * 首页（对齐原版竞品布局）：
@@ -564,6 +565,7 @@ export function GoodsFormSheet({
         await addGoods(base);
         toastSuccess('已入库');
       }
+      void haptic('medium');
     } catch (e) {
       logger.error('goods', '保存失败', e);
       toastError('保存失败，请重试');
@@ -1103,7 +1105,10 @@ export default function HomePage() {
         ).map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => {
+              void haptic('select');
+              setTab(t.key);
+            }}
             className={`rounded-full px-4 py-1 text-xs transition-all active:scale-95 ${
               tab === t.key ? 'bg-surface font-semibold shadow' : 'text-ink-3'
             }`}

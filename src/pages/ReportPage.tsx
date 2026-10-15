@@ -8,6 +8,7 @@ import { categoryShare, judgementBreakdown } from '../domain/stats';
 import type { CategorySlice } from '../domain/stats';
 import { ofMonth, sumExpense, sumIncome } from '../domain/ledger';
 import { formatMoney, formatCompactMoney } from '../lib/money';
+import { haptic } from '../lib/haptics';
 import { addDays, fmtDate, lastNDays, lastNMonths, monthKey, monthLabel, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
 import type { ValueRecord } from '../types/entities';
 import type { SheetKey } from '../lib/sheetBus';
@@ -267,11 +268,17 @@ export default function ReportPage() {
     };
   }, [grain, day, ym, year, times, moods, wishlist, cooldowns]);
 
-  /** v1.0.28 · 生活流 chips 就地弹层：不再跳转账本页，关闭后停留在报表页。 */
+  /** v1.0.30 · 生活流 chips 就地弹层：不再跳转账本页，关闭后停留在报表页。 */
   const [lifeSheet, setLifeSheet] = useState<SheetKey | null>(null);
   const openLife = (key: SheetKey): void => {
+    void haptic('select');
     setLifeSheet(key);
   };
+
+  /** ★v1.0.33：柱状图点选——此前只画柱子不给数字，手机上看不出金额。 */
+  const [barKey, setBarKey] = useState<string | null>(null);
+  const shownBar = useMemo(() => trend.find((b) => b.key === barKey) ?? null, [trend, barKey]);
+  const currentKey = grain === 'day' ? day : grain === 'month' ? ym : '';
 
   const healthTint =
     life.health === null ? 'var(--ink-3)' : life.health >= 70 ? 'var(--gui)' : life.health >= 40 ? '#c98a2d' : 'var(--fou)';
@@ -293,9 +300,7 @@ export default function ReportPage() {
       <header className="page-enter flex w-full items-end justify-between pb-1 pt-2">
         <div className="min-w-0">
           <h1 className="text-3xl font-bold leading-9">报表</h1>
-          <p className="truncate text-xs text-ink-3">
-            {windowLabel} · 收 {formatMoney(income, currency)} / 支 {formatMoney(expense, currency)}
-          </p>
+          <p className="truncate text-xs text-ink-3">{windowLabel} · 仅统计生活流记账</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button
@@ -331,7 +336,10 @@ export default function ReportPage() {
           {GRAIN_CHIPS.map(([g, label]) => (
             <button
               key={g}
-              onClick={() => setGrain(g)}
+              onClick={() => {
+                void haptic('select');
+                setGrain(g);
+              }}
               className={`h-8 rounded-full border px-3.5 text-xs transition-all active:scale-95 ${
                 grain === g ? 'border-accent bg-accent-soft font-medium text-accent' : 'border-line bg-surface text-ink-3'
               }`}
@@ -341,8 +349,26 @@ export default function ReportPage() {
           ))}
         </div>
 
+        {/* ★v1.0.33：顶部概览条——此前页头只有标题+小字，下方留白显得空落 */}
+        <div className="page-enter grid grid-cols-3 gap-2 rounded-card border border-line bg-surface p-3 dt:col-span-12">
+          <div className="text-center">
+            <p className="text-[11px] text-ink-3">支出</p>
+            <p className="tnum mt-0.5 text-base font-semibold">{formatMoney(expense, currency)}</p>
+          </div>
+          <div className="border-x border-line-2 text-center">
+            <p className="text-[11px] text-ink-3">收入</p>
+            <p className="tnum mt-0.5 text-base font-semibold">{formatMoney(income, currency)}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-[11px] text-ink-3">结余</p>
+            <p className="tnum mt-0.5 text-base font-semibold" style={{ color: income - expense >= 0 ? 'var(--gui)' : 'var(--fou)' }}>
+              {formatMoney(income - expense, currency)}
+            </p>
+          </div>
+        </div>
+
         {/* 分类环图 */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-5">
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-7">
           <h2 className="text-sm font-semibold dt:text-[15px]">支出分类占比</h2>
           <p className="mt-0.5 text-[11px] text-ink-3">仅统计生活流记账（物品与订阅不计入）</p>
           {slices.length === 0 ? (
@@ -372,95 +398,12 @@ export default function ReportPage() {
           )}
         </div>
 
-        {/* 趋势 */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-7">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold dt:text-[15px]">{trendTitle}</h2>
-            <p className="text-[11px] text-ink-3">
-              <span className="mr-2 inline-flex items-center gap-1">
-                <span className="inline-block h-2 w-2 rounded-full bg-accent" />
-                支出
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--xu)' }} />
-                收入
-              </span>
-            </p>
-          </div>
-          <p className="mt-0.5 text-[11px] text-ink-3">仅统计生活流记账</p>
-          <div className="mt-4 flex h-32 items-end justify-between gap-2 dt:h-48">
-            {trend.map((b) => (
-              <div key={b.key} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                <div className="flex h-28 w-full items-end justify-center gap-1 dt:h-[10.5rem]">
-                  <div
-                    className="w-3.5 rounded-t bg-accent transition-all dt:w-5"
-                    style={{ height: `${Math.max((b.expense / maxBar) * 100, b.expense > 0 ? 3 : 0)}%` }}
-                    title={`支出 ${formatMoney(b.expense, currency)}`}
-                  />
-                  <div
-                    className="w-3.5 rounded-t transition-all dt:w-5"
-                    style={{
-                      height: `${Math.max((b.income / maxBar) * 100, b.income > 0 ? 3 : 0)}%`,
-                      background: 'var(--xu)',
-                    }}
-                    title={`收入 ${formatMoney(b.income, currency)}`}
-                  />
-                </div>
-                <span className={`text-[11px] ${b.key === (grain === 'day' ? day : grain === 'month' ? ym : '') ? 'font-semibold text-accent' : 'text-ink-3'}`}>
-                  {b.label}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* 趋势与净值趋势已下移到「生活流」之后（v1.0.33 布局重排：占比/生活流前置，趋势后置） */}
 
-        {/* v1.0.21 · M3.2：净值趋势（收入 − 支出）；PC 与归/需/否并排（7+5） */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-7">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold dt:text-[15px]">净值趋势</h2>
-            <p className="text-[11px] text-ink-3">{trendTitle.replace('趋势', '')} · 收入 − 支出</p>
-          </div>
-          <div className="mt-3">
-            <NetTrend points={netPoints} currency={currency} />
-          </div>
-        </div>
+        {/* 归 / 需 / 否 结构：v1.0.33 起排在「生活流」之后（占比 + 生活流状态前置） */}
 
-        {/* 归 / 需 / 否 */}
+        {/* v1.0.24 · 生活流板块：理智指数（时间健康度）+ 心动清单 + 冲动拦截 + 情绪晴雨（v1.0.33 与占比并排） */}
         <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-5">
-          <h2 className="text-sm font-semibold dt:text-[15px]">归 / 需 / 否 结构</h2>
-          <p className="mt-0.5 text-[11px] text-ink-3">仅统计生活流记账（物品与订阅不计入）</p>
-          <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-surface-2">
-            {stack.map((s) => (
-              <div key={s.judgement} style={{ width: `${s.ratio * 100}%`, background: s.color }} />
-            ))}
-          </div>
-          <ul className="mt-3 space-y-2.5 dt:grid dt:grid-cols-1 dt:gap-3 dt:space-y-0">
-            {stack.map((s) => (
-              <li key={s.judgement}>
-                <div className="flex items-baseline justify-between text-xs">
-                  <span style={{ color: s.color }}>
-                    {s.label} · {J_META[s.judgement].desc}
-                  </span>
-                  <span>
-                    <span className="font-semibold">{formatMoney(s.amount, currency)}</span>
-                    <span className="ml-1.5 text-ink-3">{Math.round(s.ratio * 100)}%</span>
-                  </span>
-                </div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2">
-                  <div style={{ width: `${s.ratio * 100}%`, background: s.color }} className="h-full rounded-full" />
-                </div>
-              </li>
-            ))}
-          </ul>
-          {expense === 0 ? (
-            <p className="mt-2 text-[11px] text-ink-3">
-              {grain === 'day' ? '今天' : grain === 'month' ? '本月' : '本年'}暂无支出，先去记一笔吧
-            </p>
-          ) : null}
-        </div>
-
-        {/* v1.0.24 · 生活流板块：理智指数（时间健康度）+ 心动清单 + 冲动拦截 + 情绪晴雨 */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12">
           <div className="flex items-baseline justify-between">
             <h2 className="flex items-center gap-1.5 text-sm font-semibold">
               <Brain size={15} style={{ color: 'var(--accent)' }} />
@@ -515,8 +458,8 @@ export default function ReportPage() {
             </div>
           </div>
 
-          {/* 三小卡：心动清单 / 冲动拦截 / 情绪晴雨 */}
-          <div className="mt-2.5 grid grid-cols-3 gap-2.5">
+          {/* 三小卡：心动清单 / 冲动拦截 / 情绪晴雨（桌面窄栏内竖排） */}
+          <div className="mt-2.5 grid grid-cols-3 gap-2.5 dt:grid-cols-1">
             <div className="rounded-card border border-line p-3" style={{ borderColor: 'color-mix(in srgb, #c98a2d 28%, transparent)' }}>
               <p className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color: '#c98a2d' }}>
                 <Sprout size={13} />
@@ -551,6 +494,116 @@ export default function ReportPage() {
                 归入心底 {life.moodHeart} · 粉碎 {life.moodCrush}
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* 归 / 需 / 否 */}
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12">
+          <h2 className="text-sm font-semibold dt:text-[15px]">归 / 需 / 否 结构</h2>
+          <p className="mt-0.5 text-[11px] text-ink-3">仅统计生活流记账（物品与订阅不计入）</p>
+          <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-surface-2">
+            {stack.map((s) => (
+              <div key={s.judgement} style={{ width: `${s.ratio * 100}%`, background: s.color }} />
+            ))}
+          </div>
+          <ul className="mt-3 space-y-2.5 dt:grid dt:grid-cols-3 dt:gap-4 dt:space-y-0">
+            {stack.map((s) => (
+              <li key={s.judgement}>
+                <div className="flex items-baseline justify-between text-xs">
+                  <span style={{ color: s.color }}>
+                    {s.label} · {J_META[s.judgement].desc}
+                  </span>
+                  <span>
+                    <span className="font-semibold">{formatMoney(s.amount, currency)}</span>
+                    <span className="ml-1.5 text-ink-3">{Math.round(s.ratio * 100)}%</span>
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                  <div style={{ width: `${s.ratio * 100}%`, background: s.color }} className="h-full rounded-full" />
+                </div>
+              </li>
+            ))}
+          </ul>
+          {expense === 0 ? (
+            <p className="mt-2 text-[11px] text-ink-3">
+              {grain === 'day' ? '今天' : grain === 'month' ? '本月' : '本年'}暂无支出，先去记一笔吧
+            </p>
+          ) : null}
+        </div>
+
+        {/* ★v1.0.33 · 趋势（后置）：柱顶直接给金额，点柱子看该期收/支/结余明细 */}
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold dt:text-[15px]">{trendTitle}</h2>
+            <p className="text-[11px] text-ink-3">
+              <span className="mr-2 inline-flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-accent" />
+                支出
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--xu)' }} />
+                收入
+              </span>
+            </p>
+          </div>
+          <div className="mt-4 flex items-end justify-between gap-1.5">
+            {trend.map((b) => {
+              const on = barKey === b.key;
+              return (
+                <button
+                  key={b.key}
+                  type="button"
+                  onClick={() => {
+                    void haptic('select');
+                    setBarKey(on ? null : b.key);
+                  }}
+                  aria-label={`${b.label} 支出 ${formatMoney(b.expense, currency)} 收入 ${formatMoney(b.income, currency)}`}
+                  className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-btn pb-1 pt-0.5 transition-colors ${
+                    on ? 'bg-surface-2' : ''
+                  }`}
+                >
+                  <span className={`tnum h-3.5 text-[10px] leading-none ${on ? 'font-semibold text-accent' : 'text-ink-3'}`}>
+                    {b.expense > 0 ? formatCompactMoney(b.expense, currency) : ''}
+                  </span>
+                  <div className="flex h-28 w-full items-end justify-center gap-1 dt:h-40">
+                    <div
+                      className="w-3.5 rounded-t bg-accent transition-all dt:w-6"
+                      style={{ height: `${Math.max((b.expense / maxBar) * 100, b.expense > 0 ? 3 : 0)}%` }}
+                    />
+                    <div
+                      className="w-3.5 rounded-t transition-all dt:w-6"
+                      style={{
+                        height: `${Math.max((b.income / maxBar) * 100, b.income > 0 ? 3 : 0)}%`,
+                        background: 'var(--xu)',
+                      }}
+                    />
+                  </div>
+                  <span
+                    className={`text-[11px] ${
+                      b.key === currentKey ? 'font-semibold text-accent' : on ? 'text-ink-2' : 'text-ink-3'
+                    }`}
+                  >
+                    {b.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] text-ink-3">
+            {shownBar
+              ? `${shownBar.label}：支出 ${formatMoney(shownBar.expense, currency)} · 收入 ${formatMoney(shownBar.income, currency)} · 结余 ${formatMoney(shownBar.income - shownBar.expense, currency)}`
+              : '点柱子看该期收支金额'}
+          </p>
+        </div>
+
+        {/* v1.0.21 · M3.2：净值趋势（收入 − 支出）；v1.0.33 起置于最后 */}
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold dt:text-[15px]">净值趋势</h2>
+            <p className="text-[11px] text-ink-3">{trendTitle.replace('趋势', '')} · 收入 − 支出</p>
+          </div>
+          <div className="mt-3">
+            <NetTrend points={netPoints} currency={currency} />
           </div>
         </div>
       </div>

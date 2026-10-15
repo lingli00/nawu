@@ -4,6 +4,7 @@ import { Wifi } from 'lucide-react';
 import PageShell from '../components/layout/PageShell';
 import { useServerStore, useUiStore, toastSuccess, toastInfo } from '../store';
 import { displayUrl, normalizeServerUrl } from '../lib/url';
+import { haptic } from '../lib/haptics';
 import { isLanScanRecommended, scanLanServers, type LanScanHit } from '../net/lanScan';
 
 /** P05 服务器管理：多服务器列表，点选切换当前服务器。 */
@@ -97,6 +98,7 @@ export default function ServerManagePage() {
     try {
       const saved = await add({ alias: pending.name || '扫描到的服务器', url: norm.url });
       await setCurrent(saved.id);
+      void haptic('medium');
       toastSuccess('已添加并切换到新服务器');
       setPending(null);
     } catch {

@@ -38,13 +38,19 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { useDataStore, toastSuccess, toastError } from '../store';
+import { useDataStore, useUiStore, toastSuccess, toastError } from '../store';
 import { useBackGuard } from '../lib/backGuard';
 import { haptic } from '../lib/haptics';
 import { addDays, today } from '../lib/date';
 import { compressDataUrlUnder } from '../lib/imageCompress';
 import IconPicker, { IconPreview } from './IconPicker';
 import type { Cooldown, Judgement, TimeRec, WishItem } from '../types/entities';
+
+/** ★v1.0.33：删除一律先确认（此前点一下就直删，误触无法挽回）。 */
+async function confirmDelete(title: string, message = '删除后不可恢复。'): Promise<boolean> {
+  void haptic('medium');
+  return useUiStore.getState().confirm({ title, message });
+}
 
 /**
  * 生活流四张 sheet（v1.0.22 · M2：借鉴竞品信息结构，命名/文案/色系全部自有）。
@@ -292,6 +298,7 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
     }
     const p = Number(price);
     setBusy(true);
+    void haptic('medium');
     try {
       await addWish({
         name,
@@ -452,7 +459,12 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
                   转冷静池
                 </button>
                 <button
-                  onClick={() => void removeById('wishlist', w.id)}
+                  onClick={() =>
+                    void (async () => {
+                      if (!(await confirmDelete(`删除「${w.name}」？`))) return;
+                      await removeById('wishlist', w.id);
+                    })()
+                  }
                   aria-label="删除"
                   className="shrink-0 text-ink-3 active:text-red-500"
                 >
@@ -515,6 +527,7 @@ export function CooldownSheet({ onClose }: { onClose: () => void }) {
       return;
     }
     setBusy(true);
+    void haptic('medium');
     try {
       await addCooldown({ name, ...coolUntil(COOL_OPTIONS.find((o) => o.days === days) ?? COOL_OPTIONS[3]) });
       if (nameRef.current) nameRef.current.value = '';
@@ -617,7 +630,12 @@ export function CooldownSheet({ onClose }: { onClose: () => void }) {
                   </button>
                 )}
                 <button
-                  onClick={() => void removeById('cooldowns', c.id)}
+                  onClick={() =>
+                    void (async () => {
+                      if (!(await confirmDelete(`删除冷静池里的「${c.name}」？`))) return;
+                      await removeById('cooldowns', c.id);
+                    })()
+                  }
                   aria-label="删除"
                   className="shrink-0 text-ink-3 active:text-red-500"
                 >
@@ -669,6 +687,7 @@ export function QuickCooldownSheet({ presetName, onClose }: { presetName?: strin
     }
     const a = Number(amount);
     setBusy(true);
+    void haptic('medium');
     try {
       await addCooldown({
         name: n,
@@ -830,6 +849,7 @@ export function MoodSheet({ onClose }: { onClose: () => void }) {
       return;
     }
     setBusy(true);
+    void haptic('medium');
     try {
       await addMood({
         feeling: face.label,
@@ -918,7 +938,12 @@ export function MoodSheet({ onClose }: { onClose: () => void }) {
                     <p className="mt-0.5 text-sm leading-5">{m.text}</p>
                   </div>
                   <button
-                    onClick={() => void removeById('moods', m.id)}
+                    onClick={() =>
+                      void (async () => {
+                        if (!(await confirmDelete('删除这条心情记录？'))) return;
+                        await removeById('moods', m.id);
+                      })()
+                    }
                     aria-label="删除"
                     className="mt-1 shrink-0 text-ink-3 active:scale-95"
                   >
@@ -1039,6 +1064,7 @@ export function TimeSheet({ onClose }: { onClose: () => void }) {
 
   const save = async (): Promise<void> => {
     setBusy(true);
+    void haptic('medium');
     try {
       await addTime({
         durationMin: minutes,
@@ -1185,7 +1211,12 @@ export function TimeSheet({ onClose }: { onClose: () => void }) {
                     {t.note ? <p className="truncate text-xs text-ink-2">{t.note}</p> : null}
                   </div>
                   <button
-                    onClick={() => void removeById('times', t.id)}
+                    onClick={() =>
+                      void (async () => {
+                        if (!(await confirmDelete('删除这段专注记录？'))) return;
+                        await removeById('times', t.id);
+                      })()
+                    }
                     aria-label="删除"
                     className="shrink-0 text-ink-3 active:scale-95"
                   >
