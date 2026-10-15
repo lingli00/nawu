@@ -249,7 +249,11 @@ export function GlyphImg({ item, size = 24 }: { item: GlyphItem; size?: number }
 }
 
 /** 预览：任意 icon 值（builtin / url: / img:）→ 可视节点。
- *  网络值不吃 WebView 直连：本地缓存 dataURL 命中即显；未命中统一网络层抓取入库。 */
+ *  网络值不吃 WebView 直连：本地缓存 dataURL 命中即显；未命中统一网络层抓取入库。
+ *  ★v1.0.31 铁律修复：brand 分支必须独立成组件——旧写法在同组件内
+ *  「brand 提前 return（1 个 hook）↔ 非 brand 走满 7 个 hook」，值一切换
+ *  hooks 数量变化 → React #300 整树崩溃（「添加物品选品牌图片必崩」的真凶，
+ *  v1.0.19 起埋雷）。 */
 export function IconPreview({
   icon,
   size = 22,
@@ -264,27 +268,51 @@ export function IconPreview({
   fallbackFg?: string;
 }) {
   const v = (icon ?? '').trim();
-  const isBrand = v.startsWith('brand:');
-  const isUrl = v.startsWith('url:');
-  const isImg = v.startsWith('img:');
-  const raw = isUrl ? v.slice(4).trim() : '';
 
   /* brand: 引用码 → 内置 glyph 即时渲染（v1.0.19，零网络零数据）。 */
-  const brandGlyph = useMemo(() => (isBrand ? glyphBySlug(v.slice(6)) : null), [isBrand, v]);
-  if (isBrand) {
-    if (brandGlyph) {
+  if (v.startsWith('brand:')) {
+    const glyph = glyphBySlug(v.slice(6));
+    if (glyph) {
       return (
         <span
           className={`flex items-center justify-center ${className ?? ''}`}
           style={{ width: size, height: size }}
         >
-          <GlyphImg item={brandGlyph} size={Math.round(size * 0.92)} />
+          <GlyphImg item={glyph} size={Math.round(size * 0.92)} />
         </span>
       );
     }
     const Fb = subIconOf('tag');
     return <Fb size={size} className={className} />;
   }
+  return (
+    <IconPreviewPlain
+      v={v}
+      size={size}
+      className={className}
+      fallbackBg={fallbackBg}
+      fallbackFg={fallbackFg}
+    />
+  );
+}
+
+/** 非 brand 预览（url: / img: / 裸 lucide id）。hooks 全部无条件执行，不可提前 return 到 hooks 之前。 */
+function IconPreviewPlain({
+  v,
+  size,
+  className,
+  fallbackBg,
+  fallbackFg,
+}: {
+  v: string;
+  size: number;
+  className?: string;
+  fallbackBg?: string;
+  fallbackFg?: string;
+}) {
+  const isUrl = v.startsWith('url:');
+  const isImg = v.startsWith('img:');
+  const raw = isUrl ? v.slice(4).trim() : '';
 
   const chain = useMemo<string[]>(() => {
     if (!isUrl || !raw) return [];
@@ -854,6 +882,39 @@ export default function IconPicker({
     </>
   );
 
+  /* —— 浏览态：订阅模式图标库 tab（★v1.0.31 修复：此前误落到品牌 favicon
+     网格，导致「图标库跟网络图标一模一样」） —— */
+  const subLibView = (
+    <>
+      {libGroups.map((g) => (
+        <LazySection key={g.label} label={g.label} count={g.items.length} cols={8} rowH={48}>
+          <div className="grid grid-cols-8 gap-2">
+            {g.items.map(({ id }) => {
+              const Icon = subIconOf(id);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    void haptic('select');
+                    onChange(id);
+                  }}
+                  aria-label={id}
+                  title={id}
+                  className={`flex h-10 items-center justify-center rounded-btn border transition-all active:scale-95 ${
+                    value === id ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface-2 text-ink-2'
+                  }`}
+                >
+                  <Icon size={18} />
+                </button>
+              );
+            })}
+          </div>
+        </LazySection>
+      ))}
+    </>
+  );
+
   /* —— 浏览态：品牌图片 tab（内置 glyph 组 + favicon 品牌组，全部懒渲染） —— */
   /**
    * favicon 品牌组：每组独立懒挂载 + 提前量收紧到 150px（v1.0.29）。
@@ -937,10 +998,12 @@ export default function IconPicker({
             : tab === 'img'
               ? '搜商品名称或型号，出真实商品图'
               : sysLib
-                ? '按分类浏览 · 点击即选中'
-            : searching
-              ? '内置品牌秒出，在线图标随后补齐'
-              : '内置品牌离线秒显，点击即采用'}
+              ? '按分类浏览 · 点击即选中'
+            : tab === 'lib' && !systemMode
+              ? '点击即选中，或搜索过滤'
+              : searching
+                ? '内置品牌秒出，在线图标随后补齐'
+                : '内置品牌离线秒显，点击即采用'}
         </span>
       </div>
 
@@ -1174,8 +1237,8 @@ export default function IconPicker({
               ) : null}
             </>
           ) : (
-            /* 浏览态 */
-            sysLib ? sysLibView : brandBrowse
+            /* 浏览态：lib tab = 系统图标（物品）/ 订阅图标库（订阅）；web tab = 品牌 */
+            sysLib ? sysLibView : tab === 'lib' ? subLibView : brandBrowse
           )}
         </div>
       )}
