@@ -1,4 +1,4 @@
-import { getKV, setKV } from '../storage/kv';
+import { enqueueWrite, getKV, removeKV, setKV } from '../storage/kv';
 import { isNative } from '../net/env';
 import { currentServer } from '../store/useServerStore';
 import logger from './log';
@@ -25,8 +25,13 @@ const INDEX_KEY = 'gf.icon.cache.index';
 /** KV 键前缀：单图标条目（一个图标一个 key，避免单条 value 过大拖慢 Preferences）。 */
 const ENTRY_PREFIX = 'gf.icon.c.';
 
-/** LRU 容量上限（条）。 */
-const MAX_ENTRIES = 500;
+/**
+ * LRU 容量上限（条）。
+ * ★v1.0.29：浏览器端 localStorage 只给 ~5MB，500 条很容易把配额吃光，
+ * 导致后续业务写入 QuotaExceeded（「本地保存失败」）—— Web 上限砍到 120 条；
+ * 原生 Preferences 没有这种硬配额，维持 500。
+ */
+const MAX_ENTRIES = isNative() ? 500 : 120;
 /** 单条 dataURL 体积上限（约 300KB，超过不入缓存）。 */
 const MAX_ENTRY_CHARS = 400_000;
 
@@ -59,32 +64,205 @@ export function normIconKey(src: string, base?: string): string {
 }
 
 /* ------------------------------------------------------------------ */
+/* 全局抓取并发闸（v1.0.29 · 卡死根治）                                 */
+/*                                                                     */
+/* 品牌图片页一次挂载上百个 favicon（订阅模式品牌 tab 甚至是全量同步     */
+/* 渲染），每个未命中都会走 CapacitorHttp 抓取 + Preferences 写入。      */
+/* Android 侧 SharedPreferences 是**单 XML 文件**，每次 set 全量重写——  */
+/* 无闸门时几十上百个并发抓取 + 写入会把主线程 / bridge 队列打爆         */
+/* （实测白屏卡死 15s+），业务数据的写入也被挤到队尾（「入库不了」）。   */
+/* 全局并发上限 4：可视图标优先在队头，大图抓取最多等一小会儿。          */
+/* ------------------------------------------------------------------ */
+
+const FETCH_CONCURRENCY = 4;
+let fetchActive = 0;
+const fetchWaiters: Array<() => void> = [];
+
+/** 排队执行一个抓取任务（FIFO 放行，退出即让位）。 */
+async function withFetchSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (fetchActive >= FETCH_CONCURRENCY) {
+    await new Promise<void>((release) => fetchWaiters.push(release));
+  }
+  fetchActive++;
+  try {
+    return await fn();
+  } finally {
+    fetchActive--;
+    fetchWaiters.shift()?.();
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* 读写                                                                */
 /* ------------------------------------------------------------------ */
 
-/** 按候选键顺序查缓存，命中返回 dataURL。 */
-export async function iconCacheLookup(keys: string[]): Promise<string | null> {
-  for (const k of keys) {
-    const nk = normIconKey(k);
-    if (!nk) continue;
-    const hit = await getKV<string>(ENTRY_PREFIX + nk);
-    if (hit && hit.startsWith('data:')) return hit;
+/**
+ * 内存 LRU 索引（v1.0.29）：启动懒加载一次，之后写入只改内存、
+ * 防抖批量写回。旧实现每写一个图标就读+写两遍索引 KV——并发下
+ * 读-改-写互相覆盖（丢键），且索引高频全量重写加剧写风暴。
+ */
+let memIndex: string[] | null = null;
+let indexDirty = false;
+let indexTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function loadIndex(): Promise<string[]> {
+  if (memIndex) return memIndex;
+  const idx = await getKV<IconIndex>(INDEX_KEY);
+  memIndex = Array.isArray(idx?.keys) ? idx.keys : [];
+  return memIndex;
+}
+
+/**
+ * 索引登记（LRU 头插；超容量的尾部条目连正文一起淘汰）。
+ * ★索引与正文保持严格一致：`readEntry` 靠「索引里没有 = 从未缓存」跳过跨桥读，
+ * 因此索引必须覆盖**所有**现存条目，否则旧图标会被判为未缓存（白重下一遍）。
+ */
+function indexTouch(nk: string): void {
+  if (!memIndex) return;
+  if (memIndex[0] !== nk) {
+    const at = memIndex.indexOf(nk);
+    if (at > 0) memIndex.splice(at, 1);
+    memIndex.unshift(nk);
+  }
+  if (memIndex.length > MAX_ENTRIES) {
+    for (const dead of memIndex.splice(MAX_ENTRIES)) {
+      memo.delete(dead);
+      writeQueue.delete(dead);
+      void removeKV(ENTRY_PREFIX + dead).catch(() => undefined);
+    }
+  }
+  scheduleIndexFlush();
+}
+
+/* ------------------------------------------------------------------ */
+/* 读取备忘（v1.0.29 · 卡死根治）                                       */
+/*                                                                     */
+/* 品牌页一次挂载上百个 BrandImg，每个都会按候选链读 1~3 次 KV ——        */
+/* 原生侧每次 get 都是一次跨桥调用，几百次叠加直接把主线程打满。         */
+/* 这里做两级减免：① 内存备忘（命中不再跨桥）；② 用内存索引判存 ——     */
+/* 索引里没有登记过的键，说明从未缓存过，直接跳过 KV 读。               */
+/* ------------------------------------------------------------------ */
+const MEMO_MAX = 400;
+const memo = new Map<string, string>();
+
+function memoPut(k: string, v: string): void {
+  if (v.length > MAX_ENTRY_CHARS) return;
+  if (memo.has(k)) memo.delete(k);
+  memo.set(k, v);
+  while (memo.size > MEMO_MAX) {
+    const oldest = memo.keys().next().value;
+    if (oldest === undefined) break;
+    memo.delete(oldest);
+  }
+}
+
+async function readEntry(nk: string, idx: string[]): Promise<string | null> {
+  const cached = memo.get(nk);
+  if (cached !== undefined) return cached;
+  if (idx.length > 0 && !idx.includes(nk)) return null;
+  const v = await getKV<string>(ENTRY_PREFIX + nk);
+  if (v && v.startsWith('data:')) {
+    memoPut(nk, v);
+    return v;
   }
   return null;
 }
 
-/** 写入一条缓存并做 LRU 淘汰。 */
+function scheduleIndexFlush(): void {
+  indexDirty = true;
+  if (indexTimer) return;
+  indexTimer = setTimeout(() => {
+    indexTimer = null;
+    if (!indexDirty || !memIndex) return;
+    indexDirty = false;
+    void setKV(INDEX_KEY, { keys: memIndex.slice(0, MAX_ENTRIES) }).catch(() => {
+      /* 写回失败静默：索引丢了可重建，条目才是数据 */
+    });
+  }, 800);
+}
+
+/** 内存索引立即落盘（备份导出前等需要确保一致性的场景）。 */
+export async function flushIconIndex(): Promise<void> {
+  if (!indexDirty || !memIndex) return;
+  indexDirty = false;
+  if (indexTimer) {
+    clearTimeout(indexTimer);
+    indexTimer = null;
+  }
+  await setKV(INDEX_KEY, { keys: memIndex.slice(0, MAX_ENTRIES) }).catch(() => {});
+}
+
+/** 排空写入队列（导出备份 / 退出前调用，确保新抓的图已落盘）。 */
+export async function flushIconWrites(): Promise<void> {
+  await drainWrites();
+  await flushIconIndex();
+}
+
+/**
+ * 「入库失败」根因防线（v1.0.29）：Android Preferences 是**单 XML 全量重写**，
+ * 一次 `flush` 几百 KB~数 MB；品牌页滚动会瞬间排入上百次 set —— 这些写操作
+ * 与 addGoods / addSubscription 的持久化挤在同一条原生队列里，业务写入被推后，
+ * 用户「保存后立刻退出」就会看到记录丢失。
+ * 对策：图标写一律进串行队列，一次只写一条、写完再取下一条（写节流），
+ * 绝不与业务写入抢并发。
+ */
+const WRITE_DELAY = 400;
+const writeQueue = new Map<string, string>();
+let writing = false;
+let writeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleWriteFlush(): void {
+  if (writing || writeTimer) return;
+  writeTimer = setTimeout(() => {
+    writeTimer = null;
+    void drainWrites();
+  }, WRITE_DELAY);
+}
+
+async function drainWrites(): Promise<void> {
+  if (writing) return;
+  writing = true;
+  try {
+    while (writeQueue.size > 0) {
+      const next = writeQueue.entries().next().value as [string, string] | undefined;
+      if (!next) return;
+      const [k, v] = next;
+      writeQueue.delete(k);
+      // 与业务数据共用同一条写串行链：两者都落在同一份 Preferences XML 上
+      await enqueueWrite(() => setKV(ENTRY_PREFIX + k, v)).catch((e) => {
+        logger.warn('iconCache', '写入失败', e);
+      });
+    }
+  } finally {
+    writing = false;
+    if (writeQueue.size > 0) scheduleWriteFlush();
+  }
+}
+
+/** 按候选键顺序查缓存，命中返回 dataURL。 */
+export async function iconCacheLookup(keys: string[]): Promise<string | null> {
+  const idx = await loadIndex();
+  for (const k of keys) {
+    const nk = normIconKey(k);
+    if (!nk) continue;
+    const hit = await readEntry(nk, idx);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * 写入一条缓存并更新 LRU（索引走内存 + 防抖写回；正文走串行写队列）。
+ * ★v1.0.29：本函数**立即返回**，不再把 UI 挂在几十次 Preferences 写之上。
+ */
 export async function iconCacheStore(src: string, dataUrl: string): Promise<void> {
   const nk = normIconKey(src);
   if (!nk || !dataUrl.startsWith('data:') || dataUrl.length > MAX_ENTRY_CHARS) return;
-  try {
-    await setKV(ENTRY_PREFIX + nk, dataUrl);
-    const idx = (await getKV<IconIndex>(INDEX_KEY)) ?? { keys: [] };
-    idx.keys = [nk, ...idx.keys.filter((k) => k !== nk)].slice(0, MAX_ENTRIES);
-    await setKV(INDEX_KEY, idx);
-  } catch (e) {
-    logger.warn('iconCache', '写入失败', e);
-  }
+  memoPut(nk, dataUrl);
+  await loadIndex();
+  indexTouch(nk);
+  writeQueue.set(nk, dataUrl);
+  scheduleWriteFlush();
 }
 
 /* ------------------------------------------------------------------ */
@@ -97,9 +275,25 @@ export async function iconCacheStore(src: string, dataUrl: string): Promise<void
  * （如 8MB）——魅族官网原图 500KB+ 曾被 400KB 硬上限拦截，报「图片抓取失败」。
  * 超过上限的抓取结果**不入缓存**（iconCacheStore 会自行拦截）。
  */
-export async function fetchIconAsDataUrl(src: string, maxBytes: number = MAX_ENTRY_CHARS): Promise<string | null> {
+/**
+ * 同一 URL 的重复抓取合并（v1.0.29）：列表滚动 / 预览与卡片同时挂载时
+ * 同一个 src 会被请求多次，去重后只走一次网络。
+ */
+const inflight = new Map<string, Promise<string | null>>();
+
+export function fetchIconAsDataUrl(src: string, maxBytes: number = MAX_ENTRY_CHARS): Promise<string | null> {
   const url = (src ?? '').trim();
-  if (!url || (!/^https?:\/\//i.test(url) && !url.startsWith('/'))) return null;
+  if (!url || (!/^https?:\/\//i.test(url) && !url.startsWith('/'))) return Promise.resolve(null);
+  const ck = `${maxBytes}|${url}`;
+  const dup = inflight.get(ck);
+  if (dup) return dup;
+  const p = withFetchSlot(() => fetchIconAsDataUrlInner(url, maxBytes));
+  inflight.set(ck, p);
+  void p.catch(() => undefined).then(() => inflight.delete(ck));
+  return p;
+}
+
+async function fetchIconAsDataUrlInner(url: string, maxBytes: number): Promise<string | null> {
 
   if (isNative()) {
     try {
@@ -168,30 +362,31 @@ export async function iconCacheFetchAndStore(chain: string[], base?: string): Pr
 /** 后台并发预热一批图标 src（搜索结果全量缓存用，失败静默）。 */
 export async function warmIconCache(srcs: string[], base?: string): Promise<void> {
   const list = srcs.map((s) => (s ?? '').trim()).filter(Boolean).slice(0, 24);
-  const CONCURRENCY = 4;
-  let cursor = 0;
-  const worker = async (): Promise<void> => {
-    while (cursor < list.length) {
-      const src = list[cursor++];
-      const nk = normIconKey(src, base);
-      const hit = await getKV<string>(ENTRY_PREFIX + nk);
-      if (hit && hit.startsWith('data:')) continue;
-      await fetchIconAsDataUrl(src).then((d) => (d ? iconCacheStore(src, d) : null));
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, list.length) }, worker));
+  for (const src of list) {
+    void base;
+    const hit = await iconCacheLookup([src]);
+    if (hit) continue;
+    const data = await fetchIconAsDataUrl(src);
+    if (data) await iconCacheStore(src, data);
+  }
 }
 
 /* ------------------------------------------------------------------ */
 /* 备份导出 / 恢复导入                                                  */
 /* ------------------------------------------------------------------ */
 
+/** 当前索引快照（导出用，先排空写队列保证完整性）。 */
+async function readyIndex(): Promise<string[]> {
+  await flushIconWrites();
+  return loadIndex();
+}
+
 /** 导出全部图标缓存（备份快照 icons 字段）。 */
 export async function iconCacheExport(): Promise<Record<string, string>> {
-  const idx = (await getKV<IconIndex>(INDEX_KEY)) ?? { keys: [] };
+  const keys = await readyIndex();
   const out: Record<string, string> = {};
-  for (const k of idx.keys) {
-    const v = await getKV<string>(ENTRY_PREFIX + k);
+  for (const k of keys) {
+    const v = memo.get(k) ?? (await getKV<string>(ENTRY_PREFIX + k));
     if (v && v.startsWith('data:') && v.length <= MAX_ENTRY_CHARS) out[k] = v;
   }
   return out;
@@ -204,11 +399,11 @@ export async function iconCacheExport(): Promise<Record<string, string>> {
  */
 export async function iconCacheExportReferenced(refKeys?: Set<string>): Promise<Record<string, string>> {
   if (!refKeys) return iconCacheExport();
-  const idx = (await getKV<IconIndex>(INDEX_KEY)) ?? { keys: [] };
+  const keys = await readyIndex();
   const out: Record<string, string> = {};
-  for (const k of idx.keys) {
+  for (const k of keys) {
     if (!refKeys.has(k)) continue;
-    const v = await getKV<string>(ENTRY_PREFIX + k);
+    const v = memo.get(k) ?? (await getKV<string>(ENTRY_PREFIX + k));
     if (v && v.startsWith('data:') && v.length <= MAX_ENTRY_CHARS) out[k] = v;
   }
   return out;
@@ -217,18 +412,22 @@ export async function iconCacheExportReferenced(refKeys?: Set<string>): Promise<
 /** 从备份合并导入图标缓存（不清空现有）。@returns 导入条数 */
 export async function iconCacheImport(rec: unknown): Promise<number> {
   if (!rec || typeof rec !== 'object') return 0;
+  const idx = await loadIndex();
+  void idx;
   const entries = Object.entries(rec as Record<string, unknown>).filter(
-    ([k, v]) => typeof k === 'string' && k && typeof v === 'string' && v.startsWith('data:') && v.length <= MAX_ENTRY_CHARS,
+    (e): e is [string, string] =>
+      typeof e[0] === 'string' && !!e[0] && typeof e[1] === 'string' && e[1].startsWith('data:') && e[1].length <= MAX_ENTRY_CHARS,
   );
   if (entries.length === 0) return 0;
-  const idx = (await getKV<IconIndex>(INDEX_KEY)) ?? { keys: [] };
+  const seen = new Set<string>();
   for (const [k, v] of entries.slice(0, MAX_ENTRIES)) {
-    await setKV(ENTRY_PREFIX + k, v);
-    if (!idx.keys.includes(k)) idx.keys.push(k);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    writeQueue.set(k, v);
+    memoPut(k, v);
+    indexTouch(k);
   }
-  // 导入的排到最前（最近恢复的图标最可能被用到），并截断容量
-  const imported = entries.map(([k]) => k);
-  idx.keys = [...imported, ...idx.keys.filter((k) => !imported.includes(k))].slice(0, MAX_ENTRIES);
-  await setKV(INDEX_KEY, idx);
-  return imported.length;
+  scheduleWriteFlush();
+  void idx;
+  return seen.size;
 }

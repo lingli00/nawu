@@ -120,6 +120,14 @@ export const GLASS_STYLE: CSSProperties = {
 export default function MainShell({ children }: { children: ReactNode }): JSX.Element {
   const { pathname } = useLocation();
   const mode = useShellMode();
+  // ★v1.0.29：把壳层状态写到 <html data-shell>，供 `dt:` 桌面变体判断
+  // （页面级桌面栅格必须感知壳层：宽屏 + 移动壳时不能套桌面栅格，否则挤成竖条）
+  useEffect(() => {
+    document.documentElement.dataset.shell = mode === 'desktop' ? 'pc' : 'mobile';
+    return () => {
+      delete document.documentElement.dataset.shell;
+    };
+  }, [mode]);
   // 管理后台独立全屏：不带主壳侧边栏/底栏，登录卡与内容才能真正居中
   if (pathname === '/admin' || pathname.startsWith('/admin/')) {
     return <div className="min-h-screen bg-paper text-ink">{children}</div>;

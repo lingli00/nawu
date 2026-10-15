@@ -206,7 +206,7 @@ export default function LedgerPage() {
     const groups = groupByDay(rows);
     if (groups.length === 0) {
       return (
-        <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center lg:col-span-2">
+        <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center dt:col-span-2">
           <Leaf size={30} className="mx-auto text-ink-3" strokeWidth={1.5} />
           <p className="mt-2 text-sm text-ink-3">这个{grain === 'day' ? '天' : '月'}还没有记录</p>
           <button onClick={() => nav('/ai')} className="mt-3 h-9 rounded-full bg-accent-soft px-4 text-xs font-medium text-accent">
@@ -276,7 +276,7 @@ export default function LedgerPage() {
   const renderYearGroups = () => {
     if (yearMonths.length === 0) {
       return (
-        <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center lg:col-span-2">
+        <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center dt:col-span-2">
           <Leaf size={30} className="mx-auto text-ink-3" strokeWidth={1.5} />
           <p className="mt-2 text-sm text-ink-3">{year} 年还没有记录</p>
           <button onClick={() => nav('/ai')} className="mt-3 h-9 rounded-full bg-accent-soft px-4 text-xs font-medium text-accent">
@@ -425,7 +425,7 @@ export default function LedgerPage() {
       </div>
 
       {/* 流水列表（只统计生活流记账）；桌面端按日分节排两栏，手机端不变 */}
-      <div className="space-y-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-5 lg:space-y-0">
+      <div className="space-y-3 dt:grid dt:grid-cols-2 dt:items-start dt:gap-x-5 dt:space-y-0">
         {grain === 'year' ? renderYearGroups() : renderDayGroups(activeRows)}
       </div>
 

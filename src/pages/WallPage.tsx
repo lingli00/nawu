@@ -126,7 +126,7 @@ export default function WallPage(): JSX.Element {
           墙上还空着，先去首页入库第一件物品
         </div>
       ) : (
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 dt:grid-cols-4 dtxl:grid-cols-5">
           {active.map((g) => (
             <WallCard key={g.id} g={g} categoryName={catNameOf(g.categoryId)} symbol={symbol} onShare={(x) => void share(x)} />
           ))}

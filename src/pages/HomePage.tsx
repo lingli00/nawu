@@ -18,7 +18,14 @@ import PageField from '../components/ui/PageField';
 import { useBackGuard } from '../lib/backGuard';
 import SubListPage from './SubListPage';
 import CategoryManageSheet from '../components/CategoryManageSheet';
-import IconPicker, { IconPreview, type Tab as PickerTab } from '../components/IconPicker';import { iconKindOf } from '../lib/brandIcon';
+import IconPicker, { IconPreview, type Tab as PickerTab } from '../components/IconPicker';
+import {
+  goodsIconValue,
+  goodsImageFromIcon,
+  hasOwnIcon,
+  isLocalImage,
+  isWebImage,
+} from '../lib/goodsIcon';
 import { GLASS_STYLE } from '../components/layout/MainShell';
 import { useDataStore, useSettingsStore, useUiStore, toastSuccess, toastError } from '../store';
 import { dailyCost, holdDays, perUseCost, sortGoods, totalInvest, achieveRate } from '../domain/goods';
@@ -28,6 +35,7 @@ import { drawGoodsCard, shareOrDownload } from '../lib/shareCard';
 import { compressDataUrlUnder, IMAGE_MAX_KB } from '../lib/imageCompress';
 import { getCategoryIcon } from '../lib/categoryIcons';
 import type { Goods, GoodsImage } from '../types/entities';
+import logger from '../lib/log';
 
 /* ============================================================================
  * 首页（对齐原版竞品布局）：
@@ -78,17 +86,7 @@ function holdLabel(buyDate: string, ref: string = today()): string {
   return `${m} 个月${d} 天`;
 }
 
-/** 图片 ref 是否为本地 dataURL（否则视为系统图标）。 */
-function isLocalImage(g: Goods): boolean {
-  return Boolean(g.image?.ref && g.image.ref.startsWith('data:'));
-}
-
-/** 图片 ref 是否为网络品牌图标（favicon 热链；对标竞品「品牌图/网络图标」来源）。 */
-function isWebImage(g: { image?: GoodsImage }): boolean {
-  return Boolean(g.image?.ref && g.image.ref.startsWith('http'));
-}
-
-/** 是否已转卖：退役且填了出售价。 */
+/** 图片 ref 是否已转卖：退役且填了出售价。 */
 function isSold(g: Goods): boolean {
   return g.status === 'retired' && Number.isFinite(g?.sellPrice) && (g.sellPrice as number) > 0;
 }
@@ -478,25 +476,13 @@ export function GoodsFormSheet({
   /** v1.0.18：点图标区直接开 picker（跳过五来源 sheet），默认系统图标。 */
   const [pickerTab, setPickerTab] = useState<PickerTab | null>(null);
 
-  /* —— 统一图标选择器（与订阅完全同一组件）：GoodsImage ↔ icon 字符串互转 —— */
-  const goodsIconValue = image
-    ? image.ref.startsWith('brand:')
-      ? image.ref // v1.0.19 内置品牌引用码原样透传（IconPreview 即时渲染）
-      : image.ref.startsWith('http')
-      ? `url:${image.ref}`
-      : image.ref.startsWith('data:')
-        ? `img:${image.ref}`
-        : ''
-    : '';
+  /**
+   * image ↔ icon 字符串互转一律走 goodsIcon（v1.0.29）：旧版遇到裸 lucide id
+   * 会 setImage(undefined) —— 这正是「系统图标选不中」的根因。
+   */
+  const iconValue = goodsIconValue(image ? { image } : {});
   const onIconChange = (v: string): void => {
-    if (v.startsWith('brand:')) {
-      setImage({ source: 'brand', ref: v }); // 内置品牌只存引用码，备份只带几个字节
-      return;
-    }
-    const kind = iconKindOf(v);
-    if (kind === 'img') setImage({ source: 'local', ref: v.slice(4) });
-    else if (kind === 'url') setImage({ source: 'web', ref: v.slice(4) });
-    else setImage(undefined); // 内置图标 → 回落分类图标
+    setImage(goodsImageFromIcon(v));
   };
 
   /* —— 编辑模式全量字段（新增模式不展示）—— */
@@ -544,36 +530,44 @@ export function GoodsFormSheet({
       note: note.trim() || undefined,
       image,
     };
-    if (isEdit && initial) {
-      // 出售价语义：填了出售价且仍在役 → 询问是否同时标记为已转卖（退役）
-      const sp = sellPrice.trim() ? Number(sellPrice) : 0;
-      let markSold = false;
-      if (Number.isFinite(sp) && sp > 0 && initial.status !== 'retired') {
-        markSold = await confirm({
-          title: '标记为已转卖？',
-          message: '已填写出售价，是否同时标记为已转卖（退役）？',
+    // ★v1.0.29：任何一步异常都要给用户明确反馈。旧代码把异常直接吞掉：
+    // 弹层不关也不提示，用户感知就是「点了保存没反应 / 添加失败」。
+    try {
+      if (isEdit && initial) {
+        // 出售价语义：填了出售价且仍在役 → 询问是否同时标记为已转卖（退役）
+        const sp = sellPrice.trim() ? Number(sellPrice) : 0;
+        let markSold = false;
+        if (Number.isFinite(sp) && sp > 0 && initial.status !== 'retired') {
+          markSold = await confirm({
+            title: '标记为已转卖？',
+            message: '已填写出售价，是否同时标记为已转卖（退役）？',
+          });
+        }
+        // 编辑：一次提交全量 patch（空值=清除该字段；incomes 不在 patch 里 → 原样保留）
+        const extraFees = fees
+          .filter((f) => f.name.trim() !== '' || Number(f.amount) > 0)
+          .map((f) => ({ name: f.name.trim(), amount: Number(f.amount) || 0 }));
+        await updateGoods(initial.id, {
+          ...base,
+          targetDailyCost: targetDailyCost.trim() ? Number(targetDailyCost) : undefined,
+          countEnabled,
+          totalCount: countEnabled && totalCount.trim() ? Number(totalCount) : undefined,
+          usedCount: Math.max(0, Math.round(Number(usedCount) || 0)),
+          sellPrice: sellPrice.trim() ? Number(sellPrice) : undefined,
+          extraFees,
+          warrantyDate: warrantyDate || undefined,
+          ...(markSold ? { status: 'retired' as const } : {}),
         });
+        toastSuccess(markSold ? '已保存并标记为已转卖' : '已保存');
+      } else {
+        // 新增：轻量基础信息，其余字段走 store 默认值
+        await addGoods(base);
+        toastSuccess('已入库');
       }
-      // 编辑：一次提交全量 patch（空值=清除该字段；incomes 不在 patch 里 → 原样保留）
-      const extraFees = fees
-        .filter((f) => f.name.trim() !== '' || Number(f.amount) > 0)
-        .map((f) => ({ name: f.name.trim(), amount: Number(f.amount) || 0 }));
-      await updateGoods(initial.id, {
-        ...base,
-        targetDailyCost: targetDailyCost.trim() ? Number(targetDailyCost) : undefined,
-        countEnabled,
-        totalCount: countEnabled && totalCount.trim() ? Number(totalCount) : undefined,
-        usedCount: Math.max(0, Math.round(Number(usedCount) || 0)),
-        sellPrice: sellPrice.trim() ? Number(sellPrice) : undefined,
-        extraFees,
-        warrantyDate: warrantyDate || undefined,
-        ...(markSold ? { status: 'retired' as const } : {}),
-      });
-      toastSuccess(markSold ? '已保存并标记为已转卖' : '已保存');
-    } else {
-      // 新增：轻量基础信息，其余字段走 store 默认值
-      await addGoods(base);
-      toastSuccess('已入库');
+    } catch (e) {
+      logger.error('goods', '保存失败', e);
+      toastError('保存失败，请重试');
+      return;
     }
     onClose();
   };
@@ -624,7 +618,7 @@ export function GoodsFormSheet({
                   className="flex w-full items-center gap-3 rounded-btn border border-line bg-surface-2 px-3 py-2.5 text-left active:scale-[0.99]"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-accent-soft text-accent">
-                    <IconPreview icon={goodsIconValue} size={26} fallbackBg="transparent" />
+                    <IconPreview icon={iconValue} size={26} fallbackBg="transparent" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm text-ink">选择图标 / 图片</span>
@@ -809,7 +803,7 @@ export function GoodsFormSheet({
                 </button>
               </div>
               <IconPicker
-                value={goodsIconValue}
+                value={iconValue}
                 onChange={onIconChange}
                 onFilePicked={onPickImage}
                 systemMode
@@ -1188,7 +1182,7 @@ export default function HomePage() {
             </div>
           ) : view === 'list' ? (
             /* —— 列表视图 —— */
-            <ul className="space-y-2 lg:grid lg:grid-cols-2 lg:gap-2 lg:space-y-0">
+            <ul className="space-y-2 dt:grid dt:grid-cols-2 dt:gap-2 dt:space-y-0">
               {list.map((g) => {
                 const retired = g.status === 'retired';
                 const CatIcon = catIconOf(g.categoryId);
@@ -1210,19 +1204,17 @@ export default function HomePage() {
                           alt={g.name}
                           className="h-10 w-10 shrink-0 rounded-full object-cover"
                         />
-                      ) : isWebImage(g) ? (
-                        <span
-                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-                          style={{ background: FALLBACK_BG }}
-                        >
-                          <IconPreview icon={`url:${g.image?.ref}`} size={28} className="h-7 w-7" />
-                        </span>
                       ) : (
                         <span
                           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
                           style={{ background: FALLBACK_BG }}
                         >
-                          <CatIcon size={18} className="text-ink-3" />
+                          {/* v1.0.29：builtin / url / brand 三形态统一 —— 旧代码硬编码 url: 前缀，系统图标永远不显示 */}
+                          {hasOwnIcon(g) ? (
+                            <IconPreview icon={goodsIconValue(g)} size={28} className="h-7 w-7" />
+                          ) : (
+                            <CatIcon size={18} className="text-ink-3" />
+                          )}
                         </span>
                       )}
                       <div className="min-w-0 flex-1">
@@ -1251,7 +1243,7 @@ export default function HomePage() {
             </ul>
           ) : (
             /* —— 网格视图（3 列默认 / 2 列）—— */
-            <ul className={`grid gap-2 ${view === 'grid3' ? 'grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' : 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}>
+            <ul className={`grid gap-2 ${view === 'grid3' ? 'grid-cols-3 dt:grid-cols-4 dtxl:grid-cols-5' : 'grid-cols-2 dt:grid-cols-3 dtxl:grid-cols-4'}`}>
               {list.map((g) => {
                 const amt = cardAmount(g);
                 const CatIcon = catIconOf(g.categoryId);
@@ -1274,13 +1266,13 @@ export default function HomePage() {
                       >
                         {isLocalImage(g) ? (
                           <img src={g.image?.ref} alt={g.name} className="h-full w-full object-cover" />
-                        ) : isWebImage(g) ? (
-                          <span className="flex h-full w-full items-center justify-center" style={{ background: FALLBACK_BG }}>
-                            <IconPreview icon={`url:${g.image?.ref}`} size={96} className="h-3/5 w-3/5" />
-                          </span>
                         ) : (
-                          <span className="flex h-full w-full items-center justify-center text-ink-3">
-                            <CatIcon size={36} />
+                          <span className="flex h-full w-full items-center justify-center" style={{ background: FALLBACK_BG }}>
+                            {hasOwnIcon(g) ? (
+                              <IconPreview icon={goodsIconValue(g)} size={96} className="h-3/5 w-3/5" />
+                            ) : (
+                              <CatIcon size={36} className="text-ink-3" />
+                            )}
                           </span>
                         )}
                         {/* 状态角标：在役=绿点（高关注）；已转卖/退役=中性灰 pill（低视觉权重） */}
@@ -1362,18 +1354,20 @@ export default function HomePage() {
                   >
                     {isLocalImage(detail) ? (
                       <img src={detail.image?.ref} alt={detail.name} className="h-full w-full object-cover" />
-                    ) : isWebImage(detail) ? (
-                      /* v1.0.16：web 图一律走 IconPreview（本地缓存优先 + 多源回退）——
-                         裸 img 直连在 App WebView 里必空白（这正是「首页有图点开空白」的根因） */
-                      <span className="flex h-full w-full items-center justify-center" style={{ background: FALLBACK_BG }}>
-                        <IconPreview icon={`url:${detail.image?.ref}`} size={140} className="h-2/5 w-2/5" />
-                      </span>
                     ) : (
-                      <span className="flex h-full w-full items-center justify-center text-ink-3">
-                        {(() => {
-                          const CatIcon = catIconOf(detail.categoryId);
-                          return <CatIcon size={56} />;
-                        })()}
+                      /* v1.0.29：三形态统一（builtin / url / img / brand）——
+                         旧代码只在 web 形态走 IconPreview，系统图标点开是空白 */
+                      <span className="flex h-full w-full items-center justify-center" style={{ background: FALLBACK_BG }}>
+                        {hasOwnIcon(detail) ? (
+                          <IconPreview icon={goodsIconValue(detail)} size={140} className="h-2/5 w-2/5" />
+                        ) : (
+                          <span className="text-ink-3">
+                            {(() => {
+                              const CatIcon = catIconOf(detail.categoryId);
+                              return <CatIcon size={56} />;
+                            })()}
+                          </span>
+                        )}
                       </span>
                     )}
                     <span

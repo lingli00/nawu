@@ -12,6 +12,7 @@ import { monthlyAvg, nextRenewCountdown } from '../domain/subscription';
 import { formatMoney } from '../lib/money';
 import { useBackGuard } from '../lib/backGuard';
 import { today } from '../lib/date';
+import logger from '../lib/log';
 import type { Subscription } from '../types/entities';
 
 /* ============================================================================
@@ -59,16 +60,23 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
       toastError('请填写名称和大于 0 的金额');
       return;
     }
-    await addSubscription({
-      name: name.trim(),
-      amount: amt,
-      period,
-      every: 1,
-      startDate,
-      nextRenewDate: startDate,
-      categoryId: addCatId || categories.filter((c) => c.kind === 'sub').sort((a, b) => a.order - b.order)[0]?.id,
-      icon: icon || undefined,
-    });
+    // ★v1.0.29：失败要明确提示（旧代码异常被吞，界面毫无反应 = 用户眼里的「添加不成功」）
+    try {
+      await addSubscription({
+        name: name.trim(),
+        amount: amt,
+        period,
+        every: 1,
+        startDate,
+        nextRenewDate: startDate,
+        categoryId: addCatId || categories.filter((c) => c.kind === 'sub').sort((a, b) => a.order - b.order)[0]?.id,
+        icon: icon || undefined,
+      });
+    } catch (e) {
+      logger.error('sub', '添加失败', e);
+      toastError('添加失败，请重试');
+      return;
+    }
     toastSuccess('已添加订阅');
     onClose();
   };
@@ -447,13 +455,13 @@ export default function SubListPage({
           {subs.length === 0 ? '还没有订阅，点右上角添加' : catFilter === 'all' ? '全部已停用' : '该分类下暂无在用订阅'}
         </div>
       ) : (
-        <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{filtered.map(subRow)}</ul>
+        <ul className="grid gap-2 md:grid-cols-2 dtxl:grid-cols-3">{filtered.map(subRow)}</ul>
       )}
 
       {archived.length > 0 ? (
         <>
           <h3 className="mb-2 mt-4 px-1 text-xs font-semibold text-ink-3">已停用（不计入月均）</h3>
-          <ul className="grid gap-2 opacity-70 md:grid-cols-2 xl:grid-cols-3">{archived.map(subRow)}</ul>
+          <ul className="grid gap-2 opacity-70 md:grid-cols-2 dtxl:grid-cols-3">{archived.map(subRow)}</ul>
         </>
       ) : null}
 
@@ -576,7 +584,13 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
       icon: icon || undefined,
       note: note.trim() || undefined,
     };
-    await updateSubscription(initial.id, patch);
+    try {
+      await updateSubscription(initial.id, patch);
+    } catch (e) {
+      logger.error('sub', '保存失败', e);
+      toastError('保存失败，请重试');
+      return;
+    }
     toastSuccess('已保存');
     onClose();
   };

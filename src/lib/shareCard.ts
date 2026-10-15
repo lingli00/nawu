@@ -4,8 +4,12 @@ import { currentServer } from '../store';
 import { iconCacheLookup } from './iconCache';
 import { glyphBySlug } from './simpleBrand';
 import { isValidDate } from './date';
+import { goodsIconValue } from './goodsIcon';
 import { dailyCost, goodsStatusLabel, holdDays, totalInvest } from '../domain/goods';
 import logger from './log';
+
+/** 兼容旧调用方（置物墙）——物品 image → icon 字符串的唯一实现在 lib/goodsIcon。 */
+export { goodsIconValue };
 
 /**
  * 分享生图（v1.0.10；v1.0.17 重排版）。纯 canvas，无第三方依赖。
@@ -38,17 +42,6 @@ function loadImage(src: string, timeoutMs = 6000): Promise<HTMLImageElement | nu
     };
     img.src = src;
   });
-}
-
-/** Goods.image（{source, ref} 对象）→ 三形态 icon 字符串（img:/url:/brand:/空）。 */
-export function goodsIconValue(g: Pick<Goods, 'image'>): string {
-  const img = g.image;
-  const ref = (img?.ref ?? '').trim();
-  if (!ref) return '';
-  if (ref.startsWith('brand:')) return ref; // v1.0.19 内置品牌引用码
-  if (img?.source === 'local' || ref.startsWith('data:')) return `img:${ref}`;
-  if (img?.source === 'web' || /^https?:\/\//i.test(ref)) return `url:${ref}`;
-  return '';
 }
 
 /** 物品 icon 值 → 可绘制的 src（不可绘返回 null）。 */

@@ -158,8 +158,9 @@ export function collectUrlRefKeys(
   if (!collections) return keys;
   const feed = (icon: unknown): void => {
     if (typeof icon !== 'string') return;
-    if (!icon.startsWith('url:')) return;
-    const raw = icon.slice(4).trim();
+    // ★v1.0.29：goods.image.ref 存的是**裸 URL**（source:'web'），不带 url: 前缀 ——
+    // 旧实现只认 url: 开头，导致物品的官网图标被判为「未被引用」，备份恢复后永久丢图。
+    const raw = (icon.startsWith('url:') ? icon.slice(4) : /^https?:\/\//i.test(icon) ? icon : '').trim();
     if (!raw) return;
     keys.add(norm(raw));
     // 同链兜底：/api/icon/img?d=… 的 d 参数键

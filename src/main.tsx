@@ -33,6 +33,13 @@ async function bootstrap(): Promise<void> {
   // ★v1.0.26：旧 flyme.* localStorage 键一次性迁移到 flyme.*（必须在 hydrate 之前）
   const { migrateLegacyKeys } = await import('./storage/keys');
   migrateLegacyKeys();
+  // ★v1.0.29：本地落盘失败（原生写队列被打爆等）时给用户明确反馈，
+  // 而不是让 await addGoods() 无声挂起 —— 「入库失败」曾经没有任何提示。
+  const { onRepoWriteError } = await import('./storage/repo');
+  const { toastError } = await import('./store');
+  onRepoWriteError(() => {
+    toastError('本地保存失败，请重试一次');
+  });
   const store = useAppStore.getState();
   await store.init();
   const theme = useAppStore.getState().theme;

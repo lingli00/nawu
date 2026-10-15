@@ -400,6 +400,7 @@ function LazySection({
   count,
   cols,
   rowH,
+  rootMargin = '500px 0px',
   children,
 }: {
   id?: string;
@@ -408,6 +409,11 @@ function LazySection({
   cols: number;
   /** 单元格高 + 间距（px）。 */
   rowH: number;
+  /**
+   * 提前挂载距离（v1.0.29）。默认 500px；**网络图标区一律收紧到 150px**——
+   * 品牌页 187 个 favicon，挂载就得抓网络 + 写磁盘，提前太多会把首屏拖垮。
+   */
+  rootMargin?: string;
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -427,7 +433,7 @@ function LazySection({
           io.disconnect();
         }
       },
-      { rootMargin: '500px 0px' },
+      { rootMargin },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -442,6 +448,57 @@ function LazySection({
         <span className="ml-1 text-ink-3/70">({count})</span>
       </SectionLabel>
       {shown ? children : null}
+    </div>
+  );
+}
+
+/**
+ * 分片网格（v1.0.29 · 卡死根治）：单个分区最多可达 646 个节点（basic 杂项），
+ * 一次性同步渲染就是一个几百毫秒的长任务 → WebView 白屏卡顿、点不动。
+ * 这里改为「先出一屏，其余分帧补齐」，把长任务切成多帧，交互不被阻塞。
+ */
+function ProgressiveGrid<T>({
+  items,
+  cols,
+  rowH,
+  step = 80,
+  render,
+}: {
+  items: readonly T[];
+  cols: number;
+  rowH: number;
+  step?: number;
+  render: (item: T, i: number) => React.ReactNode;
+}) {
+  const [n, setN] = useState(0);
+  const total = items.length;
+  useEffect(() => {
+    setN(0);
+  }, [items]);
+  useEffect(() => {
+    if (total === 0) return;
+    if (n === 0) {
+      setN(Math.min(step, total));
+      return;
+    }
+    if (n >= total) return;
+    const id = window.setTimeout(() => setN((v) => Math.min(total, v + step)), 16);
+    return () => window.clearTimeout(id);
+  }, [n, total, step]);
+  const shown = items.slice(0, Math.max(n, Math.min(step, total)));
+  return (
+    <div
+      className="grid gap-2"
+      style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+    >
+      {shown.map((it, i) => render(it, i))}
+      {shown.length < total ? (
+        <div
+          aria-hidden
+          className="rounded-btn border border-dashed border-line/60"
+          style={{ height: Math.max(rowH - 8, 24) }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -745,8 +802,11 @@ export default function IconPicker({
       </div>
       {SYS_GROUPS_ORDERED.map((g) => (
         <LazySection key={g.key} id={`sysgrp-${g.key}`} label={g.label} count={g.items.length} cols={8} rowH={48}>
-          <div className="grid grid-cols-8 gap-2">
-            {g.items.map((id) => {
+          <ProgressiveGrid
+            items={g.items}
+            cols={8}
+            rowH={48}
+            render={(id) => {
               const Icon = subIconOf(id);
               return (
                 <button
@@ -765,14 +825,43 @@ export default function IconPicker({
                   <Icon size={18} />
                 </button>
               );
-            })}
-          </div>
+            }}
+          />
         </LazySection>
       ))}
     </>
   );
 
   /* —— 浏览态：品牌图片 tab（内置 glyph 组 + favicon 品牌组，全部懒渲染） —— */
+  /**
+   * favicon 品牌组：每组独立懒挂载 + 提前量收紧到 150px（v1.0.29）。
+   * 旧实现把 187 个 BrandButton 塞进**一个** LazySection —— 一旦触发展开，
+   * 187 次网络抓取 + 187 次 Preferences 写同时排队，主线程直接被压死（实测白屏 15s）。
+   * 按组拆分后首屏只挂载 1~2 组（20~30 个），其余滚动到眼前才动。
+   */
+  const brandSections = BRAND_GROUPS.map((group) => (
+    <LazySection
+      key={group.label}
+      label={group.label}
+      count={group.items.length}
+      cols={5}
+      rowH={64}
+      rootMargin="150px 0px"
+    >
+      <div className="grid grid-cols-5 gap-2">
+        {group.items.map((b) => (
+          <BrandButton
+            key={b.domain + b.name}
+            brand={b}
+            base={base}
+            active={value === toUrlIcon(iconApiUrl(base, b.domain))}
+            onPick={() => pickIcon(toUrlIcon(iconApiUrl(base, b.domain)), iconApiUrl(base, b.domain))}
+          />
+        ))}
+      </div>
+    </LazySection>
+  ));
+
   const brandBrowse = systemMode ? (
     <>
       {GLYPH_GROUPS.map((g) => (
@@ -784,45 +873,14 @@ export default function IconPicker({
           </div>
         </LazySection>
       ))}
-      <LazySection label="更多品牌（官网图标）" count={BRAND_GROUPS.reduce((a, g) => a + g.items.length, 0)} cols={5} rowH={64}>
-        {BRAND_GROUPS.map((group) => (
-          <div key={group.label} className="mb-3">
-            <p className="mb-1 text-[10px] text-ink-3/80">{group.label}</p>
-            <div className="grid grid-cols-5 gap-2">
-              {group.items.map((b) => (
-                <BrandButton
-                  key={b.domain + b.name}
-                  brand={b}
-                  base={base}
-                  active={value === toUrlIcon(iconApiUrl(base, b.domain))}
-                  onPick={() => pickIcon(toUrlIcon(iconApiUrl(base, b.domain)), iconApiUrl(base, b.domain))}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      </LazySection>
+      <SectionLabel>
+        更多品牌（官网图标）
+        <span className="ml-1 text-ink-3/70">({BRAND_GROUPS.reduce((a, g) => a + g.items.length, 0)})</span>
+      </SectionLabel>
+      {brandSections}
     </>
   ) : (
-    BRAND_GROUPS.map((group) => (
-      <div key={group.label}>
-        <SectionLabel>
-          {group.label}
-          <span className="ml-1 text-ink-3/70">({group.items.length})</span>
-        </SectionLabel>
-        <div className="grid grid-cols-5 gap-2">
-          {group.items.map((b) => (
-            <BrandButton
-              key={b.domain + b.name}
-              brand={b}
-              base={base}
-              active={value === toUrlIcon(iconApiUrl(base, b.domain))}
-              onPick={() => pickIcon(toUrlIcon(iconApiUrl(base, b.domain)), iconApiUrl(base, b.domain))}
-            />
-          ))}
-        </div>
-      </div>
-    ))
+    brandSections
   );
 
   return (

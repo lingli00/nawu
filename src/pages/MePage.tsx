@@ -80,17 +80,17 @@ export default function MePage() {
 
   return (
     // ★v1.0.25 PC 重构：桌面左右分栏（左 340px 账号区 / 右功能入口网格），移动端保持纵向列表
-    <div className="space-y-3 lg:grid lg:grid-cols-[340px_1fr] lg:items-start lg:gap-4 lg:space-y-0">
+    <div className="space-y-3 dt:grid dt:grid-cols-[340px_1fr] dt:items-start dt:gap-4 dt:space-y-0">
       {/* 左列：账号卡 + 未登录提示 + 退出登录 */}
       <div className="space-y-3">
         {/* 头部：账号卡（点击头像/信息行进入账号编辑：资料 / 改密码） */}
         <div className="rounded-card border border-line bg-surface p-4">
           <button onClick={() => nav('/account')} className="flex w-full items-center gap-3 text-left">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent lg:h-14 lg:w-14">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent dt:h-14 dt:w-14">
               {loggedIn ? <CircleUser size={26} strokeWidth={1.8} aria-hidden /> : <Compass size={26} strokeWidth={1.8} aria-hidden />}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-base font-semibold lg:text-lg">{name}</p>
+              <p className="truncate text-base font-semibold dt:text-lg">{name}</p>
               <p className="text-xs text-ink-3">
                 {STATE_LABEL[sessionState] ?? '未登录'}
                 {serverName ? ` · ${serverName}` : ' · 未连接服务器'}
@@ -132,13 +132,13 @@ export default function MePage() {
 
       {/* 右列：功能入口（PC 两列卡片网格）+ 网页专属入口 */}
       <div className="space-y-3">
-        <ul className="overflow-hidden rounded-card border border-line bg-surface lg:grid lg:grid-cols-2 lg:gap-3 lg:overflow-visible lg:border-0 lg:bg-transparent">
+        <ul className="overflow-hidden rounded-card border border-line bg-surface dt:grid dt:grid-cols-2 dt:gap-3 dt:overflow-visible dt:border-0 dt:bg-transparent">
           {ENTRIES.map((e, i) => (
-            <li key={e.to} className="lg:rounded-card lg:border lg:border-line lg:bg-surface">
+            <li key={e.to} className="dt:rounded-card dt:border dt:border-line dt:bg-surface">
               <button
                 onClick={() => nav(e.to)}
-                className={`flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 lg:rounded-card ${
-                  i > 0 ? 'border-t border-line-2 lg:border-t-0' : ''
+                className={`flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 dt:rounded-card ${
+                  i > 0 ? 'border-t border-line-2 dt:border-t-0' : ''
                 }`}
               >
                 <span className="text-accent">
@@ -156,11 +156,11 @@ export default function MePage() {
 
         {/* 网页专属入口（App 端不显示）：手机版/电脑版手动切换 + 管理后台 */}
         {!isNative() ? (
-          <ul className="overflow-hidden rounded-card border border-line bg-surface lg:grid lg:grid-cols-2 lg:gap-3 lg:overflow-visible lg:border-0 lg:bg-transparent">
-            <li className="lg:rounded-card lg:border lg:border-line lg:bg-surface">
+          <ul className="overflow-hidden rounded-card border border-line bg-surface dt:grid dt:grid-cols-2 dt:gap-3 dt:overflow-visible dt:border-0 dt:bg-transparent">
+            <li className="dt:rounded-card dt:border dt:border-line dt:bg-surface">
               <button
                 onClick={() => setShellPref(shellMode === 'mobile' ? 'pc' : 'mobile')}
-                className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 lg:rounded-card"
+                className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 dt:rounded-card"
               >
                 <span className="text-accent">
                   {shellMode === 'mobile' ? <Monitor size={20} strokeWidth={1.8} aria-hidden /> : <Smartphone size={20} strokeWidth={1.8} aria-hidden />}
@@ -174,10 +174,10 @@ export default function MePage() {
                 <span className="text-ink-3">›</span>
               </button>
             </li>
-            <li className="border-t border-line-2 lg:rounded-card lg:border lg:border-t lg:border-line lg:bg-surface">
+            <li className="border-t border-line-2 dt:rounded-card dt:border dt:border-t dt:border-line dt:bg-surface">
               <button
                 onClick={() => nav('/admin')}
-                className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 lg:rounded-card"
+                className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 dt:rounded-card"
               >
                 <span className="text-accent">
                   <Shield size={20} strokeWidth={1.8} aria-hidden />
@@ -193,7 +193,7 @@ export default function MePage() {
         ) : null}
       </div>
 
-      <p className="pb-2 text-center text-[11px] text-ink-3 lg:col-span-2">
+      <p className="pb-2 text-center text-[11px] text-ink-3 dt:col-span-2">
         纳物 · {isNative() ? 'App' : '网页版'} v{APP_VERSION}
       </p>
     </div>

@@ -34,13 +34,41 @@ function createMemoryDriver(): KvDriver {
 
 /** localStorage 驱动（浏览器）。 */
 function createLocalStorageDriver(store: Storage): KvDriver {
+  /** 配额不足时自救：丢掉图标缓存（localStorage 里最大的一块），保住业务数据。 */
+  const evictIconCache = (): void => {
+    const kill: string[] = [];
+    for (let i = 0; i < store.length; i++) {
+      const k = store.key(i);
+      if (!k) continue;
+      // 图标缓存条目 + 索引（新旧两代前缀都清）
+      if (k.startsWith('gf.icon.c.') || k.startsWith('gf.icon.cache.') || k.startsWith('flyme.icon.')) kill.push(k);
+    }
+    for (const k of kill) {
+      try {
+        store.removeItem(k);
+      } catch {
+        /* 尽力而为 */
+      }
+    }
+  };
+
   return {
     name: 'localStorage',
     async get(key) {
       return store.getItem(key);
     },
     async set(key, value) {
-      store.setItem(key, value);
+      try {
+        store.setItem(key, value);
+      } catch (e) {
+        // ★v1.0.29「手机浏览提示本地保存失败」：localStorage 只给 ~5MB，
+        // 图标缓存（单条最大 400KB × 500 条）一满，后续**所有**写入（含业务数据）
+        // 全部 QuotaExceeded —— 表现为满屏保存失败。这里清掉图标缓存重试一次。
+        const quota = e instanceof Error && /quota/i.test(e.name + e.message);
+        if (!quota) throw e;
+        evictIconCache();
+        store.setItem(key, value);
+      }
     },
     async remove(key) {
       store.removeItem(key);
@@ -137,7 +165,27 @@ export async function removeKV(key: string): Promise<void> {
   }
 }
 
-/** 是否存在（值非 null 即视为存在）。 */
+/**
+ * 全局写串行链（v1.0.29 · 「卡死 / 偶发入库失败」根治）。
+ *
+ * Android 的 Preferences 底层是**单个 XML 文件**，每次 set 都是全量重写；
+ * 图标缓存（可能上百条）+ 业务集合同时并发写时，原生侧排队超时/失败，
+ * 表现为界面白屏卡顿，甚至业务写入丢失。
+ * 铁律：所有落盘写一律排进这条链，一次只走一个。
+ */
+let writeChain: Promise<unknown> = Promise.resolve();
+
+/** 排队执行一个写任务（前一个失败不影响后一个）。 */
+export function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+  const p = writeChain.then(task, task);
+  writeChain = p.then(
+    () => undefined,
+    () => undefined,
+  );
+  return p;
+}
+
+/** 存在（值非 null 即视为存在）。 */
 export async function hasKV(key: string): Promise<boolean> {
   const driver = await resolveDriver();
   return (await driver.get(key)) !== null;

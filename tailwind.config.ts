@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import plugin from 'tailwindcss/plugin';
 
 /**
  * Tailwind 令牌映射。
@@ -72,7 +73,22 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    /**
+     * ★v1.0.29「电脑版浏览手机版网页畸形」根治：
+     * 旧版页面级桌面栅格直接用 `lg:`（纯视口媒体查询）—— 用户在宽屏上手动切到
+     * 「手机版网页」（或开 /m/）时，移动壳内容只有 576px，桌面栅格照样生效，
+     * 「我的页」右列被 340px 左列挤成 ~100px 竖条。
+     * 新增 shell 感知的桌面变体：`dt:`（≥1024px 且当前不是移动壳）、`dtxl:`（≥1280px）、`dt2xl:`（≥1536px）。
+     * 壳层在 <html data-shell="pc|mobile"> 上声明，MainShell 挂载/切换时同步。
+     * 铁律：**页面级桌面布局一律用 dt 系列，别再用裸 lg:/xl:/2xl:**。
+     */
+    plugin(({ addVariant }) => {
+      addVariant('dt', '@media (min-width: 1024px) { html:not([data-shell="mobile"]) & }');
+      addVariant('dtxl', '@media (min-width: 1280px) { html:not([data-shell="mobile"]) & }');
+      addVariant('dt2xl', '@media (min-width: 1536px) { html:not([data-shell="mobile"]) & }');
+    }),
+  ],
 };
 
 export default config;
