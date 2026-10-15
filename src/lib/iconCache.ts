@@ -75,6 +75,8 @@ export function normIconKey(src: string, base?: string): string {
 /* ------------------------------------------------------------------ */
 
 const FETCH_CONCURRENCY = 4;
+/** 单次抓取超时（ms）。超时即释放槽位，绝不无限占坑。 */
+const FETCH_TIMEOUT_MS = 10_000;
 let fetchActive = 0;
 const fetchWaiters: Array<() => void> = [];
 
@@ -164,6 +166,22 @@ async function readEntry(nk: string, idx: string[]): Promise<string | null> {
   if (v && v.startsWith('data:')) {
     memoPut(nk, v);
     return v;
+  }
+  return null;
+}
+
+/**
+ * 同步读备忘（v1.0.30 · 白屏根治）：内存 memo 命中则**同步**返回 dataURL。
+ * 品牌页第二次打开时，上百个按钮不再各自「await 查缓存 → setState → 全表重渲染」
+ * （低端机上就是几百次 setState 的渲染风暴 → 主线程卡死白屏）——
+ * 命中的在首次 render 就拿到图，零异步零重渲染。
+ */
+export function iconCacheLookupSync(keys: string[]): string | null {
+  for (const k of keys) {
+    const nk = normIconKey(k);
+    if (!nk) continue;
+    const hit = memo.get(nk);
+    if (hit !== undefined) return hit;
   }
   return null;
 }
@@ -322,9 +340,13 @@ async function fetchIconAsDataUrlInner(url: string, maxBytes: number): Promise<s
   }
 
   // 浏览器：同源路径直接 fetch（服务端图标接口同源；带 CORS 的代理也行）
+  // ★v1.0.30 必须带超时：图标代理偶发挂起（弱网/服务器排队），无超时会永久占住
+  // 并发闸的 4 个槽位 —— 之后**所有**图标抓取无限排队，页面上一半按钮永远空白。
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS) : null;
   try {
     const abs = url.startsWith('/') ? `${window.location.origin}${url}` : url;
-    const res = await fetch(abs, { credentials: 'omit' });
+    const res = await fetch(abs, { credentials: 'omit', ...(ctrl ? { signal: ctrl.signal } : {}) });
     if (!res.ok) return null;
     const blob = await res.blob();
     if (blob.size > maxBytes) return null;
@@ -336,6 +358,8 @@ async function fetchIconAsDataUrlInner(url: string, maxBytes: number): Promise<s
     });
   } catch {
     return null;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -359,16 +383,19 @@ export async function iconCacheFetchAndStore(chain: string[], base?: string): Pr
   return null;
 }
 
-/** 后台并发预热一批图标 src（搜索结果全量缓存用，失败静默）。 */
+/** 后台预热一批图标 src（搜索结果全量缓存用，失败静默）。
+ *  ★v1.0.30 并行 + 去重：并发闸已限流 4，串行 await 反而让一次挂起堵死整条预热；
+ *  同 URL 由 inflight 去重，重复调用无代价。 */
 export async function warmIconCache(srcs: string[], base?: string): Promise<void> {
-  const list = srcs.map((s) => (s ?? '').trim()).filter(Boolean).slice(0, 24);
-  for (const src of list) {
-    void base;
-    const hit = await iconCacheLookup([src]);
-    if (hit) continue;
-    const data = await fetchIconAsDataUrl(src);
-    if (data) await iconCacheStore(src, data);
-  }
+  void base;
+  const list = [...new Set(srcs.map((s) => (s ?? '').trim()).filter(Boolean))].slice(0, 24);
+  await Promise.all(
+    list.map(async (src) => {
+      if (await iconCacheLookup([src])) return;
+      const data = await fetchIconAsDataUrl(src);
+      if (data) await iconCacheStore(src, data);
+    }),
+  );
 }
 
 /* ------------------------------------------------------------------ */

@@ -17,7 +17,7 @@ import { compressDataUrlUnder, IMAGE_MAX_KB } from '../lib/imageCompress';
 import { currentServer, toastError } from '../store';
 import { SYSTEM_ICON_GROUPS } from '../lib/systemIcons';
 import { get } from '../net/httpClient';
-import { fetchIconAsDataUrl, iconCacheFetchAndStore, iconCacheLookup, normIconKey, warmIconCache } from '../lib/iconCache';
+import { fetchIconAsDataUrl, iconCacheFetchAndStore, iconCacheLookup, iconCacheLookupSync, normIconKey, warmIconCache } from '../lib/iconCache';
 import { haptic } from '../lib/haptics';
 
 /**
@@ -143,12 +143,22 @@ async function cropSquareDataUrl(dataUrl: string, max = 512): Promise<string> {
   return cv.toDataURL('image/jpeg', 0.85);
 }
 
-/** 候选链 → 缓存 dataURL（命中即用；未命中走网络层抓取入库）。 */
+/** 候选链 → 缓存 dataURL（命中即用；未命中走网络层抓取入库）。
+ *  ★v1.0.30：初始值先走**同步** memo 命中 —— 品牌页上百按钮不再各自触发
+ *  「await 查缓存 → setState」的渲染风暴（低端机主线程卡死白屏的直接来源）。 */
 function useCachedIconSrc(chain: string[]): { src: string | null; done: boolean } {
   const key = chain.map((c) => normIconKey(c)).join('|');
-  const [state, setState] = useState<{ src: string | null; done: boolean }>({ src: null, done: false });
+  const [state, setState] = useState<{ src: string | null; done: boolean }>(() => {
+    const hit = iconCacheLookupSync(chain);
+    return hit ? { src: hit, done: true } : { src: null, done: false };
+  });
   useEffect(() => {
     let alive = true;
+    const syncHit = iconCacheLookupSync(chain);
+    if (syncHit) {
+      setState((prev) => (prev.done && prev.src === syncHit ? prev : { src: syncHit, done: true }));
+      return;
+    }
     setState({ src: null, done: false });
     void (async () => {
       const hit = await iconCacheLookup(key.split('|'));
@@ -422,6 +432,18 @@ function LazySection({
     if (shown) return;
     const el = ref.current;
     if (!el) return;
+    // ★v1.0.30 兜底：IntersectionObserver 回调在主线程拥堵时会显著延迟，
+    // 表现为「分组标题在、内容整块空白」（用户录屏实测）。挂载时先同步量一次
+    // 视口位置，本来就在可视范围内的直接显示，不等 IO。
+    try {
+      const rect = el.getBoundingClientRect();
+      if (rect.top < window.innerHeight + 500 && rect.bottom > -500) {
+        setShown(true);
+        return;
+      }
+    } catch {
+      /* 忽略 */
+    }
     if (typeof IntersectionObserver === 'undefined') {
       setShown(true);
       return;
