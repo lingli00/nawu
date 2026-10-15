@@ -22,6 +22,8 @@ export function faviconUrlBackup(domain: string): string {
   return `https://icon.horse/icon/${domain}`;
 }
 
+import { BRAND_ICON_ASSETS } from '../generated/brandIconAssets';
+
 /**
  * 自建图标代理直链（v1.0.4 起首选）：服务端抓目标站真实 <link icon> 并缓存。
  * 第三方镜像（favicon.im/icon.horse）对大量国内站点只会返回统一灰色占位图，
@@ -31,9 +33,33 @@ export function iconApiUrl(base: string, domain: string): string {
   return `${base.replace(/\/+$/, '')}/api/icon/img?d=${encodeURIComponent(domain)}`;
 }
 
-/** 网络图标加载失败的回退链：自建代理 → icon.horse → favicon.im。 */
+/**
+ * 打包进安装包/站点的品牌图标资产（v1.0.32）：domain → 站内路径
+ * （public/brand-icons/，APK 与网页都随包分发，离线可用、永不失效）。
+ * 未收录的域名返回 null（继续走网络链）。
+ */
+export function localBrandIconPath(domain: string): string | null {
+  return BRAND_ICON_ASSETS[domain] ?? null;
+}
+
+/**
+ * 品牌图标落库引用（v1.0.32）：有打包资产 → 引用站内路径（永久、离线可用）；
+ * 没有才回落代理直链。物品与订阅共用同一引用 → 同一图标天然共享。
+ */
+export function brandIconRef(base: string, domain: string): string {
+  const local = localBrandIconPath(domain);
+  return toUrlIcon(local ?? iconApiUrl(base, domain));
+}
+
+/** 品牌图标展示/预热直链（本地资产优先）。 */
+export function brandIconSrc(base: string, domain: string): string {
+  return localBrandIconPath(domain) ?? iconApiUrl(base, domain);
+}
+
+/** 网络图标加载失败的回退链：本地打包资产 → 自建代理 → icon.horse → favicon.im。 */
 export function faviconChain(base: string, domain: string): string[] {
-  return [iconApiUrl(base, domain), faviconUrlBackup(domain), faviconUrl(domain)];
+  const local = localBrandIconPath(domain);
+  return [...(local ? [local] : []), iconApiUrl(base, domain), faviconUrlBackup(domain), faviconUrl(domain)];
 }
 
 /** icon 值的三种形态。 */
