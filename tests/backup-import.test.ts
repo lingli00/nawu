@@ -137,7 +137,10 @@ describe('lib/backupImport · 读文件（FileReader 路径）', () => {
 
   it('成功：File 的字节被完整读出（保留原始长度与内容）', async () => {
     const raw = await encodeFlyme(makePayload(), '');
-    stubFileReader(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+    // Uint8Array.buffer 的静态类型是 ArrayBufferLike（ArrayBuffer | SharedArrayBuffer），
+    // 而 FileReader.result 只可能是 ArrayBuffer；运行时这里必然是 ArrayBuffer，故断言收窄。
+    const ab = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer;
+    stubFileReader(ab);
     const fakeFile = { name: 'a.flyme' } as unknown as File;
     const bytes = await readBackupFile(fakeFile);
     expect(bytes.length).toBe(raw.length);
