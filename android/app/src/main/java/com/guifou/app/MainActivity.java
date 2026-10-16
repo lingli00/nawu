@@ -19,9 +19,9 @@ import com.getcapacitor.BridgeActivity;
  */
 public class MainActivity extends BridgeActivity {
   @Override
-  protected void onResume() {
+  public void onResume() {
     super.onResume();
-    View content = findViewById(android.R.id.content);
+    ViewGroup content = (ViewGroup) findViewById(android.R.id.content);
     if (content != null && content.getChildCount() > 0) {
       View child = content.getChildAt(0);
       ViewGroup.LayoutParams lp = child.getLayoutParams();
