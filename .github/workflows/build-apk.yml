@@ -7,6 +7,11 @@ on:
     tags:
       - 'v*'
 
+# 新版仓库的 GITHUB_TOKEN 默认是只读的，而创建 Release 需要写权限。
+# 历史运行 29 次全部卡在最后一步「Create GitHub Release」，根因就是缺这段声明。
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -45,13 +50,39 @@ jobs:
       # v1.0.33 安全修复：签名口令从 GitHub Secrets 注入，不再依赖仓库里的明文口令。
       # 需要在仓库配置 4 个 secret：NAWU_STORE_FILE（密钥库文件名，如 nawu-release.p12）、
       # NAWU_STORE_PASSWORD、NAWU_KEY_ALIAS、NAWU_KEY_PASSWORD。
-      # 密钥库文件本身建议用 base64 存 secret，构建时落盘（见下一步）。
+      # 密钥库文件本身已在仓库 android/app/nawu-release.p12；若改用 base64 secret 存放，
+      # 设置 NAWU_KEYSTORE_BASE64 即可在构建时落盘。
+      #
+      # 注意：secrets 上下文不能出现在 if 表达式里，否则整个 workflow 文件会被判为无效
+      # （表现为一次 0 job、秒级失败的运行）。所以下面这个「可选」判断放进 shell。
       - name: Materialize signing keystore (optional)
-        if: ${{ secrets.NAWU_KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE_B64: ${{ secrets.NAWU_KEYSTORE_BASE64 }}
+          STORE_FILE: ${{ secrets.NAWU_STORE_FILE }}
         run: |
-          echo "$KEYSTORE_B64" | base64 -d > android/app/${{ secrets.NAWU_STORE_FILE }}
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "android/app/${STORE_FILE:-nawu-release.p12}"
+            echo "keystore materialized from NAWU_KEYSTORE_BASE64"
+          else
+            echo "NAWU_KEYSTORE_BASE64 not set - using keystore committed at android/app/${STORE_FILE:-nawu-release.p12}"
+          fi
+
+      # 提前把「缺签名 Secrets」变成一条清晰可操作的报错，而不是让 gradle 抛栈。
+      - name: Verify signing secrets present
+        env:
+          NAWU_STORE_PASSWORD: ${{ secrets.NAWU_STORE_PASSWORD }}
+          NAWU_KEY_ALIAS: ${{ secrets.NAWU_KEY_ALIAS }}
+          NAWU_KEY_PASSWORD: ${{ secrets.NAWU_KEY_PASSWORD }}
+        run: |
+          missing=""
+          [ -z "$NAWU_STORE_PASSWORD" ] && missing="$missing NAWU_STORE_PASSWORD"
+          [ -z "$NAWU_KEY_ALIAS" ] && missing="$missing NAWU_KEY_ALIAS"
+          [ -z "$NAWU_KEY_PASSWORD" ] && missing="$missing NAWU_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::缺少签名 Secrets:$missing —— 请在仓库 Settings → Secrets and variables → Actions 中添加"
+            exit 1
+          fi
+          echo "签名 Secrets 已就位"
 
       - name: Build release APK
         env:
