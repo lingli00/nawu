@@ -150,7 +150,7 @@ export default function AccountPage() {
   };
 
   const inputCls =
-    'h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent';
+    'h-11 w-full nw-input';
 
   return (
     <PageShell title="账号编辑" onBack={() => nav('/me')}>

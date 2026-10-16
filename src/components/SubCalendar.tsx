@@ -124,7 +124,7 @@ export default function SubCalendar({ onOpenBills }: { onOpenBills?: () => void 
 
       <div className="mt-2 grid grid-cols-7 gap-y-1 text-center">
         {WEEK.map((w) => (
-          <span key={w} className="pb-1 text-[10px] text-ink-3">
+          <span key={w} className="pb-1 text-[11px] text-ink-3">
             {w}
           </span>
         ))}
@@ -167,7 +167,7 @@ export default function SubCalendar({ onOpenBills }: { onOpenBills?: () => void 
               <li key={`r-${s.id}`} className="flex items-center justify-between text-xs">
                 <span className="min-w-0 truncate text-ink-2">
                   {s.name}
-                  <span className="ml-1 text-[10px] text-ink-3">续费</span>
+                  <span className="ml-1 text-[11px] text-ink-3">续费</span>
                 </span>
                 <span className="ml-2 shrink-0 font-medium">{formatMoney(s.amount, s.currency || currency)}</span>
               </li>
@@ -178,7 +178,7 @@ export default function SubCalendar({ onOpenBills }: { onOpenBills?: () => void 
                 <li key={`b-${b.id}`} className="flex items-center justify-between text-xs">
                   <span className="min-w-0 truncate text-ink-2">
                     {s?.name ?? '已删订阅'}
-                    <span className="ml-1 text-[10px]" style={{ color: BILL_COLOR[b.status] }}>
+                    <span className="ml-1 text-[11px]" style={{ color: BILL_COLOR[b.status] }}>
                       {BILL_LABEL[b.status]}
                     </span>
                   </span>

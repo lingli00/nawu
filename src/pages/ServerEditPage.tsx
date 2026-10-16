@@ -64,7 +64,7 @@ export default function ServerEditPage() {
             value={alias}
             onChange={(e) => setAlias(e.target.value)}
             placeholder="例如：家里的小主机"
-            className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+            className="h-11 w-full nw-input"
           />
         </PageField>
 
@@ -78,7 +78,7 @@ export default function ServerEditPage() {
             inputMode="url"
             autoCapitalize="off"
             placeholder="http://"
-            className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+            className="h-11 w-full nw-input"
           />
         </PageField>
 

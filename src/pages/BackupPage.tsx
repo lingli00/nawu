@@ -206,7 +206,7 @@ export default function BackupPage() {
             <li key={row.id} className="rounded-card border border-line bg-surface p-3.5">
               <div className="flex items-center gap-2">
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">{row.label || `备份 #${row.id}`}</p>
-                <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] text-accent">{row.item_count} 条</span>
+                <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent">{row.item_count} 条</span>
               </div>
               <p className="mt-0.5 text-[11px] text-ink-3">
                 {fmtTimestamp(row.created_at) || row.created_at}
@@ -304,7 +304,7 @@ function ExportPasswordDialog(props: {
               autoCapitalize="off"
               spellCheck={false}
               enterKeyHint="done"
-              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              className="h-11 w-full nw-input"
             />
           </PageField>
           <p className="text-[11px] text-ink-3">

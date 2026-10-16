@@ -1,7 +1,7 @@
 /**
  * .flyme 备份文件格式（与纳物网页版**二进制互通**）。
  *
- * ★格式逆向自网页版 SPA bundle（D:/wwwroot/127.0.0.1_2222/assets/index-B8gRSd40.js，
+ * ★格式对齐网页版 SPA bundle（构建产物 assets/index-*.js，
  * 常量 `oa="FLYME1"`、`wm=2e5`，加密走 WebCrypto，降级 noble pbkdf2/gcm）：
  *
  * ```

@@ -1,4 +1,4 @@
-# 归否 Guifou · Android App
+# 纳物 NaWu · Android App
 
 给每一笔支出一个判断：**归**（值了）· **需**（必要）· **否**（冲动）。
 物品看日均成本，订阅看下次续费，生活流看归/需/否结构。
@@ -13,7 +13,7 @@
 
 ```bash
 cp .env.example .env.local     # Windows: copy .env.example .env.local
-# 把 VITE_DEV_PROXY_TARGET 改成你的归否后端，例如 http://10.0.0.209:3030
+# 把 VITE_DEV_PROXY_TARGET 改成你的纳物后端，例如 http://10.0.0.209:3030
 npm install
 npm run dev                    # 浏览器 http://localhost:5173
 ```

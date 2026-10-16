@@ -129,7 +129,7 @@ export default function BillSheet({ onClose }: { onClose: () => void }) {
                     <li key={b.id} className="px-3.5 py-3">
                       <div className="flex items-center gap-2.5">
                         <span
-                          className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                          className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
                           style={{ background: `color-mix(in srgb, ${meta.color} 14%, transparent)`, color: meta.color }}
                         >
                           {meta.label}

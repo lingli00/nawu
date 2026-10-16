@@ -33,15 +33,19 @@ import QuickSheetHost from './QuickSheets';
  * PC 适配：≥1024px 居中对话框（pop-enter），移动端底部 sheet（sheet-enter）。
  */
 
+/**
+ * ★v1.0.33 P0-4：tint 全部收敛到 index.css 语义令牌（--tint-warm/cool/clay/violet + 归需否三色），
+ * 不再写死十六进制 —— 原 8 张卡 8 种色相稀释品牌的问题由此修复，深色模式自动适配。
+ */
 const TINT = {
-  ai: '#3f8f6a', // 墨绿（品牌主色）
-  ledger: '#4a7fb5', // 需蓝
-  manual: '#8B5CF6', // 紫
-  sub: '#c98a2d', // 琥珀
-  cool: '#2e9e8a', // 青瓷
-  wish: '#c98a2d', // 琥珀
+  ai: 'var(--accent)', // 墨绿（品牌主色）
+  ledger: 'var(--xu)', // 需蓝（归需否价值语言）
+  manual: 'var(--tint-violet)', // 紫（手动录入）
+  sub: 'var(--tint-warm)', // 琥珀（订阅提醒）
+  cool: 'var(--tint-cool)', // 青瓷（冷静池）
+  wish: 'var(--tint-warm)', // 琥珀（心动清单）
   time: 'var(--accent)', // 墨绿（与时间拨盘同色系）
-  mood: '#c2603f', // 陶土
+  mood: 'var(--tint-clay)', // 陶土（情绪速写）
 };
 
 /** 旧跨路由方案的 sessionStorage 标志名（v1.0.28 起只做清理，不再写入）。 */

@@ -42,9 +42,23 @@ jobs:
       # 注：ubuntu runner 自带 Android SDK（ANDROID_HOME 已配置、许可证已接受），
       # 不要用 android-actions/setup-android@v3 —— 它尝试安装已废弃的 'tools' 包会失败。
 
-      # v1.0.11 起 assembleRelease + 固定签名（nawu-release.p12 已在仓库，
-      # build.gradle 的 signingConfigs.release 引用）→ 签名跨版本一致，可覆盖升级
+      # v1.0.33 安全修复：签名口令从 GitHub Secrets 注入，不再依赖仓库里的明文口令。
+      # 需要在仓库配置 4 个 secret：NAWU_STORE_FILE（密钥库文件名，如 nawu-release.p12）、
+      # NAWU_STORE_PASSWORD、NAWU_KEY_ALIAS、NAWU_KEY_PASSWORD。
+      # 密钥库文件本身建议用 base64 存 secret，构建时落盘（见下一步）。
+      - name: Materialize signing keystore (optional)
+        if: ${{ secrets.NAWU_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_B64: ${{ secrets.NAWU_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > android/app/${{ secrets.NAWU_STORE_FILE }}
+
       - name: Build release APK
+        env:
+          NAWU_STORE_FILE: ${{ secrets.NAWU_STORE_FILE }}
+          NAWU_STORE_PASSWORD: ${{ secrets.NAWU_STORE_PASSWORD }}
+          NAWU_KEY_ALIAS: ${{ secrets.NAWU_KEY_ALIAS }}
+          NAWU_KEY_PASSWORD: ${{ secrets.NAWU_KEY_PASSWORD }}
         run: |
           chmod +x android/gradlew
           cd android && ./gradlew assembleRelease --no-daemon

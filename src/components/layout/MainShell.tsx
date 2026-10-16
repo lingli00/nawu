@@ -1,10 +1,11 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Compass, Home, Plus, ScrollText, Shield, Smartphone, User } from 'lucide-react';
+import { BarChart3, Home, Plus, ScrollText, Shield, Smartphone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { APP_VERSION } from '../../lib/appVersion';
 import { haptic } from '../../lib/haptics';
 import RecordMenu from '../RecordMenu';
+import { BrandMark } from '../BrandMark';
 
 /**
  * 主壳（v1.0.6：三端一码，PC 网页重构完成）：
@@ -152,10 +153,10 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
         className={`fixed inset-y-0 left-0 z-30 flex flex-col ${rail}`}
         style={{ background: 'var(--side)', color: 'var(--side-ink)' }}
       >
-        {/* 品牌 */}
+        {/* 品牌（★v1.0.33 P2-12：自有字标，替代通用 Compass） */}
         <div className={`flex items-center ${narrow ? 'justify-center' : 'gap-2.5 px-5'} pt-6 pb-4`}>
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: 'var(--side-2)' }}>
-            <Compass size={20} strokeWidth={1.8} aria-hidden />
+            <BrandMark size={20} variant="mono" />
           </span>
           {!narrow ? (
             <span className="min-w-0">

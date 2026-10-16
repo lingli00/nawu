@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
 import PageField from '../components/ui/PageField';
+import { Toggle } from '../components/ui/Toggle';
+import { Segmented } from '../components/ui/Segmented';
 import { useAppStore, useSettingsStore, useUiStore, currentServer, toastSuccess, toastError } from '../store';
 import { CURRENCIES } from '../lib/money';
 import { fmtTimestamp } from '../lib/date';
@@ -17,26 +19,7 @@ const THEMES: Array<{ value: ThemeMode; label: string }> = [
   { value: 'dark', label: '深色' },
 ];
 
-/** 小开关。 */
-function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors ${
-        on ? 'border-accent bg-accent' : 'border-line bg-surface-2'
-      }`}
-    >
-      <span
-        className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-all ${
-          on ? 'left-[26px]' : 'left-[2px]'
-        }`}
-      />
-    </button>
-  );
-}
+/** 小开关：v1.0.33 起改用 components/ui/Toggle（原文件内复制实现，两份已出现细节差异）。 */
 
 /** P22 设置：外观 / AI 助手 / 同步 / 货币。 */
 export default function SettingsPage() {
@@ -93,19 +76,14 @@ export default function SettingsPage() {
       {/* 外观 */}
       <section className="rounded-card border border-line bg-surface p-4">
         <h2 className="text-sm font-semibold">外观</h2>
-        <div className="mt-3 flex gap-1">
-          {THEMES.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => void setThemeMode(t.value)}
-              className={`h-10 flex-1 rounded-btn border text-sm ${
-                themeMode === t.value ? 'border-accent bg-accent-soft font-medium text-accent' : 'border-line text-ink-2'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {/* ★v1.0.33 P1-9：主题三选统一用 Segmented 组件（滑块指示 + 200ms 过渡） */}
+        <Segmented
+          block
+          className="mt-3"
+          value={themeMode}
+          onChange={(v) => void setThemeMode(v)}
+          options={THEMES.map((t) => ({ value: t.value, label: t.label }))}
+        />
       </section>
 
       {/* AI 助手 */}
@@ -121,7 +99,7 @@ export default function SettingsPage() {
               onChange={(e) => setAiEndpoint(e.target.value)}
               placeholder="https://api.example.com/v1"
               autoCapitalize="off"
-              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              className="h-11 w-full nw-input"
             />
           </PageField>
           <PageField label="API Key">
@@ -131,7 +109,7 @@ export default function SettingsPage() {
               type="password"
               placeholder="sk-…"
               autoCapitalize="off"
-              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              className="h-11 w-full nw-input"
             />
           </PageField>
           <PageField label="模型">
@@ -140,7 +118,7 @@ export default function SettingsPage() {
               onChange={(e) => setAiModel(e.target.value)}
               placeholder="例如 gpt-4o-mini"
               autoCapitalize="off"
-              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              className="h-11 w-full nw-input"
             />
           </PageField>
           <button onClick={() => void saveAi()} className="h-11 w-full rounded-btn bg-accent text-sm font-semibold text-white">
@@ -212,7 +190,7 @@ export default function SettingsPage() {
         <h2 className="text-sm font-semibold">货币</h2>        <select
           value={settings.currency}
           onChange={(e) => void update({ currency: e.target.value })}
-          className="mt-3 h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+          className="mt-3 h-11 w-full nw-input"
         >
           {CURRENCIES.map((c) => (
             <option key={c.code} value={c.code}>

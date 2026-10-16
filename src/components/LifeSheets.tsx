@@ -44,6 +44,7 @@ import { haptic } from '../lib/haptics';
 import { addDays, today } from '../lib/date';
 import { compressDataUrlUnder } from '../lib/imageCompress';
 import IconPicker, { IconPreview } from './IconPicker';
+import { Sheet } from './ui/Sheet';
 import type { Cooldown, Judgement, TimeRec, WishItem } from '../types/entities';
 
 /** ★v1.0.33：删除一律先确认（此前点一下就直删，误触无法挽回）。 */
@@ -63,13 +64,14 @@ async function confirmDelete(title: string, message = '删除后不可恢复。'
  * 图标铁律：全部 lucide 单色线性，无 emoji 装饰。
  */
 
-/** 本组专属色（与全局判定色区分，但同属低饱和大地色系）。 */
-const TINT_WISH = '#c98a2d'; // 琥珀
-const TINT_COOL = '#2e9e8a'; // 青瓷
-const TINT_MOOD = '#3f8f6a'; // 墨绿（归入心底）
-const TINT_CRUSH = '#c2603f'; // 陶土（粉碎）
+/** ★v1.0.33 P0-4：本组专属色收敛为 index.css 语义 tint 令牌（不再写死十六进制）。 */
+const TINT_WISH = 'var(--tint-warm)'; // 琥珀（心动清单）
+const TINT_COOL = 'var(--tint-cool)'; // 青瓷（冷静池）
+const TINT_MOOD = 'var(--gui)'; // 墨绿（归入心底）
+const TINT_CRUSH = 'var(--tint-clay)'; // 陶土（粉碎）
 
-/** 弹层骨架（底部 sheet，桌面端走全局右侧抽屉规则）。 */
+/** 弹层骨架（v1.0.33 P1-10：改用显式 Sheet 组件，桌面自动转 30rem 右抽屉，
+ *  不再依赖 index.css 全局 CSS hack；返回键守卫由 Sheet 统一负责）。 */
 function SheetFrame({
   title,
   onClose,
@@ -79,27 +81,10 @@ function SheetFrame({
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  useBackGuard(true, onClose);
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
-      <div
-        className="sheet-enter mx-auto max-h-[86vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-semibold">{title}</p>
-          <button
-            onClick={onClose}
-            aria-label="关闭"
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-ink-2 active:scale-95"
-          >
-            <X size={15} strokeWidth={2} />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>,
-    document.body,
+  return (
+    <Sheet onClose={onClose} title={title}>
+      {children}
+    </Sheet>
   );
 }
 
@@ -346,7 +331,7 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
           defaultValue=""
           inputMode="url"
           placeholder="粘贴商品链接 淘宝、京东、拼多多…"
-          className="h-10 w-full rounded-btn border border-line bg-surface px-3 text-sm outline-none focus:border-accent"
+          className="h-10 w-full nw-input"
         />
         <ImagePickField
           value={image}
@@ -361,7 +346,7 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
           ref={nameRef}
           defaultValue=""
           placeholder="例如：Dyson 吹风机…"
-          className="h-10 w-full rounded-btn border border-line bg-surface px-3 text-sm outline-none focus:border-accent"
+          className="h-10 w-full nw-input"
         />
         <div className="grid grid-cols-2 gap-2">
           <div>
@@ -371,7 +356,7 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
               onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ''))}
               inputMode="decimal"
               placeholder="0.00"
-              className="mt-1 h-10 w-full rounded-btn border border-line bg-surface px-3 text-sm outline-none focus:border-accent"
+              className="mt-1 h-10 w-full nw-input"
             />
           </div>
           <div>
@@ -380,7 +365,7 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
               ref={channelRef}
               defaultValue=""
               placeholder="如：淘宝 / 京东"
-              className="mt-1 h-10 w-full rounded-btn border border-line bg-surface px-3 text-sm outline-none focus:border-accent"
+              className="mt-1 h-10 w-full nw-input"
             />
           </div>
         </div>
@@ -440,7 +425,7 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
                       {w.reasons.slice(0, 3).map((r) => (
                         <span
                           key={r}
-                          className="rounded-full px-1.5 py-0.5 text-[10px]"
+                          className="rounded-full px-1.5 py-0.5 text-[11px]"
                           style={{
                             background: `color-mix(in srgb, ${TINT_WISH} 12%, transparent)`,
                             color: TINT_WISH,
@@ -560,7 +545,7 @@ export function CooldownSheet({ onClose }: { onClose: () => void }) {
             ref={nameRef}
             defaultValue=""
             placeholder="想买什么？先等等"
-            className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-surface px-3 text-sm outline-none focus:border-accent"
+            className="h-10 min-w-0 flex-1 nw-input"
           />
           <button
             onClick={() => void add()}
@@ -730,7 +715,7 @@ export function QuickCooldownSheet({ presetName, onClose }: { presetName?: strin
           defaultValue=""
           inputMode="url"
           placeholder="粘贴商品链接 京东、淘宝、拼多多…"
-          className="h-10 w-full rounded-btn border border-line bg-surface px-3 text-sm outline-none focus:border-accent"
+          className="h-10 w-full nw-input"
         />
         <ImagePickField
           value={image}
@@ -745,7 +730,7 @@ export function QuickCooldownSheet({ presetName, onClose }: { presetName?: strin
           ref={nameRef}
           defaultValue={presetName ?? ''}
           placeholder="例如：Switch 游戏机…"
-          className="h-10 w-full rounded-btn border border-line bg-surface px-3 text-sm outline-none focus:border-accent"
+          className="h-10 w-full nw-input"
         />
         <SectionTitle Icon={Sparkles} text="金额" tint={TINT_COOL} />
         <input
@@ -753,7 +738,7 @@ export function QuickCooldownSheet({ presetName, onClose }: { presetName?: strin
           onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
           inputMode="decimal"
           placeholder="0.00（选填，转物品时自动带上）"
-          className="h-10 w-full rounded-btn border border-line bg-surface px-3 text-sm outline-none focus:border-accent"
+          className="h-10 w-full nw-input"
         />
         <SectionTitle Icon={Snowflake} text="需要冷静多久？" tint={TINT_COOL} />
         <div className="grid grid-cols-3 gap-1.5">
@@ -777,7 +762,7 @@ export function QuickCooldownSheet({ presetName, onClose }: { presetName?: strin
               >
                 {o.label}
               </span>
-              <span className="text-[10px] text-ink-3">{o.sub}</span>
+              <span className="text-[11px] text-ink-3">{o.sub}</span>
             </button>
           ))}
         </div>
@@ -823,12 +808,13 @@ export function QuickCooldownSheet({ presetName, onClose }: { presetName?: strin
  * 情绪速写（MoodSheet · 想法 + 五档表情 + 粉碎/归入心底）
  * → moods 集合落库
  * ==========================================================================*/
+/** ★v1.0.33 P0-4：五档表情色同样收敛到语义令牌（暖=琥珀/墨绿/中性/需蓝/陶土）。 */
 const MOOD_FACES: Array<{ label: string; Icon: typeof Smile; tint: string }> = [
-  { label: '畅快', Icon: Laugh, tint: '#c98a2d' },
-  { label: '开心', Icon: Smile, tint: '#3f8f6a' },
-  { label: '平静', Icon: Meh, tint: '#8a918c' },
-  { label: '低落', Icon: Frown, tint: '#4a7fb5' },
-  { label: '烦躁', Icon: Angry, tint: '#c2603f' },
+  { label: '畅快', Icon: Laugh, tint: 'var(--tint-warm)' },
+  { label: '开心', Icon: Smile, tint: 'var(--gui)' },
+  { label: '平静', Icon: Meh, tint: 'var(--ink-3)' },
+  { label: '低落', Icon: Frown, tint: 'var(--xu)' },
+  { label: '烦躁', Icon: Angry, tint: 'var(--tint-clay)' },
 ];
 
 export function MoodSheet({ onClose }: { onClose: () => void }) {
@@ -1130,7 +1116,7 @@ export function TimeSheet({ onClose }: { onClose: () => void }) {
                     {m.label}
                   </span>
                 </span>
-                <span className="text-[10px] text-ink-3">{m.sub}</span>
+                <span className="text-[11px] text-ink-3">{m.sub}</span>
               </button>
             );
           })}
@@ -1140,7 +1126,7 @@ export function TimeSheet({ onClose }: { onClose: () => void }) {
         <div className="mt-3">
           <div className="flex items-center justify-between">
             <SectionTitle Icon={Hash} text="做了什么（Tag）" tint="var(--accent)" />
-            <span className="text-[10px] text-ink-3">可多选</span>
+            <span className="text-[11px] text-ink-3">可多选</span>
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {TIME_TAGS.map(({ key, Icon }) => (
@@ -1176,7 +1162,7 @@ export function TimeSheet({ onClose }: { onClose: () => void }) {
           ref={noteRef}
           defaultValue=""
           placeholder="备注（选填）"
-          className="mt-2 h-10 w-full rounded-btn border border-line bg-surface px-3 text-sm outline-none focus:border-accent"
+          className="mt-2 h-10 w-full nw-input"
         />
 
         <button

@@ -26,8 +26,21 @@ import type { Subscription } from '../types/entities';
 
 const PERIOD_LABEL = { month: '月', year: '年', week: '周' } as const;
 
-/** 分类彩色底版（v1.0.18 对齐竞品彩色图标卡）：id 哈希 → 柔和色板。 */
-const CAT_TINTS = ['#F97316', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#14B8A6', '#6366F1'];
+/**
+ * 分类彩色底版（v1.0.18 对齐竞品彩色图标卡）：id 哈希 → 柔和色板。
+ * ★v1.0.33 P0-4：色板全部改为语义令牌（原 8 个 Tailwind 亮色不在令牌体系内，
+ * 且未做深色校验）；现在深浅色自动适配，色相仍保持 8 类可区分。
+ */
+const CAT_TINTS = [
+  'var(--tint-warm)',
+  'var(--tint-cool)',
+  'var(--xu)',
+  'var(--tint-violet)',
+  'var(--tint-clay)',
+  'var(--gui)',
+  'var(--ink-2)',
+  'var(--danger)',
+];
 function catTint(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
@@ -104,7 +117,7 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
               defaultValue={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="例如：B 站大会员"
-              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              className="h-11 w-full nw-input"
             />
           </PageField>
           <div className="grid grid-cols-2 gap-3">
@@ -114,7 +127,7 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
                 onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
                 inputMode="decimal"
                 placeholder="0.00"
-                className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                className="h-11 w-full nw-input"
               />
             </PageField>
             <PageField label="周期">
@@ -138,7 +151,7 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none"
+              className="h-11 w-full nw-input"
             />
           </PageField>
           <button
@@ -303,10 +316,10 @@ export default function SubListPage({
             <p className="flex items-center gap-1.5 truncate text-sm font-medium">
               {s.name}
               {s.type === 'lifetime' ? (
-                <span className="shrink-0 rounded-full bg-surface-2 px-1.5 text-[9px] leading-4 text-ink-3">买断</span>
+                <span className="shrink-0 rounded-full bg-surface-2 px-2 text-[11px] leading-4 text-ink-3">买断</span>
               ) : null}
               {isArchived(s) ? (
-                <span className="shrink-0 rounded-full bg-surface-2 px-1.5 text-[9px] leading-4 text-ink-3">已停用</span>
+                <span className="shrink-0 rounded-full bg-surface-2 px-2 text-[11px] leading-4 text-ink-3">已停用</span>
               ) : null}
             </p>
             <p className="text-[11px] text-ink-3">
@@ -640,7 +653,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
               defaultValue={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="例如：B 站大会员"
-              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              className="h-11 w-full nw-input"
             />
           </PageField>
           <div className="grid grid-cols-2 gap-3">
@@ -650,7 +663,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
                 onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
                 inputMode="decimal"
                 placeholder="0.00"
-                className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                className="h-11 w-full nw-input"
               />
             </PageField>
             <PageField label="周期">
@@ -676,7 +689,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
                 onChange={(e) => setEvery(e.target.value.replace(/[^\d]/g, ''))}
                 inputMode="numeric"
                 placeholder="1"
-                className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                className="h-11 w-full nw-input"
               />
             </PageField>
             <PageField label="下次续费日期">
@@ -684,7 +697,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
                 type="date"
                 value={nextRenewDate}
                 onChange={(e) => setNextRenewDate(e.target.value)}
-                className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none"
+                className="h-11 w-full nw-input"
               />
             </PageField>
           </div>
@@ -692,7 +705,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
             <input
               defaultValue={note}
               onChange={(e) => setNote(e.target.value)}
-              className="h-10 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              className="h-10 w-full nw-input"
             />
           </PageField>
 

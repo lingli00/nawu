@@ -78,14 +78,14 @@ function CategoryFormMini({
               onChange={(e) => setName(e.target.value)}
               placeholder="例如 数码"
               enterKeyHint="done"
-              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              className="h-11 w-full nw-input"
             />
           </PageField>
           <PageField label="图标">
             <div className="max-h-52 space-y-2 overflow-y-auto rounded-btn border border-line bg-surface-2 p-2">
               {CATEGORY_ICON_GROUPS.map((g) => (
                 <div key={g.group}>
-                  <p className="px-0.5 text-[10px] text-ink-3">{g.group}</p>
+                  <p className="px-0.5 text-[11px] text-ink-3">{g.group}</p>
                   <div className="mt-1 grid grid-cols-8 gap-1.5">
                     {g.icons.map((d) => {
                       const RowIcon = d.Icon;

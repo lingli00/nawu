@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Heart, Leaf, PenLine, ReceiptText, ShoppingBag, Timer } from 'lucide-react';
 import { CooldownSheet, MoodSheet, TimeSheet, WishSheet, cooldownExpired } from '../components/LifeSheets';
 import CategoryGlyph from '../components/CategoryGlyph';
+import { MoreMenuButton } from '../components/ui/MoreMenu';
+import { EmptyState } from '../components/ui/EmptyState';
 import { onSheetOpen } from '../lib/sheetBus';
 import {
   useDataStore,
@@ -170,11 +172,13 @@ export default function LedgerPage() {
   const coolingSoon = useMemo(() => cooldowns.filter((c) => cooldownExpired(c)).length, [cooldowns]);
   const totalMin = useMemo(() => times.reduce((a, t) => a + (t.durationMin || 0), 0), [times]);
 
+  /* ★v1.0.33 P0-4：四卡 tint 收敛到语义令牌（原 #EC4899/#3B82F6/#F59E0B/#10B981 彩虹化）。
+     情绪=陶土、时间=需蓝（归需否价值语言）、心动=琥珀、冷静=青瓷，与产品方法论同构。 */
   const lifeCards = [
     {
       key: 'mood',
       Icon: Heart,
-      tint: '#EC4899',
+      tint: 'var(--tint-clay)',
       title: '情绪',
       main: moods.length > 0 ? `${moods.length} 条心情` : '还没记录',
       sub: moods.length > 0 ? (moods[0]?.crushed ? '最新：粉碎' : '最新：归入心底') : '记下每一次心动与后悔',
@@ -183,7 +187,7 @@ export default function LedgerPage() {
     {
       key: 'time',
       Icon: Timer,
-      tint: '#3B82F6',
+      tint: 'var(--xu)',
       title: '时间',
       main: times.length > 0 ? `${Math.round(totalMin / 60)} 小时` : '还没记录',
       sub: times.length > 0 ? `${times.length} 段时光` : '时间花在哪，生活就在哪',
@@ -192,7 +196,7 @@ export default function LedgerPage() {
     {
       key: 'wish',
       Icon: ShoppingBag,
-      tint: '#F59E0B',
+      tint: 'var(--tint-warm)',
       title: '心动清单',
       main: wishlist.length > 0 ? `${wishlist.length} 件想要` : '清单空空',
       sub: wishTotal > 0 ? `合计 ¥${wishTotal.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}` : '心动的先记下来',
@@ -201,7 +205,7 @@ export default function LedgerPage() {
     {
       key: 'cool',
       Icon: CalendarClock,
-      tint: '#10B981',
+      tint: 'var(--tint-cool)',
       title: '冷静池',
       main: cooldowns.length > 0 ? `${cooldowns.length} 件在冷静` : '没有在冷静的',
       sub: coolingSoon > 0 ? `${coolingSoon} 件已到期，去看看` : '冲动消费前先放 7 天',
@@ -214,13 +218,13 @@ export default function LedgerPage() {
     const groups = groupByDay(rows);
     if (groups.length === 0) {
       return (
-        <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center dt:col-span-2">
-          <Leaf size={30} className="mx-auto text-ink-3" strokeWidth={1.5} />
-          <p className="mt-2 text-sm text-ink-3">这个{grain === 'day' ? '天' : '月'}还没有记录</p>
-          <button onClick={() => nav('/ai')} className="mt-3 h-9 rounded-full bg-accent-soft px-4 text-xs font-medium text-accent">
-            试试 AI 记一笔
-          </button>
-        </div>
+        <EmptyState
+          className="dt:col-span-2"
+          icon={Leaf}
+          title={`这个${grain === 'day' ? '天' : '月'}还没有记录`}
+          actionLabel="试试 AI 记一笔"
+          onAction={() => nav('/ai')}
+        />
       );
     }
     return groups.map((g) => (
@@ -258,19 +262,20 @@ export default function LedgerPage() {
                     {r.type === 'income' ? '收入' : '支出'} · {r.judgement === 'gui' ? '值得' : r.judgement === 'xu' ? '必要' : '本可避免'}
                   </p>
                 </button>
-                <div className="text-right">
-                  <p
-                    className="text-sm font-semibold"
-                    style={{ color: r.type === 'income' ? 'var(--gui)' : 'var(--ink)' }}
-                  >
-                    {formatSignedMoney(r.amount, r.type, r.currency)}
-                  </p>
-                  <button
-                    onClick={() => del(r.id, r.note || cat?.name || '记录')}
-                    className="text-[11px] text-ink-3"
-                  >
-                    删除
-                  </button>
+                <div className="flex items-center gap-1">
+                  <div className="text-right">
+                    <p
+                      className="text-sm font-semibold"
+                      style={{ color: r.type === 'income' ? 'var(--gui)' : 'var(--ink)' }}
+                    >
+                      {formatSignedMoney(r.amount, r.type, r.currency)}
+                    </p>
+                  </div>
+                  {/* ★v1.0.33 P1-8：11px 文字删除按钮（~32px 触达）退役，
+                      删除收进 ⋯ 菜单（44px 触达）；确认弹窗 + 撤销逻辑不变 */}
+                  <MoreMenuButton
+                    items={[{ key: 'del', label: '删除这笔记录', danger: true, onSelect: () => del(r.id, r.note || cat?.name || '记录') }]}
+                  />
                 </div>
               </li>
             );
@@ -284,13 +289,13 @@ export default function LedgerPage() {
   const renderYearGroups = () => {
     if (yearMonths.length === 0) {
       return (
-        <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center dt:col-span-2">
-          <Leaf size={30} className="mx-auto text-ink-3" strokeWidth={1.5} />
-          <p className="mt-2 text-sm text-ink-3">{year} 年还没有记录</p>
-          <button onClick={() => nav('/ai')} className="mt-3 h-9 rounded-full bg-accent-soft px-4 text-xs font-medium text-accent">
-            试试 AI 记一笔
-          </button>
-        </div>
+        <EmptyState
+          className="dt:col-span-2"
+          icon={Leaf}
+          title={`${year} 年还没有记录`}
+          actionLabel="试试 AI 记一笔"
+          onAction={() => nav('/ai')}
+        />
       );
     }
     return [...yearMonths].reverse().map((m) => {

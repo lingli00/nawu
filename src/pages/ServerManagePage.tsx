@@ -215,7 +215,7 @@ export default function ServerManagePage() {
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-semibold">{s.alias || '未命名服务器'}</span>
                     {s.id === currentId ? (
-                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-medium text-accent">
+                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
                         当前
                       </span>
                     ) : null}

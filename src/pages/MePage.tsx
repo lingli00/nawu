@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, CircleUser, Cloud, Compass, LayoutGrid, Monitor, Settings, Server, Shield, Smartphone, Tags, ChevronRight } from 'lucide-react';
+import { Brain, CircleUser, Cloud, LayoutGrid, Monitor, Settings, Server, Shield, Smartphone, Tags, ChevronRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore, useAuthStore, useServerStore, useUiStore, currentServer, toastSuccess } from '../store';
 import { getProfile } from '../api/user';
@@ -8,6 +8,7 @@ import { APP_VERSION } from '../lib/appVersion';
 import { isNative } from '../net/env';
 import { haptic } from '../lib/haptics';
 import { useShellMode, setShellPref } from '../components/layout/MainShell';
+import { BrandMark } from '../components/BrandMark';
 
 const STATE_LABEL: Record<string, string> = {
   valid: '已登录',
@@ -89,7 +90,7 @@ export default function MePage() {
         <div className="rounded-card border border-line bg-surface p-4">
           <button onClick={() => nav('/account')} className="flex w-full items-center gap-3 text-left">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent dt:h-14 dt:w-14">
-              {loggedIn ? <CircleUser size={26} strokeWidth={1.8} aria-hidden /> : <Compass size={26} strokeWidth={1.8} aria-hidden />}
+              {loggedIn ? <CircleUser size={26} strokeWidth={1.8} aria-hidden /> : <BrandMark size={26} variant="mono" />}
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-base font-semibold dt:text-lg">{name}</p>

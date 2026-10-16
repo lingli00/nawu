@@ -187,7 +187,7 @@ export default function ManualRecordSheet() {
             ref={noteRef}
             defaultValue={editing?.note ?? ''}
             placeholder="买了什么？（可选）"
-            className="mt-1.5 h-10 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+            className="mt-1.5 h-10 w-full nw-input"
           />
         </label>
       </div>

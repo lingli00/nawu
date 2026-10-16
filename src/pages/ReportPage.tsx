@@ -147,7 +147,7 @@ function NetTrend({
       </svg>
       <div className="mt-1 flex justify-between px-1">
         {points.map((p) => (
-          <span key={p.key} className="truncate text-[10px] text-ink-3">
+          <span key={p.key} className="truncate text-[11px] text-ink-3">
             {p.label}
           </span>
         ))}
@@ -280,8 +280,9 @@ export default function ReportPage() {
   const shownBar = useMemo(() => trend.find((b) => b.key === barKey) ?? null, [trend, barKey]);
   const currentKey = grain === 'day' ? day : grain === 'month' ? ym : '';
 
+  /* ★v1.0.33 P0-4：中间档改用 --tint-warm 令牌（原写死 #c98a2d）。 */
   const healthTint =
-    life.health === null ? 'var(--ink-3)' : life.health >= 70 ? 'var(--gui)' : life.health >= 40 ? '#c98a2d' : 'var(--fou)';
+    life.health === null ? 'var(--ink-3)' : life.health >= 70 ? 'var(--gui)' : life.health >= 40 ? 'var(--tint-warm)' : 'var(--fou)';
 
   const windowLabel =
     grain === 'day'
@@ -436,7 +437,7 @@ export default function ReportPage() {
               <p className="tnum text-3xl font-bold leading-none dt:text-4xl" style={{ color: healthTint }}>
                 {life.health ?? '—'}
               </p>
-              <p className="mt-1 text-[10px] text-ink-3">时间健康度</p>
+              <p className="mt-1 text-[11px] text-ink-3">时间健康度</p>
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[11px] text-ink-2">归 + 需 时长占全部时间切片的比例</p>
@@ -447,7 +448,7 @@ export default function ReportPage() {
                     <div style={{ width: `${(life.xuMin / life.totalMin) * 100}%`, background: 'var(--xu)' }} />
                     <div style={{ width: `${(life.fouMin / life.totalMin) * 100}%`, background: 'var(--fou)' }} />
                   </div>
-                  <p className="mt-1.5 text-[10px] text-ink-3">
+                  <p className="mt-1.5 text-[11px] text-ink-3">
                     归 {fmtMin(life.guiMin)} · 需 {fmtMin(life.xuMin)} · 否 {fmtMin(life.fouMin)}（共 {life.tsCount} 段 ·{' '}
                     {fmtMin(life.totalMin)}）
                   </p>
@@ -458,39 +459,43 @@ export default function ReportPage() {
             </div>
           </div>
 
-          {/* 三小卡：心动清单 / 冲动拦截 / 情绪晴雨（桌面窄栏内竖排） */}
+          {/* 三小卡：心动清单 / 冲动拦截 / 情绪晴雨（桌面窄栏内竖排）
+              ★v1.0.33 P0-4：tint 收敛语义令牌；小号文字用 ink-2 保对比度，tint 只上图标与描边 */}
           <div className="mt-2.5 grid grid-cols-3 gap-2.5 dt:grid-cols-1">
-            <div className="rounded-card border border-line p-3" style={{ borderColor: 'color-mix(in srgb, #c98a2d 28%, transparent)' }}>
-              <p className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color: '#c98a2d' }}>
-                <Sprout size={13} />
+            <div
+              className="rounded-card border border-line p-3"
+              style={{ borderColor: 'color-mix(in srgb, var(--tint-warm) 28%, transparent)' }}
+            >
+              <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
+                <Sprout size={13} style={{ color: 'var(--tint-warm)' }} />
                 心动清单
               </p>
               <p className="mt-1.5 text-lg font-semibold leading-none">{life.wishCount} 件</p>
-              <p className="mt-1 text-[10px] text-ink-3">合计 {formatMoney(life.wishSum, currency)}</p>
+              <p className="mt-1 text-[11px] text-ink-3">合计 {formatMoney(life.wishSum, currency)}</p>
             </div>
             <div
               className="rounded-card border border-line p-3"
-              style={{ borderColor: 'color-mix(in srgb, #2e9e8a 28%, transparent)' }}
+              style={{ borderColor: 'color-mix(in srgb, var(--tint-cool) 28%, transparent)' }}
             >
-              <p className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color: '#2e9e8a' }}>
-                <Snowflake size={13} />
+              <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
+                <Snowflake size={13} style={{ color: 'var(--tint-cool)' }} />
                 冲动拦截
               </p>
               <p className="mt-1.5 text-lg font-semibold leading-none">入池 {life.coolCount} 件</p>
-              <p className="mt-1 text-[10px] text-ink-3">
+              <p className="mt-1 text-[11px] text-ink-3">
                 到期未动 {life.coolHold} 件 · 涉及 {formatMoney(life.coolAmount, currency)}
               </p>
             </div>
             <div
               className="rounded-card border border-line p-3"
-              style={{ borderColor: 'color-mix(in srgb, #c2603f 28%, transparent)' }}
+              style={{ borderColor: 'color-mix(in srgb, var(--tint-clay) 28%, transparent)' }}
             >
-              <p className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color: '#c2603f' }}>
-                <Heart size={13} />
+              <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
+                <Heart size={13} style={{ color: 'var(--tint-clay)' }} />
                 情绪晴雨
               </p>
               <p className="mt-1.5 text-lg font-semibold leading-none">{life.moodCount} 次</p>
-              <p className="mt-1 text-[10px] text-ink-3">
+              <p className="mt-1 text-[11px] text-ink-3">
                 归入心底 {life.moodHeart} · 粉碎 {life.moodCrush}
               </p>
             </div>
@@ -562,7 +567,7 @@ export default function ReportPage() {
                     on ? 'bg-surface-2' : ''
                   }`}
                 >
-                  <span className={`tnum h-3.5 text-[10px] leading-none ${on ? 'font-semibold text-accent' : 'text-ink-3'}`}>
+                  <span className={`tnum h-3.5 text-[11px] leading-none ${on ? 'font-semibold text-accent' : 'text-ink-3'}`}>
                     {b.expense > 0 ? formatCompactMoney(b.expense, currency) : ''}
                   </span>
                   <div className="flex h-28 w-full items-end justify-center gap-1 dt:h-40">

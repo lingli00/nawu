@@ -104,7 +104,7 @@ function RuleFormSheet({
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
-              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              className="h-11 w-full nw-input"
             />
           </PageField>
 
@@ -112,7 +112,7 @@ function RuleFormSheet({
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+              className="h-11 w-full nw-input"
             >
               {ledgerCats.map((c) => (
                 <option key={c.id} value={c.name}>

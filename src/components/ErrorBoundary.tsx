@@ -71,7 +71,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             <summary className="cursor-pointer text-[11px] text-ink-3">错误详情（反馈时请截图）</summary>
             <div className="mt-2 space-y-1.5">
               {logs.map((r, i) => (
-                <p key={i} className="break-all rounded bg-surface-2 px-2 py-1 text-[10px] leading-relaxed text-ink-3">
+                <p key={i} className="break-all rounded bg-surface-2 px-2 py-1 text-[11px] leading-relaxed text-ink-3">
                   [{new Date(r.t).toLocaleTimeString()}] {r.kind}: {r.msg}
                 </p>
               ))}

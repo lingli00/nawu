@@ -88,7 +88,7 @@ function EmailInput({
       spellCheck={false}
       enterKeyHint="done"
       placeholder="you@example.com"
-      className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+      className="h-11 w-full nw-input"
     />
   );
 }
@@ -109,7 +109,7 @@ function PasswordInput({
       onInput={(e) => onFilledChange?.(e.currentTarget.value.length > 0)}
       type="password"
       placeholder={placeholder}
-      className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+      className="h-11 w-full nw-input"
     />
   );
 }
@@ -139,7 +139,7 @@ function CodeField({
           autoComplete="one-time-code"
           maxLength={8}
           placeholder="6 位数字"
-          className="h-11 flex-1 rounded-btn border border-line bg-surface-2 px-3 text-sm tracking-[0.3em] outline-none focus:border-accent"
+          className="h-11 flex-1 nw-input tracking-[0.3em]"
         />
         <SendCodeButton
           emailRef={emailRef}

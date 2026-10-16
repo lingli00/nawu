@@ -12,7 +12,7 @@ import { useSettingsStore } from './store/useSettingsStore';
 import { isNative } from './net/env';
 import { UiHost } from './components/ui/UiHost';
 import { setHapticsEnabled } from './lib/haptics';
-import { Compass } from 'lucide-react';
+import { BrandMark } from './components/BrandMark';
 
 /**
  * 键盘残留高度修复（v1.0.16，仅原生）。
@@ -101,12 +101,12 @@ function RouteGuard({ children }: { children: ReactNode }): JSX.Element {
   return <>{children}</>;
 }
 
-/** 冷启动骨架（hydrate 完成前）。 */
+/** 冷启动骨架（hydrate 完成前；★v1.0.33 P2-12 起用自有字标）。 */
 function BootSplash(): JSX.Element {
   return (
     <div className="min-h-screen bg-paper flex items-center justify-center">
       <div className="flex flex-col items-center gap-3">
-        <Compass size={36} className="text-ink-3" strokeWidth={1.5} />
+        <BrandMark size={36} variant="mono" className="text-ink-3" />
         <div className="t-h3 text-ink-2">纳物</div>
         <div className="w-40 h-1 rounded bg-line overflow-hidden">
           <div className="h-full w-1/3 shimmer" />

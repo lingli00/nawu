@@ -425,7 +425,7 @@ function BrandButton({
       }`}
     >
       <BrandImg base={base} domain={brand.domain} size={24} alt={brand.name} />
-      <span className="w-full truncate px-0.5 text-center text-[10px] text-ink-2">{brand.name}</span>
+      <span className="w-full truncate px-0.5 text-center text-[11px] text-ink-2">{brand.name}</span>
     </button>
   );
 }
@@ -452,7 +452,7 @@ function GlyphButton({
       <span className="flex h-6 items-center justify-center">
         <GlyphImg item={item} size={22} />
       </span>
-      <span className="w-full truncate px-0.5 text-center text-[10px] text-ink-2">{item.name}</span>
+      <span className="w-full truncate px-0.5 text-center text-[11px] text-ink-2">{item.name}</span>
     </button>
   );
 }
@@ -1076,7 +1076,7 @@ export default function IconPicker({
                     ) : null,
                   )}
                 </div>
-                <p className="text-[10px] text-ink-3">点选自动裁正方形存入本地 · 随备份携带 · 永久离线可用</p>
+                <p className="text-[11px] text-ink-3">点选自动裁正方形存入本地 · 随备份携带 · 永久离线可用</p>
               </>
             ) : (
               <p className="rounded-card border border-dashed border-line bg-surface-2 p-4 text-center text-xs text-ink-3">
@@ -1149,7 +1149,7 @@ export default function IconPicker({
                   <div className="space-y-3">
                     {libGroups.map((group) => (
                       <div key={group.label}>
-                        <p className="mb-1 text-[10px] text-ink-3/80">{group.label}</p>
+                        <p className="mb-1 text-[11px] text-ink-3/80">{group.label}</p>
                         <div className="grid grid-cols-8 gap-2">
                           {group.items.map(({ id }) => {
                             const Icon = subIconOf(id);

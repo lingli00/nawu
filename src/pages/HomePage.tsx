@@ -12,10 +12,19 @@ import {
   X,
   Star,
   Share2,
+  ChevronDown,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import PageField from '../components/ui/PageField';
+import { Sheet } from '../components/ui/Sheet';
+import { MoreMenuButton } from '../components/ui/MoreMenu';
+import { EmptyState } from '../components/ui/EmptyState';
+import { Chip } from '../components/ui/Chip';
+import { Segmented } from '../components/ui/Segmented';
+import { Toggle } from '../components/ui/Toggle';
+import RecordMenu from '../components/RecordMenu';
 import { useBackGuard } from '../lib/backGuard';
+import { useShellMode } from '../components/layout/MainShell';
 import SubListPage from './SubListPage';
 import CategoryManageSheet from '../components/CategoryManageSheet';
 import IconPicker, { IconPreview, type Tab as PickerTab } from '../components/IconPicker';
@@ -40,9 +49,11 @@ import { haptic } from '../lib/haptics';
 
 /* ============================================================================
  * 首页（对齐原版竞品布局）：
- * 大字标题 + 视图/搜索/新增 三按钮 → 物品/订阅 pill tab → 我的资产卡 →
+ * 大字标题 + 视图/搜索/记一笔 三按钮 → 物品/订阅 pill tab → 今日卡（P1-5） →
  * 筛选与排序 chips → 三列/两列网格 或 列表。
- * 交互：单击物品卡 → 详情卡片（纯查看）；长按 500ms → 编辑（GoodsFormSheet）。
+ * 交互（v1.0.33 P0-1 起）：单击物品卡 → 详情卡片（纯查看）；卡片常驻「⋯」更多
+ * 菜单（查看/编辑/删除）是编辑的可视化主入口；长按 500ms → 编辑保留为快捷方式，
+ * 首次出现时有 toast 教学。顶栏「＋」与 FAB/侧边栏统一开加号动作菜单（P0-2）。
  *
  * ⚠️ 两条铁律（踩过的坑）：
  * 1. 弹层一律 createPortal 挂 document.body —— Android WebView 上带 transform
@@ -133,27 +144,9 @@ function compressImage(file: File, max: number): Promise<string> {
 }
 
 /* ============================================================================
- * 小开关（样式与 SettingsPage 居中版一致，本文件内复制以免跨页耦合）。
+ * 小开关：v1.0.33 起改用 components/ui/Toggle（消灭此前的文件内复制实现，
+ * 与 SettingsPage 版细节不一致的问题随之消失）。
  * ==========================================================================*/
-function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors ${
-        on ? 'border-accent bg-accent' : 'border-line bg-surface-2'
-      }`}
-    >
-      <span
-        className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-all ${
-          on ? 'left-[26px]' : 'left-[2px]'
-        }`}
-      />
-    </button>
-  );
-}
 
 /* ============================================================================
  * 详情弹窗字段（两栏网格单元：上标签下数值，左右列均衡）。
@@ -363,7 +356,8 @@ function CropSheet({
   const corner = 'pointer-events-none absolute h-6 w-6 border-white/90';
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black" onClick={onCancel}>
+    /* ★v1.0.33：裁剪层 z-50 → z-[60]（表单 sheet 本身已是 z-50，嵌套层必须稳定在上） */
+    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black" onClick={onCancel}>
       <p className="mb-3 text-xs text-white/70">拖动调整位置 · 双指缩放 · 双击重置</p>
       {/* 方形视口 */}
       <div
@@ -451,7 +445,7 @@ export function GoodsFormSheet({
   prefill?: { name?: string; price?: number };
   onClose: () => void;
 }) {
-  useBackGuard(true, onClose);
+  /* 返回键守卫由 Sheet 组件统一负责（v1.0.33 P1-10），此处不再自挂，避免双重占位历史。 */
   const categories = useDataStore((s) => s.categories);
   const addGoods = useDataStore((s) => s.addGoods);
   const updateGoods = useDataStore((s) => s.updateGoods);
@@ -575,22 +569,18 @@ export function GoodsFormSheet({
   };
 
   return (
+    /* ★v1.0.33 P1-10：改用显式 Sheet 组件（原全局 CSS hack 把底部 sheet 偷改成
+       26rem 右抽屉，20+ 字段的表单被挤成窄条；现在桌面抽屉 34rem 双列空间）。
+       返回键守卫由 Sheet 组件统一负责（v1.0.33 P1-10），此处不再自挂，避免双重占位历史。 */
     <>
-      {createPortal(
-        <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={onClose}>
-          <div
-            className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-surface p-4"
-            onClick={(e) => e.stopPropagation()}
-            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
-          >
-            <h2 className="mb-3 text-base font-semibold">{isEdit ? '编辑物品' : '物品入库'}</h2>
-            <div className="space-y-3">
+      <Sheet onClose={onClose} title={isEdit ? '编辑物品' : '物品入库'} drawerWidth="34rem">
+        <div className="space-y-3">
               <PageField label="名称">
                 <input
                   defaultValue={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="买了什么"
-                  className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                  className="h-11 w-full nw-input"
                 />
               </PageField>
               <div className="grid grid-cols-2 gap-3">
@@ -600,7 +590,7 @@ export function GoodsFormSheet({
                     onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ''))}
                     inputMode="decimal"
                     placeholder="0.00"
-                    className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                    className="h-11 w-full nw-input"
                   />
                 </PageField>
                 <PageField label="购买日期">
@@ -608,7 +598,7 @@ export function GoodsFormSheet({
                     type="date"
                     value={buyDate}
                     onChange={(e) => setBuyDate(e.target.value)}
-                    className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none"
+                    className="h-11 w-full nw-input"
                   />
                 </PageField>
               </div>
@@ -659,7 +649,7 @@ export function GoodsFormSheet({
                 <input
                   defaultValue={note}
                   onChange={(e) => setNote(e.target.value)}
-                  className="h-10 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                  className="h-10 w-full nw-input"
                 />
               </PageField>
 
@@ -675,7 +665,7 @@ export function GoodsFormSheet({
                         onChange={(e) => setTargetDailyCost(e.target.value.replace(/[^\d.]/g, ''))}
                         inputMode="decimal"
                         placeholder="0.00"
-                        className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                        className="h-11 w-full nw-input"
                       />
                     </PageField>
                     <PageField label="使用次数">
@@ -684,7 +674,7 @@ export function GoodsFormSheet({
                         onChange={(e) => setUsedCount(e.target.value.replace(/[^\d]/g, ''))}
                         inputMode="numeric"
                         placeholder="0"
-                        className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                        className="h-11 w-full nw-input"
                       />
                     </PageField>
                   </div>
@@ -703,7 +693,7 @@ export function GoodsFormSheet({
                         onChange={(e) => setTotalCount(e.target.value.replace(/[^\d]/g, ''))}
                         inputMode="numeric"
                         placeholder="0"
-                        className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                        className="h-11 w-full nw-input"
                       />
                     </PageField>
                   ) : null}
@@ -716,7 +706,7 @@ export function GoodsFormSheet({
                       onChange={(e) => setSellPrice(e.target.value.replace(/[^\d.]/g, ''))}
                       inputMode="decimal"
                       placeholder="0.00"
-                      className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                      className="h-11 w-full nw-input"
                     />
                   </PageField>
                   <div>
@@ -727,7 +717,7 @@ export function GoodsFormSheet({
                           defaultValue={f.name}
                           onChange={(e) => setFee(i, { name: e.target.value })}
                           placeholder="说明（如运费）"
-                          className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                          className="h-10 min-w-0 flex-1 nw-input"
                         />
                         <input
                           defaultValue={f.amount}
@@ -760,7 +750,7 @@ export function GoodsFormSheet({
                       type="date"
                       value={warrantyDate}
                       onChange={(e) => setWarrantyDate(e.target.value)}
-                      className="h-11 min-w-0 flex-1 rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none"
+                      className="h-11 min-w-0 flex-1 nw-input"
                     />
                     {warrantyDate ? (
                       <button
@@ -781,15 +771,13 @@ export function GoodsFormSheet({
               >
                 {isEdit ? '保存' : '入库'}
               </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
-      {/* 图标选择视图（v1.0.18：直接进 picker，无中间来源 sheet） */}
+        </div>
+      </Sheet>
+      {/* 图标选择视图（v1.0.18：直接进 picker，无中间来源 sheet）
+          ★v1.0.33：z-50 → z-[60]（表单 sheet 本身已是 z-50，嵌套层必须在上） */}
       {pickerTab ? (
         createPortal(
-          <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={() => setPickerTab(null)}>
+          <div className="fixed inset-0 z-[60] flex items-end bg-black/40" onClick={() => setPickerTab(null)}>
             <div
               className="sheet-enter mx-auto max-h-[86vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]"
               onClick={(e) => e.stopPropagation()}
@@ -839,6 +827,7 @@ export function GoodsFormSheet({
 export default function HomePage() {
   const goods = useDataStore((s) => s.goods);
   const categories = useDataStore((s) => s.categories);
+  const records = useDataStore((s) => s.valueRecords);
   const updateGoods = useDataStore((s) => s.updateGoods);
   const removeById = useDataStore((s) => s.removeById);
   const useGoodsOnce = useDataStore((s) => s.useGoodsOnce);
@@ -846,12 +835,19 @@ export default function HomePage() {
   const { confirm } = useUiStore.getState();
   const location = useLocation();
   const navigate = useNavigate();
+  /** 当前壳型（P2-14 空态文案分流：移动指底部 FAB / 桌面指左上角侧边栏按钮）。
+   *  注意不能读 html[data-shell] —— 那是 MainShell 的 effect 副作用，首帧不可靠。 */
+  const shellMode = useShellMode();
+  const recordHint = shellMode === 'desktop' ? '点左上角「记一笔」' : '点底部 ＋ 记一笔';
 
   /* —— 顶栏与视图 —— */
   const [tab, setTab] = useState<'goods' | 'subs'>('goods');
   const [view, setView] = useState<ViewMode>('grid3');
   const [searchOpen, setSearchOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
+  /** ★v1.0.33 P0-2：顶栏＋统一开加号动作菜单（与侧边栏「记一笔」/底部 FAB 同一组件），
+   *  一个记录入口 —— 旧行为是直接开物品表单，三个入口两种行为。 */
+  const [menuOpen, setMenuOpen] = useState(false);
 
   /* —— 物品筛选 / 排序（默认「在役」：打开即见在役物品）—— */
   const [status, setStatus] = useState<StatusFilter>('active');
@@ -866,6 +862,8 @@ export default function HomePage() {
   const [sharing, setSharing] = useState(false);
   /** AI 记一笔添加订阅后跳转过来：传给 SubListPage 自动弹出 SubEditSheet。 */
   const [subEditHint, setSubEditHint] = useState<string | null>(null);
+  /** P1-5：今日卡内资产汇总展开态。 */
+  const [assetOpen, setAssetOpen] = useState(false);
   /** 冷静池「到期转物品」预填（sessionStorage gf.prefill.goods，v1.0.20）。 */
   const [prefill, setPrefill] = useState<{ name?: string; price?: number } | undefined>(undefined);
 
@@ -950,6 +948,29 @@ export default function HomePage() {
     return { active: active.length, retired: retired.length, favorites: favorites.length, invest, daily, soldProfit };
   }, [goods]);
 
+  /* —— P1-5「今日卡」：今天花了多少 + 归需否结构（记账产品第一眼应是今日视角）—— */
+  const todaySummary = useMemo(() => {
+    const t = today();
+    const rows = records.filter((r) => r.date === t && r.type === 'expense');
+    const sum = (j?: string): number =>
+      rows.filter((r) => (j ? r.judgement === j : true)).reduce((a, r) => a + (r.amount || 0), 0);
+    return { total: sum(), gui: sum('gui'), xu: sum('xu'), fou: sum('fou'), count: rows.length };
+  }, [records]);
+
+  /* —— P0-1：首次出现时 toast 教会「长按可直接编辑」（⋯ 菜单是主入口，长按是快捷方式）—— */
+  useEffect(() => {
+    if (goods.length === 0) return;
+    try {
+      if (localStorage.getItem('gf.hint.longpress')) return;
+      localStorage.setItem('gf.hint.longpress', '1');
+      const timer = window.setTimeout(() => toastSuccess('长按物品卡片可直接编辑'), 600);
+      return () => window.clearTimeout(timer);
+    } catch {
+      /* 隐私模式忽略 */
+    }
+    return undefined;
+  }, [goods.length]);
+
   /* —— 列表：状态 → 关键词 → 排序 → 在役优先 —— */
   const list = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
@@ -957,8 +978,15 @@ export default function HomePage() {
       if (status === 'all') return true;
       return g.status === status;
     });
+    /* ★v1.0.33 P1-7：搜索匹配扩展到备注（原只匹配名称/标签，备注里的
+       「通勤降噪主力」这类关键信息搜不到） */
     const byKw = kw
-      ? byStatus.filter((g) => g.name.toLowerCase().includes(kw) || g.tags.some((t) => t.toLowerCase().includes(kw)))
+      ? byStatus.filter(
+          (g) =>
+            g.name.toLowerCase().includes(kw) ||
+            g.tags.some((t) => t.toLowerCase().includes(kw)) ||
+            (g.note ?? '').toLowerCase().includes(kw),
+        )
       : byStatus;
     const sorted = sortGoods(byKw, sortBy);
     // 在役优先：退役/已转卖一律沉底（稳定排序，同组内保持所选排序键；
@@ -1051,7 +1079,9 @@ export default function HomePage() {
 
   return (
     <div className="page-enter">
-      {/* ============ 顶栏：大字标题 + 视图 / 搜索 / 新增 ============ */}
+      {/* ============ 顶栏：大字标题 + 视图 / 搜索 / 新增 ============
+          ★v1.0.33 P1-7：搜索从「点图标展开下方输入框」改为「顶行整框 + 取消」，
+          自动聚焦、两级操作变一级；P0-2：＋ 与 FAB / 侧边栏统一开加号菜单。 */}
       <header className="flex items-center justify-between pb-3 pt-2">
         <h1 className="text-3xl font-bold leading-9">纳物</h1>
         <div className="flex items-center gap-1">
@@ -1071,120 +1101,184 @@ export default function HomePage() {
               if (searchOpen) setKeyword('');
             }}
             aria-label="搜索"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-ink-2 active:scale-95 active:bg-surface transition-transform"
+            className={`flex h-9 w-9 items-center justify-center rounded-full active:scale-95 active:bg-surface transition-transform ${
+              searchOpen ? 'bg-surface text-accent' : 'text-ink-2'
+            }`}
           >
             <Search size={19} />
           </button>
           <button
-            onClick={() => (tab === 'goods' ? setAdding(true) : setSubAdding(true))}
-            aria-label="新增"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-ink-2 active:scale-95 active:bg-surface transition-transform"
+            onClick={() => {
+              void haptic('medium');
+              setMenuOpen(true);
+            }}
+            aria-label="记一笔"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-accent active:scale-95 active:bg-surface transition-transform"
           >
             <Plus size={22} />
           </button>
         </div>
       </header>
 
-      {/* 搜索行（非受控：关闭即卸载，重开为空） */}
+      {/* 搜索行（P1-7：整行搜索框 + 取消按钮；非受控：关闭即卸载，重开为空） */}
       {searchOpen ? (
-        <input
-          defaultValue=""
-          onChange={(e) => setKeyword(e.target.value)}
-          placeholder="搜索物品 / 标签"
-          className="mb-3 h-10 w-full rounded-btn border border-line bg-surface px-3 text-sm outline-none focus:border-accent"
-        />
+        <div className="mb-3 flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden />
+            <input
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+              defaultValue=""
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchOpen(false);
+                  setKeyword('');
+                }
+              }}
+              placeholder="搜索物品 / 标签 / 备注"
+              className="h-10 w-full nw-input pl-9 pr-3"
+            />
+          </div>
+          <button
+            onClick={() => {
+              setSearchOpen(false);
+              setKeyword('');
+            }}
+            className="h-10 shrink-0 px-2 text-sm text-ink-2 active:opacity-70"
+          >
+            取消
+          </button>
+        </div>
       ) : null}
 
-      {/* ============ 物品 / 订阅 pill 分段 tab（v1.0.18：收窄靠左，对齐竞品） ============ */}
-      <div className="mb-3 flex w-fit rounded-full border border-line bg-surface-2 p-1">
-        {(
-          [
-            { key: 'goods', label: '物品' },
-            { key: 'subs', label: '订阅' },
-          ] as const
-        ).map((t) => (
-          <button
-            key={t.key}
-            onClick={() => {
-              void haptic('select');
-              setTab(t.key);
-            }}
-            className={`rounded-full px-4 py-1 text-xs transition-all active:scale-95 ${
-              tab === t.key ? 'bg-surface font-semibold shadow' : 'text-ink-3'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* ============ 物品 / 订阅 分段 tab（v1.0.33 P1-9：统一 Segmented 组件） ============ */}
+      <Segmented
+        className="mb-3"
+        value={tab}
+        onChange={(v) => setTab(v)}
+        options={[
+          { value: 'goods', label: '物品' },
+          { value: 'subs', label: '订阅' },
+        ]}
+      />
 
       {tab === 'goods' ? (
         <>
-          {/* ============ 我的资产卡 ============ */}
+          {/* ============ P1-5 今日卡（原「我的资产」四行数据卡 → 今日视角） ============
+              打开 App 第一眼是「今天花了多少 + 归需否结构」；资产汇总降级为
+              一行次级信息（点击展开），记一笔主按钮与 FAB/＋ 同一加号菜单。 */}
           <div className="mb-3 rounded-2xl p-4" style={GLASS_STYLE}>
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">我的资产</p>
-              <p className="tnum text-xs text-ink-2">
-                {summary.active} 在役 / {summary.retired} 退役
-              </p>
-            </div>
-            <div className="mt-2 flex items-end justify-between">
-              <div>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
                 <p className="text-[11px] text-ink-3">
-                  在役购入{summary.favorites > 0 ? ` · 收藏 ${summary.favorites}` : ''}
+                  今日支出 · {todaySummary.count} 笔
+                  {todaySummary.count === 0 ? ' · 今天还没有记录' : ''}
                 </p>
-                <p className="tnum text-xl font-bold">
+                <p className="tnum mt-0.5 text-[28px] font-bold leading-9">
                   {symbol}
-                  {summary.invest.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}
+                  {todaySummary.total.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}
+                </p>
+                {/* 归需否迷你条（三段式，与产品方法论同构） */}
+                <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-line-2">
+                  {todaySummary.total > 0 ? (
+                    <>
+                      <span style={{ width: `${(todaySummary.gui / todaySummary.total) * 100}%`, background: 'var(--gui)' }} />
+                      <span style={{ width: `${(todaySummary.xu / todaySummary.total) * 100}%`, background: 'var(--xu)' }} />
+                      <span style={{ width: `${(todaySummary.fou / todaySummary.total) * 100}%`, background: 'var(--fou)' }} />
+                    </>
+                  ) : null}
+                </div>
+                <p className="tnum mt-1.5 flex flex-wrap gap-x-2.5 text-[11px]">
+                  <span style={{ color: 'var(--gui)' }}>归 {formatMoney(todaySummary.gui, currency)}</span>
+                  <span style={{ color: 'var(--xu)' }}>需 {formatMoney(todaySummary.xu, currency)}</span>
+                  <span style={{ color: 'var(--fou)' }}>否 {formatMoney(todaySummary.fou, currency)}</span>
                 </p>
               </div>
-              <div className="text-right">
-                <p className="text-[11px] text-ink-3">在役日均</p>
-                <p className="tnum text-sm font-semibold" style={{ color: 'var(--gui)' }}>
-                  {formatMoney(summary.daily, currency)}
-                </p>
-                <p
-                  className="tnum text-[11px]"
-                  style={{ color: summary.soldProfit > 0 ? 'var(--gui)' : 'var(--ink-3)' }}
-                >
-                  已转卖净赚 {soldProfitText}
-                </p>
-              </div>
+              <button
+                onClick={() => {
+                  void haptic('medium');
+                  setMenuOpen(true);
+                }}
+                className="flex h-10 shrink-0 items-center gap-1 rounded-full bg-accent px-4 text-sm font-medium text-white shadow active:scale-95"
+                style={{ boxShadow: '0 6px 16px color-mix(in srgb, var(--accent) 35%, transparent)' }}
+              >
+                <Plus size={15} strokeWidth={2.4} aria-hidden />
+                记一笔
+              </button>
             </div>
+
+            {/* 资产汇总：一行次级信息，点击展开（原四行数据的主视觉位置让位给今日视角） */}
+            <button
+              onClick={() => {
+                void haptic('select');
+                setAssetOpen(!assetOpen);
+              }}
+              aria-expanded={assetOpen}
+              className="mt-3 flex w-full items-center justify-between gap-2 border-t border-line-2 pt-2.5 text-left"
+            >
+              <span className="tnum min-w-0 truncate text-[11px] text-ink-2">
+                在役购入 {symbol}
+                {summary.invest.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} · 在役日均{' '}
+                {formatMoney(summary.daily, currency)} · 已转卖净赚 {soldProfitText}
+              </span>
+              <ChevronDown
+                size={13}
+                className={`shrink-0 text-ink-3 transition-transform ${assetOpen ? 'rotate-180' : ''}`}
+                aria-hidden
+              />
+            </button>
+            {assetOpen ? (
+              <div className="mt-2.5 grid grid-cols-3 gap-2">
+                <div className="rounded-btn bg-surface-2 p-2.5">
+                  <p className="text-[11px] text-ink-3">在役购入</p>
+                  <p className="tnum text-sm font-semibold">
+                    {symbol}
+                    {summary.invest.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div className="rounded-btn bg-surface-2 p-2.5">
+                  <p className="text-[11px] text-ink-3">在役日均</p>
+                  <p className="tnum text-sm font-semibold" style={{ color: 'var(--gui)' }}>
+                    {formatMoney(summary.daily, currency)}
+                  </p>
+                </div>
+                <div className="rounded-btn bg-surface-2 p-2.5">
+                  <p className="text-[11px] text-ink-3">已转卖净赚</p>
+                  <p
+                    className="tnum text-sm font-semibold"
+                    style={{ color: summary.soldProfit > 0 ? 'var(--gui)' : 'var(--ink-3)' }}
+                  >
+                    {soldProfitText}
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
 
-          {/* ============ 筛选 chips + 排序 chips ============ */}
+          {/* ============ 筛选 chips + 排序 chips（P1-9：统一 Chip 组件） ============ */}
           <div className="no-scrollbar -mx-4 mb-2 flex gap-2 overflow-x-auto px-4">
             {STATUS_CHIPS.map((c) => (
-              <button
-                key={c.key}
-                onClick={() => setStatus(c.key)}
-                className={`h-8 shrink-0 rounded-full border px-3.5 text-xs transition-all active:scale-95 ${
-                  status === c.key ? 'border-accent bg-accent-soft font-medium text-accent' : 'border-line bg-surface text-ink-3'
-                }`}
-              >
+              <Chip key={c.key} selected={status === c.key} onClick={() => setStatus(c.key)}>
                 {c.label}
-              </button>
+              </Chip>
             ))}
             <span className="mx-0.5 my-1 w-px shrink-0 bg-line" />
             {SORT_CHIPS.map((c) => (
-              <button
-                key={c.key}
-                onClick={() => setSortBy(c.key)}
-                className={`h-8 shrink-0 rounded-full border px-3.5 text-xs transition-all active:scale-95 ${
-                  sortBy === c.key ? 'border-accent bg-accent-soft font-medium text-accent' : 'border-line bg-surface text-ink-3'
-                }`}
-              >
+              <Chip key={c.key} selected={sortBy === c.key} onClick={() => setSortBy(c.key)}>
                 {c.label}
-              </button>
+              </Chip>
             ))}
           </div>
 
-          {/* ============ 主体：网格 / 列表 / 空态（点卡=编辑，长按=详情） ============ */}
+          {/* ============ 主体：网格 / 列表 / 空态 ============ */}
           {list.length === 0 ? (
-            <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center text-sm text-ink-3">
-              {goods.length === 0 ? '还没有物品，点右上角 ＋ 入库第一件物品' : '没有匹配的物品'}
-            </div>
+            <EmptyState
+              title={goods.length === 0 ? '还没有物品' : '没有匹配的物品'}
+              sub={goods.length === 0 ? `${recordHint}，入库第一件物品` : '换个筛选条件或关键词试试'}
+              actionLabel={goods.length === 0 ? '记一笔' : undefined}
+              onAction={goods.length === 0 ? () => setMenuOpen(true) : undefined}
+            />
           ) : view === 'list' ? (
             /* —— 列表视图 —— */
             <ul className="space-y-2 dt:grid dt:grid-cols-2 dt:gap-2 dt:space-y-0">
@@ -1241,6 +1335,14 @@ export default function HomePage() {
                         </p>
                         <p className="text-[11px] text-ink-3">日均</p>
                       </div>
+                      {/* ★v1.0.33 P0-1：常驻 ⋯ 菜单（长按编辑的唯一可视化入口） */}
+                      <MoreMenuButton
+                        items={[
+                          { key: 'detail', label: '查看详情', onSelect: () => setDetailId(g.id) },
+                          { key: 'edit', label: '编辑', onSelect: () => setEditing(g) },
+                          { key: 'del', label: '删除', danger: true, onSelect: () => void del(g) },
+                        ]}
+                      />
                     </div>
                   </li>
                 );
@@ -1280,45 +1382,49 @@ export default function HomePage() {
                             )}
                           </span>
                         )}
-                        {/* 状态角标：在役=绿点（高关注）；已转卖/退役=中性灰 pill（低视觉权重） */}
+                        {/* 状态角标（v1.0.33 起移到左上，右上让给 ⋯ 菜单）：
+                            在役=绿点（高关注）；已转卖/退役=中性灰 pill（低视觉权重） */}
                         {g.status === 'retired' ? (
                           <span
-                            className="absolute right-1 top-1.5 rounded-full px-1.5 text-[9px] leading-4 text-ink-2"
-                            style={{ background: 'color-mix(in srgb, var(--line) 90%, transparent)' }}
+                            className="absolute left-1 top-1.5 rounded-full bg-surface/85 px-2 text-[11px] leading-4 text-ink-2"
                           >
                             {isSold(g) ? '已转卖' : '退役'}
                           </span>
                         ) : g.status === 'active' ? (
                           <span
-                            className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full"
-                            style={{ background: 'color-mix(in srgb, var(--surface) 88%, transparent)' }}
+                            className="absolute left-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-surface/85"
                           >
                             <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--gui)' }} />
                           </span>
                         ) : (
-                          <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center">
+                          <span className="absolute left-1 top-1 flex h-4 w-4 items-center justify-center">
                             <Star size={13} style={{ color: 'var(--warn)', fill: 'var(--warn)' }} />
                           </span>
                         )}
+                        {/* ★v1.0.33 P0-1：⋯ 更多菜单浮层（编辑/删除/详情的可视化入口） */}
+                        <div className="absolute right-1 top-1">
+                          <MoreMenuButton
+                            compact
+                            items={[
+                              { key: 'detail', label: '查看详情', onSelect: () => setDetailId(g.id) },
+                              { key: 'edit', label: '编辑', onSelect: () => setEditing(g) },
+                              { key: 'del', label: '删除', danger: true, onSelect: () => void del(g) },
+                            ]}
+                          />
+                        </div>
                       </div>
-                      {/* 信息区（v1.0.18 对齐竞品：双金额行 + 日均/单次 + 持有时长） */}
+                      {/* 信息区（v1.0.33 P1-6 三层信息：名称 12px / 价格 16px 600 / meta 一行 12px；
+                          单次成本移入详情页，3 列卡宽下不再四行小字竞争注意力） */}
                       <div className="p-2 pt-1.5">
                         <p className="line-clamp-2 min-h-[2.5em] text-xs font-medium leading-[1.25]">{g.name}</p>
-                        <p className="tnum mt-1 text-sm font-semibold">
+                        <p className="tnum mt-1 text-base font-semibold leading-5">
                           {amt.label ? `${amt.label}${amt.text}` : amt.text}
                         </p>
-                        <p className="tnum mt-0.5 flex items-baseline gap-1 truncate text-[10px] text-ink-2">
+                        <p className="tnum mt-0.5 truncate text-xs text-ink-2">
                           {formatMoney(dailyCost(g), g.currency)}
                           <span className="text-ink-3">/天</span>
-                          {g.countEnabled ? (
-                            <>
-                              <span className="text-ink-3">·</span>
-                              {formatMoney(perUseCost(g), g.currency)}
-                              <span className="text-ink-3">/次</span>
-                            </>
-                          ) : null}
+                          <span className="text-ink-3"> · {holdLabel(g.buyDate)}</span>
                         </p>
-                        <p className="tnum mt-0.5 truncate text-[10px] text-ink-3">{holdLabel(g.buyDate)}</p>
                       </div>
                     </div>
                   </li>
@@ -1523,6 +1629,9 @@ export default function HomePage() {
 
       {/* ============ 编辑物品 sheet（点卡直接打开；portal 挂 body）============ */}
       {editing ? <GoodsFormSheet initial={editing} onClose={() => setEditing(null)} /> : null}
+
+      {/* ============ ★v1.0.33 P0-2：加号动作菜单（与侧边栏/底部 FAB 同一组件）============ */}
+      {menuOpen ? <RecordMenu onClose={() => setMenuOpen(false)} /> : null}
     </div>
   );
 }

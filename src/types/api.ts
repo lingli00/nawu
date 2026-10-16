@@ -1,7 +1,7 @@
 import type { CollectionName, Settings, Session, UserInfo } from './entities';
 
 /* ============================================================================
- * 后端接口 DTO（唯一真实来源：D:/wwwroot/default/app/Api.php）
+ * 后端接口 DTO（唯一真实来源：服务端 app/Api.php）
  * ==========================================================================*/
 
 /** `GET /api/health`：★DB 挂了也返回 `ok:true`，判定连通必须再看 `db`（F3）。 */

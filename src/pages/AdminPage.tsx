@@ -266,14 +266,14 @@ function LoginPage({ onLogin, serverNow }: { onLogin: (token: string) => void; s
             name="username"
             placeholder="管理员用户名"
             autoComplete="username"
-            className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+            className="h-11 w-full nw-input"
           />
           <input
             name="password"
             type="password"
             placeholder="密码"
             autoComplete="current-password"
-            className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+            className="h-11 w-full nw-input"
           />
           {err ? <p className="text-xs" style={{ color: 'var(--danger)' }}>{err}</p> : null}
           <button
@@ -485,7 +485,7 @@ function SwitchesTab({
             defaultValue={siteName ?? ''}
             onChange={(e) => setSiteName(e.target.value)}
             placeholder="留空使用默认「纳物」"
-            className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+            className="h-10 min-w-0 flex-1 nw-input"
           />
           <button
             onClick={() => void saveText('siteName', siteName ?? '')}
@@ -519,7 +519,7 @@ function SwitchesTab({
             value={siteIcon ?? ''}
             onChange={(e) => setSiteIcon(e.target.value)}
             placeholder="https://…/favicon.png 或上传"
-            className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+            className="h-10 min-w-0 flex-1 nw-input"
           />
         </div>
         <div className="mt-2 flex gap-2">
@@ -662,7 +662,7 @@ function SecurityTab({
             defaultValue={admins[0]?.username ?? ''}
             placeholder="新的登录用户名（3-40 字符）"
             autoComplete="username"
-            className="h-11 min-w-0 flex-1 rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+            className="h-11 min-w-0 flex-1 nw-input"
           />
           <button type="submit" disabled={nameBusy} className="h-11 shrink-0 rounded-btn bg-accent px-4 text-sm font-medium text-white disabled:opacity-60">
             {nameBusy ? '保存中…' : '更新登录名'}
@@ -676,9 +676,9 @@ function SecurityTab({
           修改管理员密码
         </p>
         <div className="space-y-2">
-          <input name="old" type="password" placeholder="当前密码" autoComplete="current-password" className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent" />
-          <input name="new" type="password" placeholder="新密码（至少 6 位）" autoComplete="new-password" className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent" />
-          <input name="confirm" type="password" placeholder="确认新密码" autoComplete="new-password" className="h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent" />
+          <input name="old" type="password" placeholder="当前密码" autoComplete="current-password" className="h-11 w-full nw-input" />
+          <input name="new" type="password" placeholder="新密码（至少 6 位）" autoComplete="new-password" className="h-11 w-full nw-input" />
+          <input name="confirm" type="password" placeholder="确认新密码" autoComplete="new-password" className="h-11 w-full nw-input" />
           {msg ? <p className="text-xs" style={{ color: 'var(--danger)' }}>{msg}</p> : null}
           <button type="submit" className="h-10 w-full rounded-btn bg-accent text-sm font-medium text-white">
             更新密码
@@ -808,7 +808,7 @@ function MailTab({
   };
 
   const inputCls =
-    'h-10 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent';
+    'h-10 w-full nw-input';
 
   return (
     <div className="space-y-2">
@@ -922,7 +922,7 @@ function DbTab({
   }, [load]);
 
   const inputCls =
-    'h-10 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent';
+    'h-10 w-full nw-input';
 
   /** 提交 dbconf（test=true 只测不存）。 */
   const submitConf = async (form: HTMLFormElement, testOnly: boolean): Promise<void> => {

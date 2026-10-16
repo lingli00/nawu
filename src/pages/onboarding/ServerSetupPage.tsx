@@ -137,7 +137,7 @@ export default function ServerSetupPage() {
             inputMode="url"
             autoCapitalize="off"
             autoCorrect="off"
-            className="mt-2 h-11 w-full rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+            className="mt-2 h-11 w-full nw-input"
           />
           {raw.trim() && norm && !norm.ok ? (
             <p className="mt-1.5 text-xs" style={{ color: 'var(--fou)' }}>

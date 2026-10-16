@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Compass } from 'lucide-react';
 import { APP_VERSION } from '../lib/appVersion';
 import { isNative } from '../net/env';
+import { BrandMark } from './BrandMark';
 
 /**
  * 品牌开屏动画（v1.0.17，参考早期开屏方案 + 「显示偏好 → 开屏」开关）。
@@ -82,9 +82,9 @@ export default function SplashOverlay(): JSX.Element | null {
         }}
       />
 
-      {/* Logo：缩放 + 淡入 */}
-      <div className="splash-logo relative mb-6 flex h-28 w-28 items-center justify-center rounded-[32px] bg-accent shadow-lg shadow-accent/30">
-        <Compass size={54} strokeWidth={1.6} className="text-white" aria-hidden />
+      {/* Logo：缩放 + 淡入（★v1.0.33 P2-12：自有字标「纳入」意象，替代通用 Compass） */}
+      <div className="splash-logo relative mb-6">
+        <BrandMark size={104} variant="solid" />
       </div>
 
       {/* 品牌名 */}
