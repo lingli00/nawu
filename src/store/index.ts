@@ -20,5 +20,14 @@ export {
   type ConfirmOptions,
 } from './useUiStore';
 
-/** 备份相关（store 之上的一层编排，页面直接用这两个方法即可）。 */
-export { uploadBackup, restoreBackup, fetchBackupList, deleteRemoteBackup } from './backupActions';
+/** 备份相关（store 之上的一层编排，页面直接用这些方法即可）。 */
+export {
+  uploadBackup,
+  restoreBackup,
+  fetchBackupList,
+  deleteRemoteBackup,
+  applyRestorePayload,
+  importBackupPayload,
+  type RestoreResult,
+  type ImportResult,
+} from './backupActions';

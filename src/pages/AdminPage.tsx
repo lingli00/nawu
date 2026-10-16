@@ -906,6 +906,11 @@ function DbTab({
   const [conf, setConf] = useState<DbConf | null>(null);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
+  /* ---------------- 导入备份（v1.0.34） ---------------- */
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
+  const [includeAdmins, setIncludeAdmins] = useState(false);
+  const [importMsg, setImportMsg] = useState('');
+  const importFileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -974,7 +979,7 @@ function DbTab({
       a.click();
       URL.revokeObjectURL(a.href);
       const n = Object.values(dump.tables as Record<string, unknown[]>).reduce((acc, v) => acc + (Array.isArray(v) ? v.length : 0), 0);
-      setMsg(`备份已下载（${Object.keys(dump.tables as object).length} 张表 / ${n} 行）。恢复备份目前需联系维护者手工导入。`);
+      setMsg(`备份已下载（${Object.keys(dump.tables as object).length} 张表 / ${n} 行）。可在下方「导入备份」里把这份文件灌回去。`);
       toastSuccess('备份已下载');
     } catch (err) {
       setMsg(err instanceof Error ? err.message : '导出失败');
@@ -984,27 +989,164 @@ function DbTab({
     }
   };
 
+  /** 读取本地 JSON 文件为文本（FileReader，兼容低版本 WebView）。 */
+  const readText = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error('读取文件失败'));
+      fr.onload = () => {
+        if (typeof fr.result === 'string') resolve(fr.result);
+        else reject(new Error('读取文件失败'));
+      };
+      fr.readAsText(file);
+    });
+
+  /**
+   * 导入备份（v1.0.34）：选文件 → 本地预览概要并二次确认 → 交给服务端事务导入。
+   *
+   * 客户端只做「格式体检 + 让人看清要覆盖什么」；真正的表名/列名白名单校验
+   * 与事务回滚都在服务端（app/Api.php 的 /api/admin/backup/import）。
+   */
+  const doImport = async (file: File): Promise<void> => {
+    setBusy('import');
+    setImportMsg('');
+    try {
+      const text = await readText(file);
+      let dump: { scope?: string; tables?: Record<string, unknown> } | null = null;
+      try {
+        dump = JSON.parse(text) as { scope?: string; tables?: Record<string, unknown> };
+      } catch {
+        throw new Error('备份文件不是合法的 JSON');
+      }
+      const rawTables = dump && dump.tables;
+      if (!rawTables || typeof rawTables !== 'object' || Array.isArray(rawTables)) {
+        throw new Error('备份文件里没有 tables 字段（不是本系统「数据备份」导出的文件）');
+      }
+      const tables = rawTables as Record<string, unknown>;
+      const names = Object.keys(tables);
+      if (names.length === 0) {
+        throw new Error('备份文件里没有任何数据表');
+      }
+      const rowTotal = names.reduce((acc, k) => acc + (Array.isArray(tables[k]) ? (tables[k] as unknown[]).length : 0), 0);
+      const scope = dump && dump.scope === 'site' ? 'site' : 'all';
+
+      const head =
+        importMode === 'replace'
+          ? `⚠ 覆盖模式：会先【清空】下面这些表再导入，备份之后新增的数据会丢。\n${names.join('、')}`
+          : '合并模式：只覆盖同名主键的行，备份里没有的现有数据一律保留。';
+      const tail = includeAdmins
+        ? '⚠ 已勾选「同时导入管理员表」：导入后后台登录账号与密码会变成备份里的那一套。'
+        : '管理员账号表不会被改动。';
+      const summary = `范围：${scope === 'site' ? '站点数据' : '全站'} · ${names.length} 张表 · ${rowTotal} 行`;
+      if (!window.confirm(`${head}\n\n${summary}\n${tail}\n\n确定现在导入？`)) {
+        setBusy('');
+        return;
+      }
+
+      const res = await adminPost('/api/admin/backup/import', { scope, mode: importMode, includeAdmins, tables });
+      const detail = (res.tables ?? {}) as Record<string, { imported?: number; total?: number }>;
+      const skipped = (res.skipped ?? []) as Array<{ table?: string; reason?: string }>;
+      const lines = Object.keys(detail).map(
+        (t) => `  ${t}：导入 ${detail[t]?.imported ?? 0} / 备份 ${detail[t]?.total ?? 0} 行`,
+      );
+      const skipLines = skipped.map((s) => `  ${s.table ?? '?'}：${s.reason ?? ''}`);
+      setImportMsg(
+        [
+          `导入完成（${importMode === 'replace' ? '覆盖' : '合并'}模式）：${Number(res.tableCount ?? 0)} 张表 / ${Number(res.rowCount ?? 0)} 行。`,
+          ...lines,
+          ...(skipLines.length ? ['以下表被安全策略跳过：', ...skipLines] : []),
+        ].join('\n'),
+      );
+      toastSuccess('备份导入完成');
+      await load();
+    } catch (err) {
+      const m = err instanceof Error ? err.message : '导入失败';
+      setImportMsg(m);
+      toastError(m);
+    } finally {
+      setBusy('');
+    }
+  };
+
   return (
     <div className="space-y-2">
       {/* 备份导出 */}
       <div className="rounded-card border border-line bg-surface p-4">
-        <p className="text-sm font-medium">数据备份</p>
-        <p className="mt-0.5 text-[11px] text-ink-3">导出为 JSON 文件保存在本地；建议定期下载留存。</p>
+        <p className="text-sm font-medium">数据备份 / 恢复</p>
+        <p className="mt-0.5 text-[11px] text-ink-3">导出为 JSON 文件保存在本地；建议定期下载留存，需要时可在下面直接导入回去。</p>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             onClick={() => void exportBackup('site')}
-            disabled={busy === 'site'}
+            disabled={busy === 'site' || busy === 'import'}
             className="h-10 rounded-btn border border-accent px-4 text-sm font-medium text-accent disabled:opacity-60"
           >
             {busy === 'site' ? '导出中…' : '站点数据备份（用户/云备份/名册）'}
           </button>
           <button
             onClick={() => void exportBackup('all')}
-            disabled={busy === 'all'}
+            disabled={busy === 'all' || busy === 'import'}
             className="h-10 rounded-btn border border-accent px-4 text-sm font-medium text-accent disabled:opacity-60"
           >
             {busy === 'all' ? '导出中…' : '全站备份（全部数据表）'}
           </button>
+        </div>
+
+        {/* 导入备份（v1.0.34 补的缺口：此前只有导出、没有导入） */}
+        <div className="mt-4 border-t border-line pt-3">
+          <p className="text-sm font-medium">导入备份</p>
+          <p className="mt-0.5 text-[11px] text-ink-3">
+            选一份上面导出的 .json 文件灌回当前数据库。服务端会先校验表名与列名白名单，全部写入包在一个事务里，任一步失败自动回滚。
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-ink-2">
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="nawuImportMode"
+                checked={importMode === 'merge'}
+                onChange={() => setImportMode('merge')}
+              />
+              合并（保留现有，同名覆盖）
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="nawuImportMode"
+                checked={importMode === 'replace'}
+                onChange={() => setImportMode('replace')}
+                style={{ accentColor: 'var(--danger)' }}
+              />
+              <span style={importMode === 'replace' ? { color: 'var(--danger)' } : undefined}>覆盖（先清空再导入）</span>
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" checked={includeAdmins} onChange={(e) => setIncludeAdmins(e.target.checked)} />
+              同时导入管理员表
+            </label>
+          </div>
+          <button
+            onClick={() => {
+              if (busy === '') importFileRef.current?.click();
+            }}
+            disabled={busy !== ''}
+            className="mt-2 h-10 rounded-btn border border-accent px-4 text-sm font-medium text-accent disabled:opacity-60"
+          >
+            {busy === 'import' ? '导入中…' : '选择备份文件并导入'}
+          </button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) void doImport(f);
+            }}
+          />
+          {importMsg ? (
+            <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-btn border border-line bg-surface-2 p-3 text-[11px] leading-5 text-ink-2">
+              {importMsg}
+            </pre>
+          ) : null}
         </div>
       </div>
 

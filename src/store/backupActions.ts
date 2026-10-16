@@ -100,10 +100,24 @@ export async function restoreBackup(id: number | string): Promise<RestoreResult>
   if (!server) throw new Error('未配置服务器');
 
   const detail = await getBackup(server, id);
+  return applyRestorePayload(detail.payload);
+}
 
+/**
+ * 把一份快照 payload 落到本机（**覆盖本机全部数据 + 设置 + 图标缓存**）。
+ *
+ * ★v1.0.34：从 `restoreBackup()` 里抽出，供**两条**恢复路径共用：
+ *   ① 云端备份 → 恢复（restoreBackup）
+ *   ② 本地 .flyme 文件 → 导入（importBackupPayload）
+ * 两边共用同一套「压缩大图 → 覆盖集合 → 合并设置 → 回填图标缓存」逻辑，
+ * 避免导入/恢复行为不一致（导出侧 backupExport.ts 也是同一个思路）。
+ *
+ * @param raw 快照对象或 JSON 字符串（损坏时抛 parse 错误）
+ */
+export async function applyRestorePayload(raw: unknown): Promise<RestoreResult> {
   /* ★v1.0.19：恢复前先压缩快照里的 img: 大图（≤100KB）——
      旧版大备份在网页端会把 localStorage（flyme.goods）撑爆，报 quota 错。 */
-  let payload = detail.payload;
+  let payload = raw;
   if (typeof payload === 'string') {
     try {
       payload = JSON.parse(payload) as SnapshotPayload;
@@ -118,7 +132,7 @@ export async function restoreBackup(id: number | string): Promise<RestoreResult>
 
   // 传入本机当前 settings：恢复时保留快照里没有的本机自定义键（如 archivedSubIds）
   const currentSettings = useSettingsStore.getState().settings;
-  const applied = applySnapshot(payload, currentSettings);
+  const applied = applySnapshot(payload as SnapshotPayload, currentSettings);
   try {
     await useDataStore.getState().setAllCollections(applied.collections);
   } catch (e) {
@@ -134,14 +148,14 @@ export async function restoreBackup(id: number | string): Promise<RestoreResult>
   let restoredIcons = 0;
   try {
     let icons: unknown = null;
-    if (typeof detail.payload === 'string') {
+    if (typeof payload === 'string') {
       try {
-        icons = (JSON.parse(detail.payload) as { icons?: unknown }).icons ?? null;
+        icons = (JSON.parse(payload) as { icons?: unknown }).icons ?? null;
       } catch {
         /* 整体 JSON 损坏时 applySnapshot 已抛错，这里静默 */
       }
-    } else if (detail.payload && typeof detail.payload === 'object') {
-      icons = (detail.payload as { icons?: unknown }).icons ?? null;
+    } else if (payload && typeof payload === 'object') {
+      icons = (payload as { icons?: unknown }).icons ?? null;
     }
     restoredIcons = await iconCacheImport(icons);
   } catch (e) {
@@ -156,6 +170,42 @@ export async function restoreBackup(id: number | string): Promise<RestoreResult>
     subCount: applied.collections.subscriptions?.length ?? 0,
     restoredIcons,
   };
+}
+
+/** 导入本地备份文件的结果（在恢复结果上追加「是否已同步到云端」）。 */
+export interface ImportResult extends RestoreResult {
+  /** 是否同时上传了一份到云端 */
+  uploaded: boolean;
+  /** 上传云端失败时的人话原因（此时本机数据已经恢复成功） */
+  uploadError?: string;
+}
+
+/**
+ * 导入本机 .flyme 备份文件的内容（**覆盖本机全部数据**）。
+ *
+ * 与「恢复云端备份」的区别只有数据来源：这里是用户手上的文件，
+ * 所以即使**没登录、没配服务器**也能用（换机/重装后的救命入口）。
+ *
+ * @param payload `previewBackupBytes()` 解析出的原始 payload
+ * @param opts.upload 是否在恢复成功后追加一份到云端备份（需已登录 + 有服务器）
+ */
+export async function importBackupPayload(
+  payload: unknown,
+  opts: { upload?: boolean } = {},
+): Promise<ImportResult> {
+  const result = await applyRestorePayload(payload);
+
+  if (!opts.upload) {
+    return { ...result, uploaded: false };
+  }
+  try {
+    // 此刻本机已是导入后的数据，直接抓一份快照传上去
+    await uploadBackup('manual');
+    return { ...result, uploaded: true };
+  } catch (e) {
+    logger.warn('backup', '导入后上传云端失败', humanMessage(e));
+    return { ...result, uploaded: false, uploadError: humanMessage(e) };
+  }
 }
 
 /** 删除一份远端备份。 */
