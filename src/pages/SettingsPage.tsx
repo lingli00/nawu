@@ -1,16 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
 import PageField from '../components/ui/PageField';
 import { Toggle } from '../components/ui/Toggle';
 import { Segmented } from '../components/ui/Segmented';
-import { useAppStore, useSettingsStore, useUiStore, currentServer, toastSuccess, toastError } from '../store';
+import { useAppStore, useSettingsStore, currentServer, toastSuccess, toastError } from '../store';
 import { CURRENCIES } from '../lib/money';
 import { fmtTimestamp } from '../lib/date';
-import { APP_VERSION, compareVersions } from '../lib/appVersion';
-import { checkAppVersion, openAppDownload } from '../api/app';
+import { APP_VERSION } from '../lib/appVersion';
 import { isNative } from '../net/env';
 import { haptic } from '../lib/haptics';
+import { checkAppUpdate, type AppUpdateTarget } from '../api/appUpdate';
+import { runAppUpdate, fmtSize, type UpdateProgress } from '../api/appUpdateFlow';
 import type { ThemeMode } from '../types/entities';
 
 const THEMES: Array<{ value: ThemeMode; label: string }> = [
@@ -43,32 +44,81 @@ export default function SettingsPage() {
   };
 
   const [checking, setChecking] = useState(false);
+  const [updateTarget, setUpdateTarget] = useState<AppUpdateTarget | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [progress, setProgress] = useState<UpdateProgress | null>(null);
 
-  /** 检查更新：请求服务端 version → 无更新 toast；有更新 confirm 后打开下载。 */
-  const checkUpdate = async () => {
-    if (checking) return;
+  /** 自动检查节流键：24 小时内不重复打扰（成功/失败都记，避免离线用户每次进设置页都等一轮超时）。 */
+  const AUTO_CHECK_KEY = 'nawu-app-update-last-check';
+  const AUTO_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
+
+  /**
+   * 检查更新：官方频道优先（含增量补丁），取不到再回退用户自己的服务器。
+   * auto=true 时是后台静默检查，不弹任何提示，只更新 updateTarget。
+   */
+  const checkUpdate = async (auto = false) => {
+    if (checking || updating) return;
     const server = currentServer();
-    if (!server) {
-      toastError('请先在「服务器管理」中配置服务器');
-      return;
-    }
     setChecking(true);
     try {
-      const info = await checkAppVersion(server);
-      const remote = (info.version ?? '').trim();
-      if (!remote || compareVersions(remote, APP_VERSION) <= 0) {
+      const target = await checkAppUpdate(server);
+      setUpdateTarget(target);
+      if (!target && !auto) {
         toastSuccess(`已是最新版本 v${APP_VERSION}`);
-      } else {
-        const confirmed = await useUiStore.getState().confirm({
-          title: `发现新版本 v${remote}`,
-          message: info.notes ? info.notes : `将跳转浏览器下载安装包（当前 v${APP_VERSION}），下载完成后点击通知安装。`,
-        });
-        if (confirmed) await openAppDownload(server.url);
       }
     } catch (e) {
-      toastError(e instanceof Error && e.message ? e.message : '检查更新失败，请确认服务器可访问');
+      if (!auto) {
+        toastError(e instanceof Error && e.message ? e.message : '检查更新失败，请确认服务器可访问');
+      }
+    } finally {
+      try {
+        localStorage.setItem(AUTO_CHECK_KEY, String(Date.now()));
+      } catch {
+        // 隐私模式等场景写不进去，忽略
+      }
+      setChecking(false);
     }
-    setChecking(false);
+  };
+
+  /** 进入设置页时静默检查一次（24h 节流），有更新就直接展示更新面板。 */
+  useEffect(() => {
+    if (!isNative()) return;
+    let last = 0;
+    try {
+      last = Number(localStorage.getItem(AUTO_CHECK_KEY) ?? '0') || 0;
+    } catch {
+      last = 0;
+    }
+    if (Date.now() - last < AUTO_CHECK_INTERVAL) return;
+    void checkUpdate(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** 执行应用内更新（下载 → 可选差分包合并 → 校验 → 调起安装器）。 */
+  const runUpdate = async () => {
+    const target = updateTarget;
+    if (!target || updating) return;
+    setUpdating(true);
+    setProgress(null);
+    try {
+      const outcome = await runAppUpdate(target, setProgress);
+      if (outcome.started) {
+        toastSuccess(outcome.message);
+        if (outcome.usedPatch) void haptic('success');
+      } else {
+        toastError(outcome.message);
+      }
+    } catch (e) {
+      toastError(e instanceof Error && e.message ? e.message : '更新失败，请稍后重试');
+    } finally {
+      setUpdating(false);
+      setProgress(null);
+    }
+  };
+
+  const updatePct = (): number => {
+    if (!progress || !progress.total || progress.total <= 0) return 0;
+    return Math.min(100, Math.floor((progress.received / progress.total) * 100));
   };
 
   return (
@@ -203,16 +253,70 @@ export default function SettingsPage() {
       {/* 应用更新（仅 App 显示——网页端在浏览器里打开即是最新版，无"应用更新"可言） */}
       {isNative() ? (
         <section className="mt-3 rounded-card border border-line bg-surface p-4">
-          <h2 className="text-sm font-semibold">应用更新</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">应用更新</h2>
+            {updateTarget && !updating ? (
+              <span className="rounded-full bg-danger-soft px-2 py-0.5 text-[10px] font-medium text-danger">有新版本</span>
+            ) : null}
+          </div>
           <p className="mt-1 text-[11px] text-ink-3">
-            当前版本 v{APP_VERSION}。安装包由你的服务器提供，更新前请确保可以访问服务器。
+            当前版本 v{APP_VERSION}
+            {updateTarget
+              ? ` · 更新来源：${updateTarget.source === 'channel' ? '官方频道' : '你的服务器'}`
+              : ' · 更新来源：官方频道（不可达时回退你的服务器）'}
           </p>
+
+          {/* 发现新版本：版本信息 + 更新说明 + 立即更新 */}
+          {updateTarget ? (
+            <div className="mt-3 rounded-btn border border-line bg-surface-2 p-3">
+              <div className="flex items-baseline justify-between">
+                <p className="text-sm font-semibold">v{APP_VERSION} → v{updateTarget.version}</p>
+                <span className="text-[11px] text-ink-3">
+                  {updateTarget.patch ? `增量 ${fmtSize(updateTarget.patch.size)}` : `完整包 ${fmtSize(updateTarget.apkSize)}`}
+                </span>
+              </div>
+              {updateTarget.publishedAt ? (
+                <p className="mt-0.5 text-[11px] text-ink-3">发布于 {fmtTimestamp(updateTarget.publishedAt)}</p>
+              ) : null}
+              {updateTarget.notes ? (
+                <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-ink-2">{updateTarget.notes}</p>
+              ) : null}
+              {updateTarget.patch ? (
+                <p className="mt-1 text-[10px] text-ink-3">支持增量更新：只下载差异部分，合并后自动校验；失败会自动改用完整安装包。</p>
+              ) : null}
+              <button
+                onClick={() => void runUpdate()}
+                disabled={updating}
+                className="mt-3 h-10 w-full rounded-btn bg-accent text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {updating ? '更新中…' : '立即更新'}
+              </button>
+            </div>
+          ) : null}
+
+          {/* 更新进度 */}
+          {updating && progress ? (
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-[11px] text-ink-2">
+                <span>{progress.text}</span>
+                {progress.total > 0 ? <span>{updatePct()}%</span> : null}
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-line">
+                <div
+                  className="h-full rounded-full bg-accent transition-all duration-300"
+                  style={{ width: `${updatePct()}%` }}
+                />
+              </div>
+              <p className="mt-1 text-[10px] text-ink-3">更新过程请保持应用在前台，完成后按系统提示安装。</p>
+            </div>
+          ) : null}
+
           <button
             onClick={() => void checkUpdate()}
-            disabled={checking}
+            disabled={checking || updating}
             className="mt-3 h-10 w-full rounded-btn bg-accent-soft text-sm font-medium text-accent disabled:opacity-40"
           >
-            {checking ? '正在检查…' : '检查更新'}
+            {checking ? '正在检查…' : updateTarget ? '重新检查' : '检查更新'}
           </button>
         </section>
       ) : null}

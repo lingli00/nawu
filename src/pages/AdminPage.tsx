@@ -1,14 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Database, KeyRound, LogOut, Mail, RefreshCw, Shield, ShieldCheck, ToggleLeft, ToggleRight, UserCog, Users,
+  ArrowLeft, Database, Download, KeyRound, LogOut, Mail, RefreshCw, Shield, ShieldCheck, ToggleLeft, ToggleRight, UserCog, Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { request } from '../net/httpClient';
 import { ApiError } from '../lib/error';
-import { currentServer, toastError, toastSuccess } from '../store';
+import { currentServer, toastError, toastSuccess, useUiStore } from '../store';
 import type { ServerConfig } from '../types/entities';
 import { compressIconFile } from '../lib/brandIcon';
+import {
+  cancelJob,
+  checkServerUpdate,
+  fetchAppRelease,
+  fetchJob,
+  fetchServerInfo,
+  fetchSource,
+  publishAppRelease,
+  rollbackServer,
+  runMigration,
+  saveSource,
+  startServerUpdate,
+  testSource,
+} from '../api/serverUpdate';
+import type { AppReleaseManifest, ServerUpdateInfo, UpdateCheckResult, UpdateJob } from '../api/serverUpdate';
 
 /**
  * 管理后台（v1.0.7 起并入统一代码库，替代旧 PC 网页的 /#/admin）：
@@ -59,7 +74,8 @@ export default function AdminPage(): JSX.Element {
       return '';
     }
   });
-  const [tab, setTab] = useState<'users' | 'switches' | 'mail' | 'db' | 'security'>('users');
+  const [tab, setTab] = useState<'users' | 'switches' | 'mail' | 'db' | 'update' | 'security'>('users');
+  const [updateDot, setUpdateDot] = useState(false);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [settings, setSettings] = useState<AdminSettings>({});
   const [admins, setAdmins] = useState<Array<{ username: string; display_name: string; created_at: string }>>([]);
@@ -188,18 +204,22 @@ export default function AdminPage(): JSX.Element {
             ['switches', '站点开关', ToggleLeft],
             ['mail', '邮件服务', Mail],
             ['db', '数据库', Database],
+            ['update', '在线更新', Download],
             ['security', '账号安全', KeyRound],
           ] as Array<[typeof tab, string, LucideIcon]>
         ).map(([k, label, Icon]) => (
           <button
             key={k}
             onClick={() => setTab(k)}
-            className={`flex flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-btn px-3 py-2 text-sm transition-colors ${
+            className={`relative flex flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-btn px-3 py-2 text-sm transition-colors ${
               tab === k ? 'bg-accent-soft font-semibold text-accent' : 'text-ink-3'
             }`}
           >
             <Icon size={16} strokeWidth={1.8} aria-hidden />
             {label}
+            {k === 'update' && updateDot ? (
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-danger" aria-label="有新版本" />
+            ) : null}
           </button>
         ))}
       </div>
@@ -208,6 +228,7 @@ export default function AdminPage(): JSX.Element {
       {tab === 'switches' ? <SwitchesTab settings={settings} adminPost={adminPost} reload={() => void loadAll()} /> : null}
       {tab === 'mail' ? <MailTab adminGet={adminGet} adminPost={adminPost} /> : null}
       {tab === 'db' ? <DbTab adminGet={adminGet} adminPost={adminPost} /> : null}
+      {tab === 'update' ? <ServerUpdateTab token={token} onDot={setUpdateDot} /> : null}
       {tab === 'security' ? <SecurityTab admins={admins} adminPost={adminPost} onLogout={() => setToken('')} /> : null}
     </div>
   );
@@ -1214,6 +1235,563 @@ function DbTab({
           </div>
         </form>
         {msg ? <p className="mt-2 whitespace-pre-wrap text-xs text-ink-2">{msg}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+/* ==================== v1.0.36 · 在线更新 Tab ==================== */
+
+const UPDATE_CHECK_KEY = 'gf.adminUpdateCheck';
+const UPDATE_CHECK_TTL_MS = 24 * 3600 * 1000;
+
+function fmtSizeMb(mb: number | null | undefined): string {
+  if (mb === null || mb === undefined) return '—';
+  return mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(1) + ' MB';
+}
+
+/**
+ * 服务端在线更新 + App 安装包发布（v1.0.36）。
+ *
+ * - 卡片 A 版本信息：本地服务端版本 / 更新源 / 已应用版本 / 磁盘 / schema / App 发布版；
+ * - 卡片 B 检查更新：diff 统计（新增·更新·删除·保留）+ 删除清单预览 + 强制重装；
+ * - 卡片 C 更新进度：2s 轮询（轮询本身即在服务端推进任务），完成自动刷新页面；
+ * - 卡片 D App 发布：选 APK + 版本号 + 说明 → 服务端原子写 manifest（免手工维护）；
+ * - 卡片 E 更新源：URL + 自动检查开关 + 测试连接；
+ * - 卡片 F 历史与回滚：备份列表 + 一键回滚 + 数据库迁移。
+ *
+ * 进后台每 24h 静默检查一次（localStorage 节流），发现新版在 Tab 上亮红点。
+ */
+function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean) => void }): JSX.Element {
+  const [info, setInfo] = useState<ServerUpdateInfo | null>(null);
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState('');
+  const [check, setCheck] = useState<UpdateCheckResult | null>(null);
+  const [job, setJob] = useState<UpdateJob | null>(null);
+  const [force, setForce] = useState(false);
+  const [lastAutoCheck, setLastAutoCheck] = useState('');
+  const [srcUrl, setSrcUrl] = useState('');
+  const [srcAuto, setSrcAuto] = useState(true);
+  const [appFile, setAppFile] = useState<File | null>(null);
+  const [appVersion, setAppVersion] = useState('');
+  const [appNotes, setAppNotes] = useState('');
+  const [appManifest, setAppManifest] = useState<AppReleaseManifest | null>(null);
+  const [appExists, setAppExists] = useState(false);
+  const [publishMsg, setPublishMsg] = useState('');
+  const apkInputRef = useRef<HTMLInputElement | null>(null);
+
+  const loadInfo = useCallback(async (): Promise<void> => {
+    try {
+      const [i, s, a] = await Promise.all([
+        fetchServerInfo(currentServer(), token),
+        fetchSource(currentServer(), token),
+        fetchAppRelease(currentServer(), token),
+      ]);
+      setInfo(i.info);
+      setSrcUrl(s.url);
+      setSrcAuto(s.autoCheck);
+      setAppManifest(a.manifest);
+      setAppExists(a.fileExists);
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '加载失败');
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void loadInfo();
+  }, [loadInfo]);
+
+  /* ---- 自动检查：每 24h 一次，静默，只亮红点 ---- */
+  useEffect(() => {
+    if (!token) return;
+    let last = '0';
+    try {
+      last = localStorage.getItem(UPDATE_CHECK_KEY) ?? '0';
+    } catch {
+      /* 隐私模式等场景读不到就算了 */
+    }
+    if (Date.now() - Number(last) < UPDATE_CHECK_TTL_MS) return;
+    try {
+      localStorage.setItem(UPDATE_CHECK_KEY, String(Date.now()));
+    } catch {
+      /* ignore */
+    }
+    void (async () => {
+      try {
+        const r = await checkServerUpdate(currentServer(), token);
+        setLastAutoCheck(new Date().toLocaleString('zh-CN', { hour12: false }));
+        setCheck(r);
+        if (r.comparison === 'newer' && r.canUpdate) onDot(true);
+      } catch {
+        /* 静默失败不打扰用户 */
+      }
+    })();
+  }, [token, onDot]);
+
+  /* ---- 任务轮询：轮询即推进（服务端每次响应前先干 ≤18s 的活） ---- */
+  useEffect(() => {
+    const id = job?.id;
+    const st = job?.status;
+    if (!id || (st !== 'running' && st !== 'stalled')) return;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const r = await fetchJob(currentServer(), token, id);
+          setJob(r.job);
+          const j = r.job;
+          if (j && j.status !== 'running' && j.status !== 'stalled') {
+            window.clearInterval(timer);
+            if (j.status === 'done') {
+              toastSuccess('更新完成，页面即将刷新');
+              window.setTimeout(() => window.location.reload(), 1500);
+            } else if (j.status === 'rolled_back') {
+              toastError('更新失败，已自动回滚：' + (j.error ?? ''));
+            } else {
+              toastError('更新失败：' + (j.error ?? ''));
+            }
+            void loadInfo();
+          }
+        } catch {
+          /* 轮询失败不打断，下一轮再试 */
+        }
+      })();
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [job?.id, job?.status, token, loadInfo]);
+
+  const doCheck = async (forceMode = false): Promise<void> => {
+    setBusy('check');
+    setMsg('');
+    try {
+      const r = await checkServerUpdate(currentServer(), token, forceMode);
+      setCheck(r);
+      setForce(forceMode);
+      onDot(r.comparison === 'newer' && r.canUpdate);
+      if (!r.canUpdate && r.reason) setMsg(r.reason);
+      else if (r.comparison === 'newer') toastSuccess(`发现新版本 v${r.remote.version}`);
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '检查更新失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doUpdate = async (): Promise<void> => {
+    const s = currentServer();
+    if (!s) {
+      toastError('请先配置服务器');
+      return;
+    }
+    if (!check || !check.canUpdate) {
+      toastError('请先检查更新');
+      return;
+    }
+    const d = check.diff;
+    const delPreview = d.deletedList.slice(0, 50).join('；');
+    const ok = await useUiStore.getState().confirm({
+      title: `更新到 v${check.remote.version}？`,
+      message:
+        `新增 ${d.added} 个文件 · 更新 ${d.updated} 个 · 删除 ${d.deleted} 个 · 保留 ${d.kept} 个` +
+        (d.deleted > 0
+          ? `。将删除：${delPreview}${d.deleted > 50 ? ' …等共 ' + d.deleted + ' 个' : ''}`
+          : '。') +
+        '。更新前自动备份，失败可一键回滚；更新期间请勿关闭页面。',
+      confirmText: '开始更新',
+      danger: d.deleted > 0,
+    });
+    if (!ok) return;
+    setBusy('update');
+    setMsg('');
+    try {
+      const r = await startServerUpdate(s, token, force, s.url);
+      const jr = await fetchJob(s, token, r.jobId);
+      setJob(jr.job);
+      setMsg(r.resumed ? '已接管此前的更新任务，继续执行。' : '更新任务已启动。');
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '启动更新失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doCancel = async (): Promise<void> => {
+    if (!job) return;
+    setBusy('cancel');
+    try {
+      await cancelJob(currentServer(), token, job.id);
+      setJob(null);
+      toastSuccess('已取消');
+      void loadInfo();
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '取消失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doRollback = async (backupId: string): Promise<void> => {
+    const ok = await useUiStore.getState().confirm({
+      title: '回滚到该备份？',
+      message: '将用备份覆盖当前站点文件（更新新增的文件会被删除）。回滚后页面自动刷新。',
+      confirmText: '确认回滚',
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy('rollback');
+    try {
+      const r = await rollbackServer(currentServer(), token, backupId);
+      toastSuccess(`已回滚（恢复 ${r.restored} 个文件）`);
+      window.setTimeout(() => window.location.reload(), 1200);
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '回滚失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doSaveSource = async (): Promise<void> => {
+    setBusy('source');
+    try {
+      await saveSource(currentServer(), token, srcUrl.trim(), srcAuto);
+      toastSuccess('更新源已保存');
+      void loadInfo();
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '保存失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doTestSource = async (): Promise<void> => {
+    setBusy('test');
+    try {
+      const r = await testSource(currentServer(), token, srcUrl.trim());
+      toastSuccess(`连接成功：远端版本 v${r.remoteVersion}`);
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '连接失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doPublish = async (): Promise<void> => {
+    if (!appFile) {
+      toastError('请先选择 APK 文件');
+      return;
+    }
+    const v = appVersion.trim();
+    if (!/^[0-9A-Za-z._-]{1,32}$/.test(v)) {
+      toastError('版本号不合法（字母/数字/点/中划线/下划线，≤32 位）');
+      return;
+    }
+    if (appFile.size > 300 * 1024 * 1024) {
+      toastError('APK 超过 300MB 上限');
+      return;
+    }
+    const ok = await useUiStore.getState().confirm({
+      title: `发布 App v${v}？`,
+      message: '将替换当前安装包，用户端下次检查更新即可收到；旧安装包会被清理。',
+      confirmText: '发布',
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy('publish');
+    setPublishMsg('');
+    try {
+      const r = await publishAppRelease(currentServer(), token, appFile, v, appNotes.trim());
+      setPublishMsg(`已发布 v${r.manifest.version}（${(r.manifest.fileSize / 1048576).toFixed(1)} MB，${r.manifest.publishedAt}）`);
+      setAppFile(null);
+      setAppNotes('');
+      if (apkInputRef.current) apkInputRef.current.value = '';
+      toastSuccess('App 安装包已发布');
+      void loadInfo();
+    } catch (e) {
+      setPublishMsg(e instanceof Error ? e.message : '发布失败');
+      toastError('发布失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doMigrate = async (): Promise<void> => {
+    setBusy('migrate');
+    try {
+      const r = await runMigration(currentServer(), token);
+      toastSuccess(r.log.length > 0 ? `迁移完成：v${r.from} → v${r.to}` : '没有待执行的迁移');
+      void loadInfo();
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '迁移失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const inputCls = 'h-10 w-full nw-input';
+  const btnPrimary = 'h-10 rounded-btn bg-accent text-sm font-medium text-white disabled:opacity-60';
+  const btnGhost = 'h-10 rounded-btn border border-accent text-sm font-medium text-accent disabled:opacity-60';
+  const btnDanger = 'h-10 rounded-btn border border-danger text-sm font-medium text-danger disabled:opacity-60';
+
+  const jobActive = job !== null && (job.status === 'running' || job.status === 'stalled');
+
+  return (
+    <div>
+      {/* 卡片 A · 版本信息 */}
+      <div className="rounded-card border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold">版本信息</h2>
+        <div className="mt-3 grid grid-cols-2 gap-y-2 text-xs sm:grid-cols-3">
+          <div>
+            <p className="text-ink-3">服务端版本</p>
+            <p className="mt-0.5 font-semibold">v{info?.version ?? '—'}</p>
+          </div>
+          <div>
+            <p className="text-ink-3">已应用版本</p>
+            <p className="mt-0.5 font-semibold">{info?.applied ? `v${info.applied.version}（${info.applied.appliedAt}）` : '尚未通过在线更新'}</p>
+          </div>
+          <div>
+            <p className="text-ink-3">App 发布版本</p>
+            <p className="mt-0.5 font-semibold">
+              {appManifest?.version ? `v${appManifest.version}${appExists ? '' : '（安装包缺失）'}` : '未发布'}
+            </p>
+          </div>
+          <div>
+            <p className="text-ink-3">更新源</p>
+            <p className="mt-0.5 break-all">{info?.source.effective ?? '—'}</p>
+          </div>
+          <div>
+            <p className="text-ink-3">运行环境</p>
+            <p className="mt-0.5">PHP {info?.php ?? '—'} · {info?.os ?? '—'}</p>
+          </div>
+          <div>
+            <p className="text-ink-3">磁盘可用</p>
+            <p className="mt-0.5">{fmtSizeMb(info?.diskFreeMb)}</p>
+          </div>
+        </div>
+        <p className="mt-2 text-[11px] text-ink-3">
+          数据库结构版本 v{info?.schema.current ?? '—'} / v{info?.schema.target ?? '—'}
+          {lastAutoCheck ? ` · 上次自动检查 ${lastAutoCheck}` : ''}
+        </p>
+      </div>
+
+      {/* 卡片 B · 检查更新 */}
+      <div className="mt-3 rounded-card border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold">检查更新</h2>
+        <p className="mt-1 text-[11px] text-ink-3">
+          从更新源拉取版本清单（manifest 仅几 KB），本地逐文件比对后给出变更统计；不会自动下载。
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button onClick={() => void doCheck(false)} disabled={busy === 'check'} className={btnPrimary}>
+            {busy === 'check' ? '检查中…' : '检查更新'}
+          </button>
+          <label className="flex items-center gap-1.5 text-xs text-ink-2">
+            <input
+              type="checkbox"
+              checked={force}
+              onChange={(e) => setForce(e.target.checked)}
+              style={{ accentColor: 'var(--danger)' }}
+            />
+            强制重装（同版本修复安装 / 降级）
+          </label>
+        </div>
+        {msg ? <p className="mt-2 whitespace-pre-wrap text-xs text-ink-2">{msg}</p> : null}
+        {check ? (
+          <div className="mt-3 rounded-btn border border-line bg-paper p-3 text-xs">
+            <p className="font-semibold">
+              远端 v{check.remote.version}
+              {check.remote.publishedAt ? `（${check.remote.publishedAt}）` : ''} · 安装包 {(check.remote.packageSize / 1048576).toFixed(1)} MB
+              <span className="ml-2 text-ink-3">对比本地 v{check.local.version}</span>
+            </p>
+            <p className="mt-1 text-ink-2">
+              新增 {check.diff.added} · 更新 {check.diff.updated} · 删除 {check.diff.deleted} · 保留 {check.diff.kept} · 清单共 {check.diff.totalRemote} 个文件
+            </p>
+            {check.remote.notes ? (
+              <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-[11px] leading-relaxed text-ink-2">
+                {check.remote.notes}
+              </pre>
+            ) : null}
+            {check.diff.deleted > 0 ? (
+              <div className="mt-2">
+                <p className="text-danger">将删除的文件（前 {Math.min(check.diff.deletedList.length, 50)} 个）：</p>
+                <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-[11px] leading-relaxed text-ink-2">
+                  {check.diff.deletedList.slice(0, 50).join('\n')}
+                  {check.diff.deleted > 50 ? `\n…等共 ${check.diff.deleted} 个` : ''}
+                </pre>
+              </div>
+            ) : null}
+            <div className="mt-3">
+              <button
+                onClick={() => void doUpdate()}
+                disabled={!check.canUpdate || busy === 'update' || jobActive}
+                className={btnPrimary}
+              >
+                {busy === 'update' ? '启动中…' : jobActive ? '更新进行中…' : '立即更新'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* 卡片 C · 更新进度 */}
+      {job ? (
+        <div className="mt-3 rounded-card border border-line bg-surface p-4">
+          <h2 className="text-sm font-semibold">
+            更新进度 · {job.phaseLabel}
+            {job.status === 'done' ? '（已完成）' : job.status === 'failed' || job.status === 'rolled_back' ? '（已终止）' : ''}
+          </h2>
+          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-2">
+            <div className="h-full rounded-btn bg-accent transition-all" style={{ width: `${job.percent}%` }} />
+          </div>
+          <p className="mt-2 text-xs text-ink-2">
+            {job.message}
+            {job.progress && job.phase === 'downloading'
+              ? ` · ${(job.progress.bytes / 1048576).toFixed(1)} / ${(job.progress.totalBytes / 1048576).toFixed(1)} MB`
+              : ''}
+            {job.progress && (job.phase === 'extracting' || job.phase === 'applying')
+              ? ` · ${job.progress.fileIndex} / ${job.progress.fileTotal} 个文件`
+              : ''}
+          </p>
+          {job.error ? <p className="mt-1 text-xs text-danger">{job.error}</p> : null}
+          {job.migration && job.migration.log.length > 0 ? (
+            <p className="mt-1 text-xs text-ink-2">数据库迁移：{job.migration.log.join('；')}</p>
+          ) : null}
+          {job.log.length > 0 ? (
+            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-paper p-2 text-[11px] leading-relaxed text-ink-2">
+              {job.log.map((l) => `${l.t} ${l.msg}`).join('\n')}
+            </pre>
+          ) : null}
+          {jobActive ? (
+            <button onClick={() => void doCancel()} disabled={busy === 'cancel'} className={`mt-3 ${btnDanger}`}>
+              {busy === 'cancel' ? '取消中…' : '取消更新'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* 卡片 D · App 发布 */}
+      <div className="mt-3 rounded-card border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold">App 安装包发布</h2>
+        <p className="mt-1 text-[11px] text-ink-3">
+          上传 APK 即发布：服务端自动写入 storage/app-release/manifest.json（含历史记录），用户端下次检查更新即可收到。
+          当前发布：{appManifest?.version ? `v${appManifest.version}` : '未发布'}
+          {appManifest?.publishedAt ? ` · ${appManifest.publishedAt}` : ''}
+          {appManifest?.version && !appExists ? ' · 安装包文件缺失' : ''}
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <input
+            value={appVersion}
+            onChange={(e) => setAppVersion(e.target.value)}
+            placeholder="版本号（如 1.0.36）"
+            className={inputCls}
+          />
+          <input
+            value={appNotes}
+            onChange={(e) => setAppNotes(e.target.value)}
+            placeholder="更新说明（可选，≤4000 字）"
+            className={inputCls}
+          />
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button onClick={() => apkInputRef.current?.click()} className={btnGhost}>
+            选择 APK 文件
+          </button>
+          <span className="text-xs text-ink-2">
+            {appFile ? `${appFile.name}（${(appFile.size / 1048576).toFixed(1)} MB）` : '未选择文件'}
+          </span>
+          <button onClick={() => void doPublish()} disabled={busy === 'publish' || !appFile} className={btnPrimary}>
+            {busy === 'publish' ? '发布中…' : '发布'}
+          </button>
+        </div>
+        <input
+          ref={apkInputRef}
+          type="file"
+          accept=".apk,application/vnd.android.package-archive"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null;
+            setAppFile(f);
+            if (f && !appVersion.trim()) {
+              const m = f.name.match(/nawu-v([0-9A-Za-z._-]+)\.apk$/i);
+              if (m) setAppVersion(m[1]);
+            }
+          }}
+        />
+        {publishMsg ? <p className="mt-2 whitespace-pre-wrap text-xs text-ink-2">{publishMsg}</p> : null}
+        {appManifest && appManifest.history.length > 0 ? (
+          <p className="mt-2 text-[11px] text-ink-3">
+            历史发布：{appManifest.history.map((h) => `v${h.version}`).join('、')}
+          </p>
+        ) : null}
+      </div>
+
+      {/* 卡片 E · 更新源设置 */}
+      <div className="mt-3 rounded-card border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold">更新源</h2>
+        <p className="mt-1 text-[11px] text-ink-3">
+          服务端在线更新与 App 更新默认都走官方频道；此处可改为你自己的频道地址（留空恢复官方默认）。
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            value={srcUrl}
+            onChange={(e) => setSrcUrl(e.target.value)}
+            placeholder={info?.source.effective ?? 'http://106.53.204.29:2233/nawu-update/'}
+            className={`${inputCls} flex-1`}
+          />
+          <label className="flex items-center gap-1.5 text-xs text-ink-2">
+            <input
+              type="checkbox"
+              checked={srcAuto}
+              onChange={(e) => setSrcAuto(e.target.checked)}
+              style={{ accentColor: 'var(--accent)' }}
+            />
+            进后台自动检查
+          </label>
+        </div>
+        <div className="mt-2 flex gap-2">
+          <button onClick={() => void doTestSource()} disabled={busy === 'test'} className={btnGhost}>
+            {busy === 'test' ? '测试中…' : '测试连接'}
+          </button>
+          <button onClick={() => void doSaveSource()} disabled={busy === 'source'} className={btnPrimary}>
+            {busy === 'source' ? '保存中…' : '保存'}
+          </button>
+        </div>
+      </div>
+
+      {/* 卡片 F · 历史与回滚 */}
+      <div className="mt-3 rounded-card border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold">历史与回滚</h2>
+        <p className="mt-1 text-[11px] text-ink-3">
+          每次更新前自动备份待改文件（最多保留 3 份）。更新出问题时可回滚到任一备份。
+        </p>
+        {info && info.backups.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {info.backups.map((b) => (
+              <div key={b.id} className="flex items-center justify-between gap-2 rounded-btn border border-line bg-paper p-2 text-xs">
+                <span className="min-w-0">
+                  <span className="font-semibold">v{b.version || '—'}</span>
+                  <span className="ml-2 text-ink-3">
+                    {b.createdAt} · {b.fileCount} 个文件 · {fmtSizeMb(b.sizeMb)}
+                  </span>
+                </span>
+                <button
+                  onClick={() => void doRollback(b.id)}
+                  disabled={busy === 'rollback' || jobActive}
+                  className="h-8 shrink-0 rounded-btn border border-danger px-3 text-xs font-medium text-danger disabled:opacity-60"
+                >
+                  回滚
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-ink-3">暂无备份（完成一次更新后会出现）。</p>
+        )}
+        <div className="mt-3 flex items-center gap-2">
+          <button onClick={() => void doMigrate()} disabled={busy === 'migrate'} className={btnGhost}>
+            {busy === 'migrate' ? '执行中…' : '执行数据库迁移'}
+          </button>
+          <span className="text-[11px] text-ink-3">
+            当前 v{info?.schema.current ?? '—'} / 目标 v{info?.schema.target ?? '—'}
+          </span>
+        </div>
       </div>
     </div>
   );

@@ -31,6 +31,10 @@ export interface RequestOptions {
   path: string;
   /** 会被 JSON.stringify（★F1：后端只解析 JSON body） */
   body?: unknown;
+  /** 原始请求体（v1.0.36：后台发布 APK 用，优先级高于 body，原样透传不做序列化） */
+  rawBody?: ArrayBuffer | string;
+  /** 覆盖 Content-Type（v1.0.36：APK 上传用 application/vnd.android.package-archive） */
+  contentType?: string;
   query?: Record<string, string | number>;
   /** 默认 15000；health 用 8000 */
   timeoutMs?: number;
@@ -135,7 +139,7 @@ async function nativeRequest(
       url,
       method: opts.method ?? 'GET',
       headers,
-      data: opts.body,
+      data: opts.rawBody !== undefined ? opts.rawBody : opts.body,
       dataType: 'json', // 响应按 JSON 解析；非 JSON 时 data 回落为字符串
       connectTimeout: timeoutMs,
       readTimeout: timeoutMs,
@@ -169,7 +173,12 @@ async function fetchRequest(
     const res = await fetch(url, {
       method: opts.method ?? 'GET',
       headers,
-      body: (opts.method ?? 'GET') === 'GET' ? undefined : JSON.stringify(opts.body ?? null),
+      body:
+        opts.rawBody !== undefined
+          ? opts.rawBody
+          : (opts.method ?? 'GET') === 'GET'
+            ? undefined
+            : JSON.stringify(opts.body ?? null),
       signal: opts.signal ?? controller.signal,
       credentials: 'omit',
     });
@@ -208,7 +217,7 @@ export async function request<T = unknown>(
   const headers: Record<string, string> = {
     // ★F1：后端 flyme_param() 只读 php://input 做 json_decode，
     // 必须无条件声明 JSON，否则参数被静默忽略（表现为「请输入正确的邮箱地址」）。
-    'Content-Type': 'application/json',
+    'Content-Type': opts.contentType ?? 'application/json',
     Accept: 'application/json',
     ...(opts.headers ?? {}),
   };
@@ -303,4 +312,19 @@ export function del<T = unknown>(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<HttpResponse<T>> {
   return request<T>(server, { method: 'DELETE', path, body, timeoutMs, retry: 0 });
+}
+
+/**
+ * 原始 body POST（v1.0.36：管理后台上传 APK，绕过 JSON 序列化）。
+ * 大文件不重试；超时默认 10 分钟。
+ */
+export function postRaw<T = unknown>(
+  server: Pick<ServerConfig, 'url'> | null | undefined,
+  path: string,
+  rawBody: ArrayBuffer | string,
+  contentType: string,
+  query?: Record<string, string | number>,
+  timeoutMs = 600000,
+): Promise<HttpResponse<T>> {
+  return request<T>(server, { method: 'POST', path, rawBody, contentType, query, timeoutMs, retry: 0 });
 }
