@@ -314,43 +314,209 @@ textarea {
 }
 
 /* ============================================================
-   品牌开屏动画（v1.0.17，开屏动画）
-   rhythm：logo 缩放淡入 700ms → 名称/口号阶梯上浮 → 停留 → 整体淡出
+   「01 净白印」品牌开屏（v1.1.4 终稿规范）
+   页面：纯白底 + 极淡 26px 方格；中央苔藓绿方印（108px，rx 26px）白「纳」，
+   下方品牌名（24px 衬线，字距 .3em）+ 副文案两行 + 三色判断点。明暗双版。
+   动效五段（总 2.4s）：① 点聚 0–0.3s ② 成印 0.3–0.55s ③ 落字 0.55–0.9s
+   ④ 呼吸 0.95–1.35s ⑤ 呼气 1.35–1.95s（开屏 0→−100%，首页 100%→0）。
    ============================================================ */
-@keyframes flyme-splash-logo {
+.nawu-splash {
+  --ns-bg: #ffffff;
+  --ns-grid: #eef0ed;
+  --ns-seal: #3f7d67;
+  --ns-glyph: #ffffff;
+  --ns-ink: #18201c;
+  --ns-sub: #6b7370;
+  --ns-shadow: rgb(63 125 103 / 0.35);
+  background: var(--ns-bg);
+  color: var(--ns-ink);
+  cursor: pointer; /* 可点击跳过 */
+  -webkit-tap-highlight-color: transparent;
+}
+.nawu-splash.is-dark {
+  --ns-bg: #1a1f1d;
+  --ns-grid: #232925;
+  --ns-seal: #63a68c;
+  --ns-glyph: #1a1f1d;
+  --ns-ink: #e9ecea;
+  --ns-sub: #8a938d;
+  --ns-shadow: rgb(0 0 0 / 0.4);
+}
+/* 极淡方格底纹（26px 发丝线） */
+.nawu-splash-grid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(var(--ns-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ns-grid) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+/* 垂直居中单栏（整体略偏上，给底部版本号留位） */
+.nawu-splash-stage {
+  position: relative;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 5vh;
+}
+/* 方印：① 点聚（scale .2→1）② 成印（圆角 50%→26px + 回弹）④ 呼吸（1→1.06→1） */
+.nawu-splash-seal {
+  display: flex;
+  width: 108px;
+  height: 108px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--ns-seal);
+  box-shadow: 0 12px 30px var(--ns-shadow);
+  opacity: 0;
+  transform: scale(0.2);
+  animation: nawu-seal 2400ms linear both;
+}
+@keyframes nawu-seal {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+    border-radius: 50%;
+    animation-timing-function: cubic-bezier(0, 0, 0.58, 1); /* ① ease-out */
+  }
+  12.5% {
+    opacity: 1;
+    transform: scale(1);
+    border-radius: 50%; /* 0.30s：点聚完成 */
+    animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(0.94);
+    border-radius: 44px; /* ② 圆角展开中，轻微收缩 */
+    animation-timing-function: cubic-bezier(0.17, 0.89, 0.32, 1.12);
+  }
+  28.2% {
+    opacity: 1;
+    transform: scale(1);
+    border-radius: 26px; /* 0.55s：成印（回弹至 1.0） */
+    animation-timing-function: linear;
+  }
+  48.7% {
+    opacity: 1;
+    transform: scale(1);
+    border-radius: 26px; /* 0.95s：呼吸起点 */
+    animation-timing-function: cubic-bezier(0.42, 0, 0.58, 1); /* ease-in-out */
+  }
+  69.2% {
+    opacity: 1;
+    transform: scale(1.06);
+    border-radius: 26px; /* 1.35s：呼吸峰值 */
+    animation-timing-function: cubic-bezier(0.42, 0, 0.58, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    border-radius: 26px;
+  }
+}
+/* ③ 落字：「纳」scale .6→1 · opacity 0→1（0.55–0.90s） */
+.nawu-splash-na {
+  display: flex;
+  opacity: 0;
+  transform: scale(0.6);
+  animation: nawu-na 2400ms cubic-bezier(0, 0, 0.58, 1) both;
+}
+@keyframes nawu-na {
+  0%,
+  22.9% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  37.5% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+/* 品牌名 / 副文案 / 三色点：落字后阶梯浮现 */
+.nawu-splash-brand,
+.nawu-splash-tagline,
+.nawu-splash-dots {
+  animation: nawu-splash-rise 700ms cubic-bezier(0, 0, 0.58, 1) both;
+}
+@keyframes nawu-splash-rise {
   from {
     opacity: 0;
-    transform: scale(0.72) rotate(-10deg);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
-@keyframes flyme-splash-up {
-  from {
+.nawu-splash-brand {
+  margin-top: 22px;
+  padding-left: 0.3em; /* 补偿 .3em 字距的尾部空隙，光学居中 */
+  color: var(--ns-ink);
+  font-family: serif; /* 规范 Noto Serif SC，降级为系统衬线 */
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  animation-delay: 550ms;
+}
+.nawu-splash-tagline {
+  margin-top: 10px;
+  color: var(--ns-sub);
+  font-size: 12px;
+  line-height: 1.65;
+  text-align: center;
+  animation-delay: 680ms;
+}
+.nawu-splash-dots {
+  display: flex;
+  margin-top: 18px;
+  gap: 12px;
+  animation-delay: 820ms;
+}
+.nawu-splash-dots i {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+/* 版本号（安全区底部） */
+.nawu-splash-ver {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 28px);
+  left: 0;
+  width: 100%;
+  color: var(--ns-sub);
+  font-size: 11px;
+  text-align: center;
+  opacity: 0.7;
+}
+/* ⑤ 呼气：开屏整体上滑 + 淡出（1.35–1.95s，ease-in） */
+.nawu-splash.is-leaving {
+  animation: nawu-splash-exit 600ms cubic-bezier(0.42, 0, 1, 1) both;
+}
+@keyframes nawu-splash-exit {
+  to {
     opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(-100%);
+  }
+}
+/* ⑤ 呼气同步：首页自屏幕下方滑入（挂在 #root 上，播完即摘） */
+.nawu-home-enter {
+  animation: nawu-home-in 600ms cubic-bezier(0, 0, 0.58, 1) both;
+}
+@keyframes nawu-home-in {
+  from {
+    transform: translateY(100%);
   }
   to {
-    opacity: 1;
     transform: none;
   }
-}
-@keyframes flyme-splash-out {
-  to {
-    opacity: 0;
-    transform: scale(1.05);
-  }
-}
-.splash-logo {
-  animation: flyme-splash-logo 700ms cubic-bezier(0.32, 0.72, 0, 1) both;
-}
-.splash-up {
-  animation: flyme-splash-up 520ms cubic-bezier(0.32, 0.72, 0, 1) both;
-}
-.splash-out {
-  animation: flyme-splash-out 420ms ease-in both;
 }
 
 /* Toast 淡入 */
@@ -387,11 +553,28 @@ textarea {
   .pop-enter,
   .fade-enter,
   .sheet-enter,
-  .toast-enter,
-  .splash-logo,
-  .splash-up,
-  .splash-out {
+  .toast-enter {
     animation: none !important;
+  }
+  /* 开屏：直接呈现终态（1ms 到 100%），呼气改纯淡出，首页不上滑 */
+  .nawu-splash-seal,
+  .nawu-splash-na,
+  .nawu-splash-brand,
+  .nawu-splash-tagline,
+  .nawu-splash-dots {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+  .nawu-splash.is-leaving {
+    animation: nawu-splash-fade 200ms linear both !important;
+  }
+  .nawu-home-enter {
+    animation: none !important;
+  }
+  @keyframes nawu-splash-fade {
+    to {
+      opacity: 0;
+    }
   }
   .shimmer {
     animation: none !important;

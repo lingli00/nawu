@@ -2,15 +2,24 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { APP_VERSION } from '../lib/appVersion';
 import { isNative } from '../net/env';
-import { BrandMark } from './BrandMark';
+import { NaGlyph } from './BrandMark';
 
 /**
- * 品牌开屏动画（v1.0.17，参考早期开屏方案 + 「显示偏好 → 开屏」开关）。
+ * 品牌开屏 —— 「01 净白印」终稿规范（v1.1.4）。
  *
- * - 实现要点：`SingleTickerProviderStateMixin` 驱动 logo 缩放淡入 → 停留 → 淡出，
- *   本版用 CSS keyframes 复刻同一节奏（700ms 入场 + 停留 + 400ms 淡出）；
- * - **App 每次冷启动都播**；网页端同会话只播一次（sessionStorage），避免刷新一次看一次；
- * - 遵循 `prefers-reduced-motion`；
+ * 页面：纯白底 + 极淡 26px 方格；中央苔藓绿方印（108px，rx 26px）白「纳」，
+ * 下方品牌名（24px 衬线，字距 .3em）与哲学副文案两行，末尾三色判断点预告。
+ * 明暗双版跟随 `<html data-theme>`。
+ *
+ * 动效五段（总 ≈2.4s，只播一次，可点击跳过）：
+ *   ① 点聚  0.00–0.30s  绿点 scale .2→1.0 · opacity 0→1     ease-out
+ *   ② 成印  0.30–0.55s  方印 圆角展开 / 缩放回弹至 1.0        ease-out
+ *   ③ 落字  0.55–0.90s  「纳」scale .6→1.0 · opacity 0→1     ease-out
+ *   ④ 呼吸  0.95–1.35s  整印 scale 1.0→1.06→1.0              ease-in-out
+ *   ⑤ 呼气  1.35–1.95s  开屏 translateY 0→−100%（首页 100%→0）ease-in
+ *
+ * - **App 每次冷启动都播**；网页端同会话只播一次（sessionStorage）；
+ * - 遵循 `prefers-reduced-motion`（直接呈现终态 + 短淡出）；
  * - 结束后整层卸载，不留 DOM、不挡点击。
  */
 
@@ -39,14 +48,28 @@ export function shouldShowSplash(): boolean {
   return !alreadyShown(); // 网页：同会话仅一次
 }
 
-/** 总时长 = 停留 STAY + 淡出 LEAVE。 */
-const STAY_MS = 1400;
-const LEAVE_MS = 420;
+/** 方印边长（规范手机稿 108px）。 */
+const SEAL = 108;
+/** 印内「纳」视觉字面高 = 印高 x 47% x 描边外扩（与 PIL 开屏 PNG 一致）。 */
+const NA_INK = SEAL * 0.47 * 1.0237;
+
+/** 呼气段起点 / 时长 / 收尾卸载（规范：①–④ 至 1.35s，⑤ 1.35–1.95s）。 */
+const EXHALE_AT = 1350;
+const EXHALE_MS = 600;
+const UNMOUNT_MS = 2050;
+
+/** 三色判断点（归 / 需 / 否，与 src/domain/stats.ts 一致）。 */
+const DOT_COLORS = ['#3f8f6a', '#4a7fb5', '#c2603f'];
 
 /** 品牌开屏：port 到 body 的最高层，播完自卸。 */
 export default function SplashOverlay(): JSX.Element | null {
   const [show, setShow] = useState<boolean>(() => shouldShowSplash());
   const [leaving, setLeaving] = useState(false);
+  const [dark] = useState<boolean>(
+    () =>
+      typeof document !== 'undefined' &&
+      document.documentElement.dataset.theme === 'dark',
+  );
 
   useEffect(() => {
     if (!show) return;
@@ -54,52 +77,68 @@ export default function SplashOverlay(): JSX.Element | null {
     const reduce =
       typeof window.matchMedia === 'function' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const stay = reduce ? 500 : STAY_MS;
-    const leave = reduce ? 160 : LEAVE_MS;
-    const t1 = window.setTimeout(() => setLeaving(true), stay);
-    const t2 = window.setTimeout(() => setShow(false), stay + leave);
+    const exhaleAt = reduce ? 340 : EXHALE_AT;
+    const unmount = reduce ? 540 : UNMOUNT_MS;
+    const t1 = window.setTimeout(() => setLeaving(true), exhaleAt);
+    const t2 = window.setTimeout(() => setShow(false), unmount);
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
   }, [show]);
 
+  // ⑤ 呼气：首页同步上滑（translateY 100%→0），类挂在 #root 上、播完即摘
+  useEffect(() => {
+    if (!leaving) return;
+    const root = document.getElementById('root');
+    if (!root) return;
+    root.classList.add('nawu-home-enter');
+    const t = window.setTimeout(() => root.classList.remove('nawu-home-enter'), EXHALE_MS + 80);
+    return () => {
+      window.clearTimeout(t);
+      root.classList.remove('nawu-home-enter');
+    };
+  }, [leaving]);
+
   if (!show) return null;
+
+  const skip = (): void => setLeaving(true);
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-[120] flex flex-col items-center justify-center bg-paper ${
-        leaving ? 'splash-out' : ''
-      }`}
-      aria-hidden
+      className={`nawu-splash fixed inset-0 z-[120] overflow-hidden${
+        dark ? ' is-dark' : ''
+      }${leaving ? ' is-leaving' : ''}`}
+      onClick={skip}
+      role="presentation"
     >
-      {/* 背景光晕（accent 低透明度，深浅色自适应） */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 62%)',
-        }}
-      />
+      {/* 极淡方格底纹（26px） */}
+      <div className="nawu-splash-grid" aria-hidden />
 
-      {/* Logo：缩放 + 淡入（★v1.0.33 P2-12：自有字标「纳入」意象，替代通用 Compass） */}
-      <div className="splash-logo relative mb-6">
-        <BrandMark size={104} variant="solid" />
+      {/* 垂直居中单栏：方印 → 品牌名 → 副文案 → 三色点 */}
+      <div className="nawu-splash-stage">
+        {/* 方印：① 点聚 ② 成印 ④ 呼吸（一个元素三段关键帧） */}
+        <div className="nawu-splash-seal">
+          {/* ③ 落字 */}
+          <div className="nawu-splash-na">
+            <NaGlyph ink={NA_INK} color={dark ? '#1a1f1d' : '#ffffff'} />
+          </div>
+        </div>
+        <div className="nawu-splash-brand">纳物</div>
+        <div className="nawu-splash-tagline">
+          给每一笔支出一个
+          <br />
+          「归 / 需 / 否」的判断
+        </div>
+        <div className="nawu-splash-dots" aria-hidden>
+          {DOT_COLORS.map((c) => (
+            <i key={c} style={{ background: c }} />
+          ))}
+        </div>
       </div>
 
-      {/* 品牌名 */}
-      <div className="splash-up relative text-[30px] font-semibold tracking-[0.32em] text-ink" style={{ animationDelay: '240ms' }}>
-        纳物
-      </div>
-      <div className="splash-up relative mt-2 text-[13px] tracking-[0.18em] text-ink-3" style={{ animationDelay: '400ms' }}>
-        NAWU
-      </div>
-
-      {/* Slogan + 版本 */}
-      <div className="splash-up absolute bottom-[calc(env(safe-area-inset-bottom)+28px)] flex flex-col items-center gap-1" style={{ animationDelay: '620ms' }}>
-        <span className="text-[12px] text-ink-3">值得的花销，值得记录</span>
-        <span className="text-[11px] text-ink-3/80">v{APP_VERSION}</span>
-      </div>
+      {/* 版本号（安全区底部） */}
+      <div className="nawu-splash-ver">v{APP_VERSION}</div>
     </div>,
     document.body,
   );
