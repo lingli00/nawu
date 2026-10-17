@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, CircleUser, Cloud, LayoutGrid, Monitor, Settings, Server, Shield, Smartphone, Tags, ChevronRight } from 'lucide-react';
+import { Brain, CircleUser, Cloud, LayoutGrid, Monitor, Settings, Server, Smartphone, Tags, ChevronRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore, useAuthStore, useServerStore, useUiStore, currentServer, toastSuccess } from '../store';
 import { getProfile } from '../api/user';
@@ -150,7 +150,8 @@ export default function MePage() {
           ))}
         </ul>
 
-        {/* 网页专属入口（App 端不显示）：手机版/电脑版手动切换 + 管理后台 */}
+        {/* 网页专属入口（App 端不显示）：手机版/电脑版手动切换
+            （v1.1.5 起不再提供「管理后台」按钮，后台改由隐蔽路径 /#/flyme 进入） */}
         {!isNative() ? (
           <ul className="overflow-hidden rounded-card border border-line bg-surface dt:grid dt:grid-cols-2 dt:gap-3 dt:overflow-visible dt:border-0 dt:bg-transparent">
             <li className="dt:rounded-card dt:border dt:border-line dt:bg-surface">
@@ -166,21 +167,6 @@ export default function MePage() {
                   <span className="block text-[11px] text-ink-3">
                     {shellMode === 'mobile' ? '切换到桌面布局（侧边栏宽屏版）' : '切换到移动布局（底部标签栏）'}
                   </span>
-                </span>
-                <span className="text-ink-3">›</span>
-              </button>
-            </li>
-            <li className="border-t border-line-2 dt:rounded-card dt:border dt:border-t dt:border-line dt:bg-surface">
-              <button
-                onClick={() => nav('/admin')}
-                className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2 dt:rounded-card"
-              >
-                <span className="text-accent">
-                  <Shield size={20} strokeWidth={1.8} aria-hidden />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">管理后台</span>
-                  <span className="block text-[11px] text-ink-3">注册登录控制 · 用户管理 · 功能开关</span>
                 </span>
                 <span className="text-ink-3">›</span>
               </button>

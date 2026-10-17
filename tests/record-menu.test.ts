@@ -68,13 +68,13 @@ describe('RecordMenu · 结构（v1.0.24）', () => {
   });
 });
 
-describe('RecordMenu · 就地弹层（v1.0.28）', () => {
-  it('新增订阅：就地弹出「添加订阅」表单，不跳路由、不写 sessionStorage 标志', async () => {
-    await renderMenu('/ledger'); // 在非首页点击 → 仍应就地弹出，不再跳 /home
+describe('RecordMenu · 就地弹层（v1.0.28 / v1.1.6 整页化）', () => {
+  it('新增订阅：就地打开整页表单，不跳路由、不写 sessionStorage 标志', async () => {
+    await renderMenu('/ledger'); // 在非首页点击 → 仍应就地打开，不再跳 /home
     await act(async () => {
       findButton('新增订阅').click();
     });
-    expect((document.body.textContent ?? '').includes('添加订阅')).toBe(true);
+    expect((document.body.textContent ?? '').includes('新增订阅')).toBe(true);
     expect(sessionStorage.getItem('gf.open.sub')).toBe(null);
   });
 
@@ -87,7 +87,7 @@ describe('RecordMenu · 就地弹层（v1.0.28）', () => {
     expect(sessionStorage.getItem('gf.open.wish')).toBe(null);
   });
 
-  it('弹层关闭（遮罩）→ 菜单一并关闭', async () => {
+  it('整页表单点「返回」→ 菜单一并关闭', async () => {
     let closed = false;
     await renderMenu('/home', () => {
       closed = true;
@@ -95,13 +95,12 @@ describe('RecordMenu · 就地弹层（v1.0.28）', () => {
     await act(async () => {
       findButton('新增订阅').click();
     });
-    expect((document.body.textContent ?? '').includes('添加订阅')).toBe(true);
-    // 点遮罩关闭（SubAddSheet 的遮罩是 body 下 z-40 的 fixed 容器）
-    const overlay = [...document.body.children].find(
-      (el) => (el as HTMLElement).className.includes('fixed inset-0 z-40'),
-    ) as HTMLElement;
+    expect((document.body.textContent ?? '').includes('新增订阅')).toBe(true);
+    // v1.1.6：新增订阅改为整页形态（与 AI 记一笔/价值记账一致），关闭方式是头部返回箭头
+    const back = document.body.querySelector('button[aria-label="返回"]') as HTMLButtonElement | null;
+    expect(back).not.toBeNull();
     await act(async () => {
-      overlay.click();
+      back?.click();
     });
     // closeAll 延迟 60ms 关菜单
     await act(async () => {

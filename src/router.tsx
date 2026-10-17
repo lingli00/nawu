@@ -80,8 +80,9 @@ export const AppRoutes: AppRoute[] = [
   { path: '/rules', element: <RulePage /> },
   { path: '/account', element: <AccountPage /> },
 
-  // —— 管理后台（v1.0.7 起并入统一代码库；服务器 /admin 直出本 SPA）——
-  { path: '/admin', element: <AdminPage /> },
+  // —— 管理后台（v1.0.7 起并入统一代码库；v1.1.5 起入口改隐蔽路径 /flyme）——
+  // 界面上不再有「管理后台」按钮，需手动在地址栏输入 /#/flyme 进入（hash 路由）。
+  { path: '/flyme', element: <AdminPage /> },
 ];
 
 export default AppRoutes;

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, Receipt } from 'lucide-react';
-import { createPortal } from 'react-dom';
 import PageShell from '../components/layout/PageShell';
 import PageField from '../components/ui/PageField';
+import { Sheet } from '../components/ui/Sheet';
 import IconPicker, { IconPreview } from '../components/IconPicker';
 import CategoryManageSheet from '../components/CategoryManageSheet';
 import BillSheet from '../components/BillSheet';
@@ -96,14 +96,11 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
     onClose();
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={onClose}>
-      <div
-        className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-surface p-4"
-        onClick={(e) => e.stopPropagation()}
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
-      >
-        <h2 className="mb-3 text-base font-semibold">添加订阅</h2>
+  /* v1.1.5：与「AI 记一笔」「价值记账」保持同一形态 —— 移动端整页（返回箭头 + 大标题），
+     桌面端右抽屉；不再用底部小 sheet，避免同样是「添加信息」却两种观感。 */
+  return (
+    <>
+      <Sheet side="page" title="新增订阅" onClose={onClose} guard={false} drawerWidth="32rem">
         <div className="space-y-3">
           <div>
             <p className="text-xs font-medium text-ink-2">图标</p>
@@ -157,16 +154,15 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
           <button
             onClick={() => void submitAdd()}
             disabled={!name.trim() || !Number(amount)}
-            className="h-12 w-full rounded-btn bg-accent text-base font-semibold text-white disabled:opacity-40"
+            className="mt-1 h-12 w-full rounded-btn bg-accent text-base font-semibold text-white disabled:opacity-40"
           >
             添加
           </button>
         </div>
-      </div>
+      </Sheet>
       {/* 就地管理订阅分类（不打断添加流程） */}
       {managingCats ? <CategoryManageSheet kind="sub" onClose={() => setManagingCats(false)} /> : null}
-    </div>,
-    document.body,
+    </>
   );
 }
 
@@ -649,14 +645,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
 
   return (
     <>
-      {createPortal(
-        <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={onClose}>
-          <div
-            className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-surface p-4"
-            onClick={(e) => e.stopPropagation()}
-            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
-          >
-            <h2 className="mb-3 text-base font-semibold">编辑订阅</h2>
+      <Sheet side="page" title="编辑订阅" onClose={onClose} guard={false} drawerWidth="32rem">
         <div className="space-y-3">
           <div>
             <p className="text-xs font-medium text-ink-2">图标</p>
@@ -751,10 +740,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
             保存
           </button>
         </div>
-      </div>
-        </div>,
-        document.body,
-      )}
+      </Sheet>
       {/* 就地管理订阅分类（遮罩点击不穿透：管理层与编辑层是兄弟节点） */}
       {managingCats ? <CategoryManageSheet kind="sub" onClose={() => setManagingCats(false)} /> : null}
     </>

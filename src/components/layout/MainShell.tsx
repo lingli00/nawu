@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, ChevronDown, ChevronUp, Home, Plus, ScrollText, Shield, Smartphone, User } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { BarChart3, ChevronDown, ChevronUp, Home, Plus, ScrollText, Smartphone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { APP_VERSION } from '../../lib/appVersion';
 import { haptic } from '../../lib/haptics';
@@ -135,7 +135,8 @@ export default function MainShell({ children }: { children: ReactNode }): JSX.El
     };
   }, [mode]);
   // 管理后台独立全屏：不带主壳侧边栏/底栏，登录卡与内容才能真正居中
-  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+  // v1.1.5：后台入口已收为隐蔽路径 /flyme（界面不再给按钮）
+  if (pathname === '/flyme' || pathname.startsWith('/flyme/')) {
     return <div className="min-h-screen bg-paper text-ink">{children}</div>;
   }
   return mode === 'desktop' ? <DesktopShell>{children}</DesktopShell> : <MobileShell>{children}</MobileShell>;
@@ -145,7 +146,6 @@ export default function MainShell({ children }: { children: ReactNode }): JSX.El
 
 function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
   const { pathname } = useLocation();
-  const nav = useNavigate();
   const narrow = !useMediaQuery('(min-width: 1024px)'); // 手机上强制 PC 版 → 图标窄栏
   const inShell = SHELL_PATHS.has(pathname);
   const rail = narrow ? 'w-14' : 'w-60';
@@ -196,14 +196,9 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
           ))}
         </nav>
 
-        {/* 底部：后台 / 切手机版 / 版本 */}
+        {/* 底部：切手机版 / 版本（v1.1.5 起移除「管理后台」入口，
+            后台改由隐蔽路径 /#/flyme 手动进入） */}
         <div className={`${narrow ? 'px-2' : 'px-3'} pb-4`}>
-          <SideAction
-            Icon={Shield}
-            label="管理后台"
-            narrow={narrow}
-            onClick={() => nav('/admin')}
-          />
           <SideAction
             Icon={Smartphone}
             label="手机版网页"

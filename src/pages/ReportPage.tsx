@@ -400,7 +400,7 @@ export default function ReportPage() {
       <header className="page-enter flex w-full items-end justify-between pb-1 pt-2">
         <div className="min-w-0">
           <h1 className="text-3xl font-bold leading-9">报表</h1>
-          <p className="truncate text-xs text-ink-3">{windowLabel} · 仅统计生活流记账</p>
+          <p className="truncate text-xs text-ink-3">{windowLabel} · 看清钱花在哪、花得值不值</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button
@@ -491,7 +491,7 @@ export default function ReportPage() {
         {/* 分类环图 */}
         <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-7">
           <h2 className="text-sm font-semibold dt:text-[15px]">支出分类占比</h2>
-          <p className="mt-0.5 text-[11px] text-ink-3">仅统计生活流记账（物品与订阅不计入）</p>
+          <p className="mt-0.5 text-[11px] text-ink-3">这一期钱主要花在了哪些地方</p>
           {slices.length === 0 ? (
             <p className="py-10 text-center text-sm text-ink-3">
               {grain === 'day' ? '今天' : grain === 'month' ? '本月' : '本年'}还没有支出记录
@@ -625,7 +625,7 @@ export default function ReportPage() {
         {/* 归 / 需 / 否 */}
         <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12">
           <h2 className="text-sm font-semibold dt:text-[15px]">归 / 需 / 否 结构</h2>
-          <p className="mt-0.5 text-[11px] text-ink-3">仅统计生活流记账（物品与订阅不计入）</p>
+          <p className="mt-0.5 text-[11px] text-ink-3">回头看看哪些花得值、哪些本可避免</p>
           <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-surface-2">
             {stack.map((s) => (
               <div key={s.judgement} style={{ width: `${s.ratio * 100}%`, background: s.color }} />
@@ -790,7 +790,7 @@ export default function ReportPage() {
           </button>
           {netHow ? (
             <p className="mt-1.5 rounded-btn bg-surface-2 px-3 py-2 text-[11px] leading-5 text-ink-3">
-              <b className="text-ink-2">怎么读这张图：</b>每个点的位置是该期「收入 − 支出」的净额，线往下走说明花得比收得多（只统计生活流记账，物品与订阅不计入）。「本期净额」是离现在最近一期，「区间累计」是这几期净额的合计——它同样不是「你还剩多少钱」，而是这段时间的净流出入。
+              <b className="text-ink-2">怎么读这张图：</b>每个点的位置是该期「收入 − 支出」的净额，线往下走说明花得比收得多。「本期净额」是离现在最近一期，「区间累计」是这几期净额的合计——它同样不是「你还剩多少钱」，而是这段时间的净流出入。
             </p>
           ) : null}
         </div>

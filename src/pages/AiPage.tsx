@@ -284,14 +284,14 @@ export default function AiPage() {
 
         </div>
 
-        <div className="mt-2 flex items-center justify-between">
-          <p className="text-[11px] text-ink-3">
-            {aiReady ? 'AI 模式' : '本地规则模式（在「我的 → 设置」里配置 AI）'}
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <p className="min-w-0 flex-1 truncate text-[11px] text-ink-3">
+            {aiReady ? 'AI 模式' : '本地规则模式 · 可在「我的 → 设置」配置 AI'}
           </p>
           <button
             onClick={run}
             disabled={!hasText || busy}
-            className="h-10 rounded-full bg-accent px-6 text-sm font-semibold text-white active:opacity-90 disabled:opacity-40"
+            className="h-10 shrink-0 whitespace-nowrap rounded-full bg-accent px-5 text-sm font-semibold text-white active:opacity-90 disabled:opacity-40"
           >
             {busy ? '解析中…' : '开始解析'}
           </button>
