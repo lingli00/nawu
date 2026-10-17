@@ -1,11 +1,23 @@
 package com.guifou.app;
 
+import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 import com.getcapacitor.BridgeActivity;
 
 /**
- * ★v1.0.35：修复「键盘页退出 → 后台切回 → 底部大留白」。
+ * ★v1.1.2：注册 ApkUpdatePlugin（应用内更新插件）。
+ *
+ * 根因（v1.0.36~v1.1.1 通杀）：ApkUpdatePlugin 是 app 本地类，
+ * capacitor.plugins.json 只自动加载 node_modules 里的包插件，本地类必须手动注册。
+ * 漏注册时 JS 调 ApkUpdate.canInstall() 会被桥接层直接拒绝 → 前端 catch 后提示
+ * 「当前环境不支持应用内更新」——即使用户装的是原生 App 也一样，补丁/全量/安装器
+ * 整条链全断。表现为：设置页能看到新版本卡片，点「立即更新」就报错。
+ *
+ * 时序：registerPlugin 必须在 super.onCreate() 之前——Bridge 在
+ * BridgeActivity.onCreate→load() 里创建，晚于它的注册会被丢弃。
+ *
+ * ★v1.0.35：onResume 里修复「键盘页退出 → 后台切回 → 底部大留白」。
  *
  * 根因：@capacitor/keyboard 开启 resizeOnFullScreen 后，Keyboard.java 里
  * AndroidBug5497Workaround 会把 WebView（content 的子 View）高度写成
@@ -18,6 +30,12 @@ import com.getcapacitor.BridgeActivity;
  * 双保险。
  */
 public class MainActivity extends BridgeActivity {
+  @Override
+  public void onCreate(Bundle savedInstanceState) {
+    registerPlugin(ApkUpdatePlugin.class);
+    super.onCreate(savedInstanceState);
+  }
+
   @Override
   public void onResume() {
     super.onResume();

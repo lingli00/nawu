@@ -66,8 +66,18 @@ export async function runAppUpdate(
   let perm: { allowed: boolean };
   try {
     perm = await ApkUpdate.canInstall();
-  } catch {
-    return { started: false, usedPatch: false, message: '当前环境不支持应用内更新，请前往官网下载安装包' };
+  } catch (e) {
+    // v1.1.2：插件未注册/桥接异常时，原来一律报「环境不支持」，真实原因被吞掉、
+    // 无法排查（v1.0.36~v1.1.1 的 ApkUpdatePlugin 漏注册就是这么被藏了三个版本）。
+    // 现在把底层错误带出来；只有确实拿不到原因时才用通用文案。
+    const detail = errText(e, '');
+    return {
+      started: false,
+      usedPatch: false,
+      message: detail
+        ? `应用内更新暂不可用（${detail}），请前往官网下载安装包`
+        : '当前环境不支持应用内更新，请前往官网下载安装包',
+    };
   }
   if (!perm.allowed) {
     try {
