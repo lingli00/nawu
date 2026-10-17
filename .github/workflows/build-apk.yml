@@ -47,25 +47,26 @@ jobs:
       # 注：ubuntu runner 自带 Android SDK（ANDROID_HOME 已配置、许可证已接受），
       # 不要用 android-actions/setup-android@v3 —— 它尝试安装已废弃的 'tools' 包会失败。
 
-      # v1.0.33 安全修复：签名口令从 GitHub Secrets 注入，不再依赖仓库里的明文口令。
-      # 需要在仓库配置 4 个 secret：NAWU_STORE_FILE（密钥库文件名，如 nawu-release.p12）、
+      # v1.1.4 安全修复：签名密钥库曾误提交进公开仓库，已从仓库删除。
+      # 现在密钥库只允许从 Secret 落盘——NAWU_KEYSTORE_BASE64 缺失即构建失败，
+      # 不再回退到「仓库里的密钥库」。仓库需配置 5 个 secret：
+      # NAWU_KEYSTORE_BASE64（p12 文件 base64）、NAWU_STORE_FILE（文件名，如 nawu-release.p12）、
       # NAWU_STORE_PASSWORD、NAWU_KEY_ALIAS、NAWU_KEY_PASSWORD。
-      # 密钥库文件本身已在仓库 android/app/nawu-release.p12；若改用 base64 secret 存放，
-      # 设置 NAWU_KEYSTORE_BASE64 即可在构建时落盘。
       #
       # 注意：secrets 上下文不能出现在 if 表达式里，否则整个 workflow 文件会被判为无效
-      # （表现为一次 0 job、秒级失败的运行）。所以下面这个「可选」判断放进 shell。
-      - name: Materialize signing keystore (optional)
+      # （表现为一次 0 job、秒级失败的运行）。所以判断放进 shell。
+      - name: Materialize signing keystore (required)
         env:
           KEYSTORE_B64: ${{ secrets.NAWU_KEYSTORE_BASE64 }}
           STORE_FILE: ${{ secrets.NAWU_STORE_FILE }}
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "android/app/${STORE_FILE:-nawu-release.p12}"
-            echo "keystore materialized from NAWU_KEYSTORE_BASE64"
-          else
-            echo "NAWU_KEYSTORE_BASE64 not set - using keystore committed at android/app/${STORE_FILE:-nawu-release.p12}"
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::NAWU_KEYSTORE_BASE64 未设置 —— v1.1.4 起密钥库不再提交进仓库，请在仓库 Settings → Secrets and variables → Actions 中添加（base64 编码的 p12）"
+            exit 1
           fi
+          mkdir -p android/app
+          echo "$KEYSTORE_B64" | base64 -d > "android/app/${STORE_FILE:-nawu-release.p12}"
+          echo "keystore materialized from NAWU_KEYSTORE_BASE64"
 
       # 提前把「缺签名 Secrets」变成一条清晰可操作的报错，而不是让 gradle 抛栈。
       - name: Verify signing secrets present
