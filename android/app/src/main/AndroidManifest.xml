@@ -64,8 +64,6 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- P1：物品图片（相册读取，Android 13+） -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <!-- v1.1.5：首页天气的位置精度——只用于「用手机定位」按钮，用户点了才请求，
-         拒绝授权则一直按 IP 推测（不影响其他功能）。不用后台定位，不申请 ACCESS_BACKGROUND_LOCATION。 -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- v1.1.7：天气改为纯 IP 定位（服务端本地纯真库解到区县），
+         不再请求任何定位权限——App 里没有位置授权弹窗，也不需要后台定位。 -->
 </manifest>

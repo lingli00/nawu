@@ -87,7 +87,7 @@ describe('RecordMenu · 就地弹层（v1.0.28 / v1.1.6 整页化）', () => {
     expect(sessionStorage.getItem('gf.open.wish')).toBe(null);
   });
 
-  it('整页表单点「返回」→ 菜单一并关闭', async () => {
+  it('四个记录卡统一弹出抽屉，点关闭 → 菜单一并关闭', async () => {
     let closed = false;
     await renderMenu('/home', () => {
       closed = true;
@@ -96,11 +96,11 @@ describe('RecordMenu · 就地弹层（v1.0.28 / v1.1.6 整页化）', () => {
       findButton('新增订阅').click();
     });
     expect((document.body.textContent ?? '').includes('新增订阅')).toBe(true);
-    // v1.1.6：新增订阅改为整页形态（与 AI 记一笔/价值记账一致），关闭方式是头部返回箭头
-    const back = document.body.querySelector('button[aria-label="返回"]') as HTMLButtonElement | null;
-    expect(back).not.toBeNull();
+    // v1.1.7：新增订阅与 AI 记一笔/价值记账/手动录入统一为抽屉形态，右上角关闭
+    const close = document.body.querySelector('button[aria-label="关闭"]') as HTMLButtonElement | null;
+    expect(close).not.toBeNull();
     await act(async () => {
-      back?.click();
+      close?.click();
     });
     // closeAll 延迟 60ms 关菜单
     await act(async () => {

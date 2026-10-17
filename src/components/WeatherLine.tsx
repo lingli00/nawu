@@ -1,39 +1,52 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CloudSun, LocateFixed, MapPin, RefreshCw, Snowflake, Sun, Umbrella, Wind } from 'lucide-react';
+import { CloudSun, MapPin, RefreshCw, Snowflake, Sun, Umbrella, Wind } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { get } from '../net/httpClient';
+import { EP } from '../api/endpoints';
+import { currentServer } from '../store';
 import { Sheet } from './ui/Sheet';
 
 /**
- * 首页天气行（v1.1.5）。
+ * 首页天气行（v1.1.7 · 纯 IP 定位版）。
  *
- * 定位策略（**精度优先**）：手机定位 → 反向地理编码到区县；拿不到再退回 IP 推测。
- * 旧版只用 IP（ipwho.is），国内运营商出口 IP 常被归到省会甚至北京（实测：手机在
- * 河南南阳桐柏，IP 库给北京；挂香港代理反而准），所以必须给「用手机定位」这条硬路径，
- * 并把当前来源明确告诉用户。
+ * 为什么重写：v1.1.6 走「手机定位 → BigDataCloud 反查区县」，但用户要求
+ * **只按 IP 定位**（不想为了看天气授权精确定位）；而 IP 一换，原来的境外
+ * 免费接口（ipwho.is / ipapi.co）常把国内手机 IP 归到省会甚至北京 ——
+ * 实测手机在河南南阳桐柏，却显示郑州/北京。
  *
- * 数据链路（全部免密钥、均实测 CORS 可用）：
- *   1) 手机定位：navigator.geolocation（需用户授权）
- *   2) 反向编码：api.bigdatacloud.net/data/reverse-geocode-client → 省/市/区县
- *   3) IP 兜底：ipwho.is → get.geojs.io（均到市级）
- *   4) 天气：open-meteo.com（当前温度/天气码 + 当日最高最低/降水概率/紫外线）
- *   5) 缓存：位置选择持久化；天气按位置键缓存 30 分钟
+ * 现在：
+ *   1) `/api/geo`（自家服务端）读本地纯真库 → 省 / 市 / 区县，**直接拿到区县**；
+ *      服务端查本地库，不外发用户 IP，也不受第三方限流影响。
+ *   2) 区县没有经纬度（公开地理编码库普遍缺区县），天气用**所属地级市**的坐标取，
+ *      一行文案显示到区县 —— 同市天气差异极小，体感一致。
+ *   3) 天气仍走 open-meteo（免密钥），按坐标缓存 30 分钟；地名→坐标缓存 30 天。
+ *   4) 地级市查不到坐标时，退回 ipwho.is / geojs 的坐标（只借坐标，名字仍用 IP 库的）。
  *
- * 隐私：只在需要时请求「坐标→地名」「经纬度→天气」；全部失败就整行不渲染。
+ * 隐私：只把「本机 IP」发给**自建服务器**；第三方只收到「城市名」（地名词典查询）
+ * 和「经纬度」（天气），不含 IP。
  */
 
-const LOC_KEY = 'gf.weather.loc.v1';
-const WX_KEY = 'gf.weather.wx.v1';
+const WX_KEY = 'gf.weather.wx.v2';
+const GEO_KEY = 'gf.weather.geo.v2';
 const TTL_MS = 30 * 60 * 1000;
+const GEO_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-type LocSrc = 'geo' | 'ip';
 type Loc = {
   /** 展示用短名（区县优先，其次市） */
   short: string;
-  /** 完整地名（tooltip 用） */
+  /** 完整地名（弹层里显示） */
   full: string;
+  province: string;
+  city: string;
+  district: string;
+  /** 服务端判定的客户端 IP */
+  ip: string;
+  /** IP 对应的运营商 */
+  isp: string;
   lat: number;
   lon: number;
-  src: LocSrc;
+  /** 2 = 区县级，1 = 市级，0 = 省级 */
+  accuracy: number;
 };
 
 type WeatherInfo = {
@@ -45,8 +58,24 @@ type WeatherInfo = {
   uv: number;
 };
 
-type LocCache = { ts: number; loc: Loc };
+type GeoResp = {
+  ok: boolean;
+  ip?: string;
+  province?: string;
+  city?: string;
+  district?: string;
+  isp?: string;
+  display?: string;
+  /** 服务端随包带的行政区划中心点：直接给经纬度，前端不再自己地理编码 */
+  lat?: number;
+  lon?: number;
+  /** 2 = 区县级，1 = 市级，0 = 省级兜底 */
+  accuracy?: number;
+  error?: string;
+};
+
 type WxCache = { ts: number; key: string; data: WeatherInfo };
+type GeoCache = { ts: number; lat: number; lon: number };
 
 const WEATHER_LABEL: Record<number, string> = {
   0: '晴', 1: '大部晴朗', 2: '多云', 3: '阴',
@@ -79,28 +108,6 @@ function adviceOf(w: WeatherInfo): { text: string; Icon: LucideIcon } {
 
 const locKey = (l: Loc): string => `${l.lat.toFixed(2)},${l.lon.toFixed(2)}`;
 
-function readLoc(): Loc | null {
-  try {
-    const raw = localStorage.getItem(LOC_KEY);
-    if (!raw) return null;
-    const c = JSON.parse(raw) as LocCache;
-    if (!c?.loc || typeof c.loc.lat !== 'number') return null;
-    // 位置选择长期有效（不按 30 分钟过期）；只在用户主动「恢复自动」时清掉
-    return c.loc;
-  } catch {
-    return null;
-  }
-}
-
-function writeLoc(loc: Loc | null): void {
-  try {
-    if (loc) localStorage.setItem(LOC_KEY, JSON.stringify({ ts: Date.now(), loc } satisfies LocCache));
-    else localStorage.removeItem(LOC_KEY);
-  } catch {
-    /* 隐私模式忽略 */
-  }
-}
-
 function readWx(loc: Loc): WeatherInfo | null {
   try {
     const raw = localStorage.getItem(WX_KEY);
@@ -121,56 +128,91 @@ function writeWx(loc: Loc, data: WeatherInfo): void {
   }
 }
 
-/** 反向地理编码：坐标 → 省/市/区县（BigDataCloud，免密钥、CORS 开放）。 */
-async function reverseName(lat: number, lon: number): Promise<{ short: string; full: string }> {
+function readGeoCache(name: string): { lat: number; lon: number } | null {
   try {
-    const r = await fetch(
-      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh`,
-      { signal: AbortSignal.timeout(8000) },
-    );
-    if (r.ok) {
-      const j = (await r.json()) as {
-        principalSubdivision?: string;
-        city?: string;
-        locality?: string;
-        localityInfo?: { administrative?: Array<{ name?: string; adminLevel?: number }> };
-      };
-      // 区县优先：locality 常是「桐柏县」；有些地区 locality 为空则退到 city
-      const district = j.locality || '';
-      const city = j.city || '';
-      const province = j.principalSubdivision || '';
-      const parts = [province, city, district].filter(Boolean);
-      const short = shortName(district || city || province || '当前位置');
-      const full = parts.join('') || '当前位置';
-      if (short) return { short, full };
-    }
+    const raw = localStorage.getItem(GEO_KEY);
+    if (!raw) return null;
+    const all = JSON.parse(raw) as Record<string, GeoCache>;
+    const c = all[name];
+    if (!c || Date.now() - c.ts > GEO_TTL_MS) return null;
+    return { lat: c.lat, lon: c.lon };
   } catch {
-    /* 回落 */
+    return null;
   }
-  return { short: '当前位置', full: '当前位置' };
 }
 
-/** IP 推测：ipwho.is → get.geojs.io（均为市级）。 */
-async function ipLocate(): Promise<Loc | null> {
+function writeGeoCache(name: string, v: { lat: number; lon: number }): void {
   try {
-    const r = await fetch('https://ipwho.is/?fields=success,city,region,latitude,longitude', { signal: AbortSignal.timeout(6000) });
-    const j = (await r.json()) as { success?: boolean; city?: string; region?: string; latitude?: number; longitude?: number };
+    const raw = localStorage.getItem(GEO_KEY);
+    const all = raw ? (JSON.parse(raw) as Record<string, GeoCache>) : {};
+    all[name] = { ts: Date.now(), lat: v.lat, lon: v.lon };
+    localStorage.setItem(GEO_KEY, JSON.stringify(all));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 服务端 IP 归属地（自家接口，含区县）。 */
+async function fetchIpGeo(): Promise<GeoResp | null> {
+  try {
+    const res = await get<GeoResp>(currentServer(), EP.geo, undefined, 8000);
+    if (!res.data || res.data.ok !== true) return null;
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
+/** 城市名 → 经纬度（open-meteo geocoding，免密钥；按城市名缓存 30 天）。 */
+async function geocode(city: string, province: string): Promise<{ lat: number; lon: number } | null> {
+  const key = city || province;
+  if (!key) return null;
+  const cached = readGeoCache(key);
+  if (cached) return cached;
+
+  /* 「桐柏县」这类区县名在公开地名词典里通常查不到 → 依次试「去后缀的市名」「省名」 */
+  const tries = [city, city.replace(/(市|地区|自治州|盟)$/u, ''), province].filter(Boolean);
+  for (const name of tries) {
+    try {
+      const r = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=6&language=zh&format=json`,
+        { signal: AbortSignal.timeout(8000) },
+      );
+      if (!r.ok) continue;
+      const j = (await r.json()) as {
+        results?: Array<{ name: string; latitude: number; longitude: number; admin1?: string; country_code?: string }>;
+      };
+      const list = (j.results ?? []).filter((x) => x.country_code === 'CN');
+      if (list.length === 0) continue;
+      const hint = province.replace(/(省|市|自治区|特别行政区)$/u, '');
+      const hit = list.find((x) => hint !== '' && (x.admin1 ?? '').includes(hint)) ?? list[0];
+      const out = { lat: hit.latitude, lon: hit.longitude };
+      writeGeoCache(key, out);
+      return out;
+    } catch {
+      /* 换下一个候选名 */
+    }
+  }
+  return null;
+}
+
+/** 兜底坐标：境外接口只借经纬度，地名仍用 IP 库的（避免「桐柏被写成北京」）。 */
+async function fallbackCoords(): Promise<{ lat: number; lon: number } | null> {
+  try {
+    const r = await fetch('https://ipwho.is/?fields=success,latitude,longitude', { signal: AbortSignal.timeout(6000) });
+    const j = (await r.json()) as { success?: boolean; latitude?: number; longitude?: number };
     if (j?.success !== false && typeof j.latitude === 'number' && typeof j.longitude === 'number') {
-      const city = j.city || '本地';
-      return { short: shortName(city), full: [j.region, city].filter(Boolean).join(' '), lat: j.latitude, lon: j.longitude, src: 'ip' };
+      return { lat: j.latitude, lon: j.longitude };
     }
   } catch {
     /* 换源 */
   }
   try {
     const r = await fetch('https://get.geojs.io/v1/ip/geo.json', { signal: AbortSignal.timeout(6000) });
-    const j = (await r.json()) as { city?: string; region?: string; latitude?: string; longitude?: string };
+    const j = (await r.json()) as { latitude?: string; longitude?: string };
     const lat = parseFloat(String(j.latitude ?? ''));
     const lon = parseFloat(String(j.longitude ?? ''));
-    if (Number.isFinite(lat) && Number.isFinite(lon)) {
-      const city = j.city || '本地';
-      return { short: shortName(city), full: [j.region, city].filter(Boolean).join(' '), lat, lon, src: 'ip' };
-    }
+    if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon };
   } catch {
     /* 全失败 */
   }
@@ -208,8 +250,46 @@ async function fetchWeather(loc: Loc): Promise<WeatherInfo | null> {
   };
 }
 
+/** 组装一次完整定位：IP → 地名 → 坐标。 */
+async function resolveLoc(): Promise<Loc | null> {
+  const geo = await fetchIpGeo();
+  if (!geo) return null;
+
+  const province = (geo.province ?? '').trim();
+  const city = (geo.city ?? '').trim();
+  const district = (geo.district ?? '').trim();
+
+  /* 坐标优先用服务端给的（随包带行政区划中心点，区县级准）；拿不到再退回在线地名词典 */
+  let coords: { lat: number; lon: number } | null = null;
+  if (typeof geo.lat === 'number' && typeof geo.lon === 'number'
+      && Number.isFinite(geo.lat) && Number.isFinite(geo.lon)) {
+    coords = { lat: geo.lat, lon: geo.lon };
+  }
+  if (!coords) coords = await geocode(city || province, province);
+  if (!coords) coords = await fallbackCoords();
+  if (!coords) return null;
+
+  const parts: string[] = [];
+  for (const p of [province, city, district]) {
+    if (p && !parts.some((x) => x === p)) parts.push(p);
+  }
+
+  return {
+    short: shortName(district || city || province || '本地'),
+    full: parts.join('') || '本地',
+    province,
+    city,
+    district,
+    ip: geo.ip ?? '',
+    isp: geo.isp ?? '',
+    lat: coords.lat,
+    lon: coords.lon,
+    accuracy: typeof geo.accuracy === 'number' ? geo.accuracy : (district ? 2 : 1),
+  };
+}
+
 export default function WeatherLine({ className = '' }: { className?: string }): JSX.Element | null {
-  const [loc, setLoc] = useState<Loc | null>(() => readLoc());
+  const [loc, setLoc] = useState<Loc | null>(null);
   const [wx, setWx] = useState<WeatherInfo | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -228,19 +308,17 @@ export default function WeatherLine({ className = '' }: { className?: string }):
     }
   }, []);
 
-  // 首次：已存位置优先，其次 IP 推测（放到空闲时段，不抢首屏）
+  /* 首次：放到空闲时段，不抢首屏 */
   useEffect(() => {
     let alive = true;
     const run = (): void => {
       void (async () => {
-        const saved = readLoc();
-        const target = saved ?? (await ipLocate());
+        const target = await resolveLoc();
         if (!alive || !target) return;
-        if (!saved) writeLoc(target);
         setLoc(target);
         await load(target);
       })().catch(() => {
-        /* 静默 */
+        /* 静默：拿不到就不显示这一行 */
       });
     };
     const idle = typeof window.requestIdleCallback === 'function'
@@ -253,56 +331,20 @@ export default function WeatherLine({ className = '' }: { className?: string }):
     };
   }, [load]);
 
-  /** 用手机定位（可到区县）——需要浏览器/App 授权。 */
-  const useGeo = (): void => {
-    if (busy) return;
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setHint('这台设备不支持定位，先按 IP 显示了');
-      return;
-    }
-    setBusy(true);
-    setHint('正在定位…');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        void (async () => {
-          const { latitude, longitude } = pos.coords;
-          const { short, full } = await reverseName(latitude, longitude);
-          const next: Loc = { short, full, lat: latitude, lon: longitude, src: 'geo' };
-          writeLoc(next);
-          setLoc(next);
-          await load(next);
-          setBusy(false);
-          setHint('');
-          setOpen(false);
-        })();
-      },
-      (err) => {
-        setBusy(false);
-        setHint(
-          err.code === err.PERMISSION_DENIED
-            ? '定位权限被拒绝，可以在浏览器设置里允许后重试'
-            : '定位超时了，还是先用 IP 推测',
-        );
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 5 * 60 * 1000 },
-    );
-  };
-
-  /** 恢复 IP 自动（清掉已保存的位置）。 */
-  const useIp = (): void => {
+  /** 重新按当前网络 IP 定位（换了 Wi-Fi / 流量后可手动刷新）。 */
+  const refresh = (): void => {
     if (busy) return;
     setBusy(true);
-    setHint('正在按 IP 推测…');
+    setHint('正在按当前网络 IP 重新定位…');
     void (async () => {
-      const target = await ipLocate();
+      const target = await resolveLoc();
       if (target) {
-        writeLoc(target);
         setLoc(target);
         await load(target);
         setHint('');
         setOpen(false);
       } else {
-        setHint('IP 推测失败，稍后再试');
+        setHint('这次没取到归属地，稍后再试');
       }
       setBusy(false);
     })();
@@ -311,7 +353,6 @@ export default function WeatherLine({ className = '' }: { className?: string }):
   const advice = useMemo(() => (wx ? adviceOf(wx) : null), [wx]);
   if (!loc) return null;
 
-  const srcLabel = loc.src === 'geo' ? '手机定位' : 'IP 推测';
   const label = wx ? WEATHER_LABEL[wx.code] ?? '天气' : '';
 
   return (
@@ -319,7 +360,7 @@ export default function WeatherLine({ className = '' }: { className?: string }):
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title={`${loc.full} · ${srcLabel}${wx ? ` · 今日 ${wx.tMin}~${wx.tMax}° · 降水概率 ${wx.pop}% · 紫外线 ${wx.uv}` : ''}（点击可切换定位方式）`}
+        title={`${loc.full} · 按网络 IP 定位${wx ? ` · 今日 ${wx.tMin}~${wx.tMax}° · 降水概率 ${wx.pop}% · 紫外线 ${wx.uv}` : ''}（点击查看定位详情）`}
         className={`flex w-full items-center gap-1.5 text-left text-[11px] text-ink-3 active:opacity-70 ${className}`}
       >
         {advice ? (
@@ -343,29 +384,27 @@ export default function WeatherLine({ className = '' }: { className?: string }):
         <Sheet side="center" title="天气位置" onClose={() => setOpen(false)}>
           <p className="text-xs leading-5 text-ink-2">
             当前：<b className="font-semibold text-ink">{loc.full}</b>
-            <span className="ml-1 text-ink-3">（{srcLabel}）</span>
           </p>
           <p className="mt-1 text-[11px] leading-5 text-ink-3">
-            运营商 IP 常被归到省会或北京，想准到区县请用手机定位。
+            {loc.ip ? `按网络 IP ${loc.ip}${loc.isp ? `（${loc.isp}）` : ''} 定位` : '按当前网络 IP 定位'}
+            {loc.accuracy >= 2 && loc.district
+              ? `，精确到${loc.district}`
+              : '，到地级市（该 IP 段运营商只登记到市）'}
+            。定位只用你自己的服务器，不外发。
           </p>
           {hint ? <p className="mt-2 text-[11px] text-accent">{hint}</p> : null}
           <div className="mt-3 space-y-2">
             <button
-              onClick={useGeo}
+              onClick={refresh}
               disabled={busy}
               className="flex h-11 w-full items-center justify-center gap-2 rounded-btn bg-accent text-sm font-semibold text-white disabled:opacity-50"
             >
-              <LocateFixed size={16} strokeWidth={2} aria-hidden />
-              {busy ? '定位中…' : '用手机定位（准到区县）'}
+              <RefreshCw size={15} strokeWidth={2} aria-hidden className={busy ? 'animate-spin' : ''} />
+              {busy ? '重新定位中…' : '按当前 IP 重新定位'}
             </button>
-            <button
-              onClick={useIp}
-              disabled={busy}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-btn border border-line text-sm text-ink-2 disabled:opacity-50"
-            >
-              <RefreshCw size={15} strokeWidth={2} aria-hidden />
-              恢复 IP 自动推测
-            </button>
+            <p className="text-center text-[11px] leading-5 text-ink-3">
+              换了 Wi-Fi 或流量后点一下即可更新，位置不会上传给第三方。
+            </p>
           </div>
         </Sheet>
       ) : null}

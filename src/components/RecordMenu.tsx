@@ -1,6 +1,5 @@
 import { createPortal } from 'react-dom';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Compass,
   CreditCard,
@@ -28,7 +27,10 @@ import QuickSheetHost from './QuickSheets';
  * 弹层就地出现在哪个页面（QuickSheetHost），关闭后仍停留在原页面。
  * 实现：组件保持挂载，点卡片后切到「弹层模式」（菜单面板换成 QuickSheetHost），
  * 弹层关闭时先撤弹层占位历史，再延迟一拍关闭菜单（见 closeAll 注释）。
- * 「AI 记一笔 / 价值记账」是页面导航，仍走路由跳转。
+ *
+ * ★ v1.1.7：四个记录卡（AI 记一笔 / 价值记账 / 手动录入 / 新增订阅）统一成
+ * 就地抽屉 —— 不再有两个走整页、两个走弹层的不一致。整页路由 /ai、/record
+ * 仍保留（页面内其它入口与深链会用到），只是加号菜单不再跳过去。
  *
  * PC 适配：≥1024px 居中对话框（pop-enter），移动端底部 sheet（sheet-enter）。
  */
@@ -50,6 +52,8 @@ const TINT = {
 
 /** 旧跨路由方案的 sessionStorage 标志名（v1.0.28 起只做清理，不再写入）。 */
 const SHEET_FLAG: Record<SheetKey, string> = {
+  ai: 'gf.open.ai',
+  record: 'gf.open.record',
   goods: 'gf.open.goods',
   sub: 'gf.open.sub',
   wish: 'gf.open.wish',
@@ -67,7 +71,6 @@ function clearFlag(key: string): void {
 }
 
 export default function RecordMenu({ onClose }: { onClose: () => void }) {
-  const nav = useNavigate();
   const wide = useMediaQuery('(min-width: 1024px)');
   useBackGuard(true, onClose);
   /* v1.0.28 就地弹层：非 null 时菜单面板换成对应弹层；leaving 时整层静默等卸载。 */
@@ -93,28 +96,21 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
     setSheet(key);
   };
 
-  /** 页面跳转类入口（AI 记一笔 / 价值记账）：关菜单 + 导航。
-   *  就地弹层类入口（手动录入 / 新增订阅 / 生活流四键）：不关菜单，切到弹层模式。 */
-  const go = (fn: () => void): void => {
-    void haptic('select');
-    onClose();
-    fn();
-  };
+  /** 弹层统一入口：不关菜单，切到弹层模式（四个记录卡与生活流四键同一套逻辑）。 */
   const pick = (fn: () => void): void => {
     void haptic('select');
     fn();
   };
 
-  const cards: Array<{ label: string; sub: string; Icon: typeof Sparkles; tint: string; run: () => void; inPlace: boolean }> = [
-    { label: 'AI 记一笔', sub: '说一句话 / 贴图自动归档', Icon: Sparkles, tint: TINT.ai, run: () => nav('/ai'), inPlace: false },
-    { label: '价值记账', sub: '消费 / 归需否判断', Icon: NotebookPen, tint: TINT.ledger, run: () => nav('/record'), inPlace: false },
+  const cards: Array<{ label: string; sub: string; Icon: typeof Sparkles; tint: string; run: () => void }> = [
+    { label: 'AI 记一笔', sub: '说一句话 / 贴图自动归档', Icon: Sparkles, tint: TINT.ai, run: () => openSheet('ai') },
+    { label: '价值记账', sub: '消费 / 归需否判断', Icon: NotebookPen, tint: TINT.ledger, run: () => openSheet('record') },
     {
       label: '手动录入',
       sub: '搜索 / 填写',
       Icon: PenLine,
       tint: TINT.manual,
       run: () => openSheet('goods'),
-      inPlace: true,
     },
     {
       label: '新增订阅',
@@ -122,7 +118,6 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
       Icon: CreditCard,
       tint: TINT.sub,
       run: () => openSheet('sub'),
-      inPlace: true,
     },
   ];
 
@@ -147,10 +142,10 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
 
       {/* 2×2 记录卡 */}
       <div className="grid grid-cols-2 gap-2.5">
-        {cards.map(({ label, sub, Icon, tint, run, inPlace }) => (
+        {cards.map(({ label, sub, Icon, tint, run }) => (
           <button
             key={label}
-            onClick={() => (inPlace ? pick(run) : go(run))}
+            onClick={() => pick(run)}
             className="rounded-card border border-line p-3.5 text-left transition-all active:scale-[0.98]"
             style={{ background: `color-mix(in srgb, ${tint} 8%, var(--surface))` }}
           >

@@ -18,6 +18,7 @@ import CategoryPage from './pages/CategoryPage';
 import RulePage from './pages/RulePage';
 import AccountPage from './pages/AccountPage';
 import AdminPage from './pages/AdminPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 /**
  * 路由表（HashRouter，兼容 file:// 与 Capacitor 的 https://localhost 源）。
@@ -83,6 +84,9 @@ export const AppRoutes: AppRoute[] = [
   // —— 管理后台（v1.0.7 起并入统一代码库；v1.1.5 起入口改隐蔽路径 /flyme）——
   // 界面上不再有「管理后台」按钮，需手动在地址栏输入 /#/flyme 进入（hash 路由）。
   { path: '/flyme', element: <AdminPage /> },
+
+  // —— 兜底（v1.1.7）：hash 路由里写了不存在的地址 → 品牌 404 页，不再空白 ——
+  { path: '*', element: <NotFoundPage /> },
 ];
 
 export default AppRoutes;

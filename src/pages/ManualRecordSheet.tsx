@@ -23,7 +23,15 @@ const JUDGEMENTS: Array<{ key: Judgement; label: string; desc: string; color: st
   { key: 'fou', label: '否', desc: '本可避免', color: 'var(--fou)' },
 ];
 
-export default function ManualRecordSheet() {
+export default function ManualRecordSheet({
+  embedded = false,
+  onDone,
+}: {
+  /** v1.1.7：true 时不套 PageShell，由外层 Sheet 提供标题与关闭（加号菜单就地抽屉）。 */
+  embedded?: boolean;
+  /** 内嵌模式下保存成功的回调（通常是关闭抽屉）。 */
+  onDone?: () => void;
+} = {}) {
   const nav = useNavigate();
   const { id } = useParams();
   const editing = useDataStore((s) => s.valueRecords.find((r) => r.id === id));
@@ -88,14 +96,16 @@ export default function ManualRecordSheet() {
         await addLedger(payload);
         toastSuccess('已记下这笔');
       }
-      nav('/ledger', { replace: true });
+      /* v1.1.7：抽屉内嵌模式不跳路由，直接关闭抽屉（就地记一笔，停在原页面） */
+      if (embedded) onDone?.();
+      else nav('/ledger', { replace: true });
     } finally {
       setBusy(false);
     }
   };
 
-  return (
-    <PageShell title={editing ? '编辑记录' : '记一笔'} onBack={() => nav('/ledger', { replace: true })}>
+  const body = (
+    <>
       {/* 类型切换 */}
       <div className="mb-3 flex gap-1 rounded-btn bg-surface-2 p-1">
         {([['expense', '支出'], ['income', '收入']] as const).map(([t, label]) => (
@@ -221,6 +231,15 @@ export default function ManualRecordSheet() {
       >
         {busy ? '保存中…' : editing ? '保存修改' : '记下这笔'}
       </button>
+    </>
+  );
+
+  /* v1.1.7：抽屉内嵌模式 —— 不套页头，标题与关闭由外层 Sheet 提供 */
+  if (embedded) return body;
+
+  return (
+    <PageShell title={editing ? '编辑记录' : '记一笔'} onBack={() => nav('/ledger', { replace: true })}>
+      {body}
     </PageShell>
   );
 }

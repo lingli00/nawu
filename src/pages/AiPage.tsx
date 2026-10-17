@@ -20,7 +20,15 @@ import type { Category, Goods, Settings, Subscription } from '../types/entities'
  * 现改为**非受控**（DOM 自持值，提交时用 ref 读真值），
  * 与登录页同一套方案（见 LoginPage 顶部注释）；光标位置由浏览器自己维护，不再被劫持。
  */
-export default function AiPage() {
+export default function AiPage({
+  embedded = false,
+  onDone,
+}: {
+  /** v1.1.7：true 时不套 PageShell，由外层 Sheet 提供标题与关闭（加号菜单就地抽屉）。 */
+  embedded?: boolean;
+  /** 内嵌模式下落库完成后的回调（通常是关闭抽屉）。 */
+  onDone?: () => void;
+} = {}) {
   const nav = useNavigate();
   const categories = useDataStore((s) => s.categories);
   const goods = useDataStore((s) => s.goods);
@@ -201,6 +209,11 @@ export default function AiPage() {
     );
     // 物品 → 首页物品 tab 并自动弹编辑面板；订阅 → 首页订阅 tab 并自动弹编辑；
     // 其余（纯生活流/情绪/时间）保持原跳生活流。
+    // v1.1.7：抽屉内嵌模式下不跳路由，直接关闭抽屉（就地记录，停在原页面）。
+    if (embedded) {
+      onDone?.();
+      return;
+    }
     if (createdGoods) {
       nav('/home', { replace: true, state: { editGoodsId: createdGoods.id } });
       return;
@@ -235,8 +248,8 @@ export default function AiPage() {
     }
   };
 
-  return (
-    <PageShell title="AI 记一笔" onBack={() => nav(-1)}>
+  const body = (
+    <>
       {/* PC 桌面：内容居中收窄，避免整页拉伸 */}
       <div className="mx-auto w-full max-w-2xl">
       <div className="rounded-card border border-line bg-surface p-4">
@@ -376,6 +389,15 @@ export default function AiPage() {
         </div>
       ) : null}
       </div>
+    </>
+  );
+
+  /* v1.1.7：抽屉内嵌模式 —— 不套页头，标题与关闭由外层 Sheet 提供 */
+  if (embedded) return body;
+
+  return (
+    <PageShell title="AI 记一笔" onBack={() => nav(-1)}>
+      {body}
     </PageShell>
   );
 }

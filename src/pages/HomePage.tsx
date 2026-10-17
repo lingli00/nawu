@@ -601,7 +601,7 @@ export function GoodsFormSheet({
        26rem 右抽屉，20+ 字段的表单被挤成窄条；现在桌面抽屉 34rem 双列空间）。
        返回键守卫由 Sheet 组件统一负责（v1.0.33 P1-10），此处不再自挂，避免双重占位历史。 */
     <>
-      <Sheet side="page" onClose={onClose} title={isEdit ? '编辑物品' : '物品入库'} drawerWidth="34rem">
+      <Sheet side="bottom" onClose={onClose} title={isEdit ? '编辑物品' : '物品入库'} drawerWidth="34rem">
         <div className="space-y-3">
               <PageField label="名称">
                 <input

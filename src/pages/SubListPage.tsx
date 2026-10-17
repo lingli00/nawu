@@ -100,7 +100,7 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
      桌面端右抽屉；不再用底部小 sheet，避免同样是「添加信息」却两种观感。 */
   return (
     <>
-      <Sheet side="page" title="新增订阅" onClose={onClose} guard={false} drawerWidth="32rem">
+      <Sheet side="bottom" title="新增订阅" onClose={onClose} guard={false} drawerWidth="32rem">
         <div className="space-y-3">
           <div>
             <p className="text-xs font-medium text-ink-2">图标</p>
@@ -645,7 +645,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
 
   return (
     <>
-      <Sheet side="page" title="编辑订阅" onClose={onClose} guard={false} drawerWidth="32rem">
+      <Sheet side="bottom" title="编辑订阅" onClose={onClose} guard={false} drawerWidth="32rem">
         <div className="space-y-3">
           <div>
             <p className="text-xs font-medium text-ink-2">图标</p>

@@ -9,6 +9,8 @@ export const EP = {
   // 探活 / 设置
   health: '/api/health',
   settings: '/api/settings',
+  /** v1.1.7：按客户端 IP 返回省/市/区县（首页天气定位） */
+  geo: '/api/geo',
 
   // 认证
   login: '/api/auth/login',
@@ -43,6 +45,7 @@ export const EP = {
  */
 export const NO_AUTH_PATHS: readonly string[] = [
   EP.health,
+  EP.geo,
   EP.login,
   EP.register,
   EP.sendCode,

@@ -255,3 +255,29 @@ export async function publishAppRelease(
     replaced: boolean;
   };
 }
+
+/**
+ * 清理更新通道里的旧包（v1.1.7）。
+ *
+ * 留存策略：完整包、增量补丁各只留最近 3 份；当前清单点名的文件永远保留。
+ * 发布时会自动跑一次，这里给后台一个手动入口（换过频道、手动传过包的场合）。
+ */
+export async function pruneUpdateChannel(
+  server: Pick<ServerConfig, 'url'> | null,
+  token: string,
+): Promise<{ apk: number; patch: number; bytes: number }> {
+  const res = await request<Record<string, unknown>>(server, {
+    method: 'POST',
+    path: '/api/admin/app-channel/prune',
+    timeoutMs: 60000,
+    auth: false,
+    retry: 0,
+    ignoreUnauth: true,
+    headers: token ? { 'X-Admin-Token': token } : undefined,
+  });
+  if (!res.data || res.data.ok !== true) {
+    throw new ApiError('http', (res.data as { error?: string })?.error ?? '清理失败', res.status, res.data);
+  }
+  const d = res.data as { apk?: number; patch?: number; bytes?: number };
+  return { apk: d.apk ?? 0, patch: d.patch ?? 0, bytes: d.bytes ?? 0 };
+}

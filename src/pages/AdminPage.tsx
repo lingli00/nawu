@@ -18,6 +18,7 @@ import {
   fetchJob,
   fetchServerInfo,
   fetchSource,
+  pruneUpdateChannel,
   publishAppRelease,
   rollbackServer,
   runMigration,
@@ -677,6 +678,21 @@ function SecurityTab({
   const [msg, setMsg] = useState('');
   const [nameBusy, setNameBusy] = useState(false);
 
+  /**
+   * v1.1.7：账号安全项（登录名 / 密码）任一改动成功后，服务端会作废全部会话，
+   * 这里同步清掉本地 token 并切回登录页 —— 不再出现「改完还在页面上、
+   * 之后每个请求都 401」的错乱状态。
+   */
+  const forceRelogin = (notice: string): void => {
+    toastSuccess(notice);
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+    } catch {
+      /* 忽略 */
+    }
+    onLogout();
+  };
+
   /** 修改管理员登录名。 */
   const changeName = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
@@ -685,8 +701,8 @@ function SecurityTab({
     setNameBusy(true);
     try {
       await adminPost('/api/admin/username', { username });
-      toastSuccess('登录名已更新，下次登录请使用新用户名');
       (e.target as HTMLFormElement).reset();
+      forceRelogin(`登录名已改为「${username}」，请用新登录名重新登录`);
     } catch (err) {
       toastError(err instanceof Error ? err.message : '修改失败');
     } finally {
@@ -707,8 +723,8 @@ function SecurityTab({
     setMsg('');
     try {
       await adminPost('/api/admin/password', { oldPassword, newPassword });
-      toastSuccess('密码已更新');
       (e.target as HTMLFormElement).reset();
+      forceRelogin('密码已更新，请用新密码重新登录');
     } catch (err) {
       toastError(err instanceof Error ? err.message : '修改失败');
     }
@@ -1810,6 +1826,25 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
     }
   };
 
+  /**
+   * 手动清理更新通道（v1.1.7）：完整包 / 增量包各留最近 3 份。
+   * 发布时会自动跑，这里给「换过频道、手动传过包」的场合一个入口。
+   */
+  const doPrune = async (): Promise<void> => {
+    setBusy('prune');
+    try {
+      const r = await pruneUpdateChannel(currentServer(), token);
+      const mb = (r.bytes / 1048576).toFixed(1);
+      toastSuccess(r.apk + r.patch > 0
+        ? `已清理 ${r.apk} 个安装包、${r.patch} 个补丁（释放 ${mb} MB）`
+        : '通道里没有超期文件，无需清理');
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '清理失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
   const doMigrate = async (): Promise<void> => {
     setBusy('migrate');
     try {
@@ -2007,7 +2042,13 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
           <button onClick={() => void doPublish()} disabled={busy === 'publish' || !appFile} className={btnPrimary}>
             {busy === 'publish' ? '发布中…' : '发布'}
           </button>
+          <button onClick={() => void doPrune()} disabled={busy === 'prune'} className={btnGhost}>
+            {busy === 'prune' ? '清理中…' : '清理旧包'}
+          </button>
         </div>
+        <p className="mt-1.5 text-[11px] text-ink-3">
+          留存策略：完整包与增量补丁各保留最近 3 份，更早的自动删除（当前发布的那份永远保留）。
+        </p>
         <input
           ref={apkInputRef}
           type="file"

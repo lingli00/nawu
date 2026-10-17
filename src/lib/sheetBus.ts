@@ -11,7 +11,7 @@
  * 两条路径互斥，不会重复弹。
  */
 
-export type SheetKey = 'goods' | 'sub' | 'wish' | 'cooldown' | 'mood' | 'time';
+export type SheetKey = 'ai' | 'record' | 'goods' | 'sub' | 'wish' | 'cooldown' | 'mood' | 'time';
 
 const listeners = new Map<SheetKey, Set<() => void>>();
 
