@@ -74,6 +74,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    // v1.0.36：AGP 8 默认不生成 BuildConfig，ApkUpdatePlugin 要读
+    // VERSION_NAME/VERSION_CODE 做「当前版本」上报，这里显式打开
+    buildFeatures {
+        buildConfig true
+    }
 }
 
 repositories {

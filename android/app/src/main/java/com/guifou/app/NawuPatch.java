@@ -1,7 +1,6 @@
 package com.guifou.app;
 
 import java.io.ByteArrayOutputStream;
-import java.io.DataFormatException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -11,6 +10,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
 
 /**
