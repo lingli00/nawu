@@ -51,13 +51,37 @@ export interface AppUpdateTarget {
   patch: { url: string; size: number; sha256: string; apkSha256: string } | null;
 }
 
+/**
+ * 频道地址拆成「原点 + 目录路径」。
+ *
+ * ★v1.1.1 修复：`request()` 内部的 `normalizeServerUrl()` 会把 server.url 归一成
+ * 「协议://主机」，**path 被剥掉**。此前把 OFFICIAL_UPDATE_CHANNEL 整个当 server.url
+ * 传进去，手机实际请求的是 `http://host:port/app-manifest.json`（少了 `/nawu-update/`），
+ * 拿到的是 SPA 的 index.html → 解析失败 → 静默回退用户服务器 → 官方频道（含增量补丁）
+ * 从未在 App 端生效过。修复：原点与目录分开传，path 带上目录前缀。
+ */
+export function channelBase(): { origin: string; dir: string } {
+  try {
+    const u = new URL(OFFICIAL_UPDATE_CHANNEL);
+    return { origin: u.origin, dir: u.pathname.replace(/^\/+|\/+$/g, '') };
+  } catch {
+    return { origin: OFFICIAL_UPDATE_CHANNEL, dir: '' };
+  }
+}
+
+/** 频道 manifest 的请求 path（相对原点，含目录前缀）。 */
+export function channelManifestPath(): string {
+  const { dir } = channelBase();
+  return dir ? `${dir}/app-manifest.json` : 'app-manifest.json';
+}
+
 /** 拉取官方频道 manifest；任何失败都返回 null（调用方回退自有服务器）。 */
 export async function fetchChannelManifest(timeoutMs = 10000): Promise<ChannelManifest | null> {
   try {
     const res = await request<Record<string, unknown>>(
-      { url: OFFICIAL_UPDATE_CHANNEL },
+      { url: channelBase().origin },
       {
-        path: 'app-manifest.json',
+        path: channelManifestPath(),
         auth: false,
         expectOk: false, // 静态 JSON，没有 ok 字段
         retry: 0,
