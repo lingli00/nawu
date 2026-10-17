@@ -10,8 +10,10 @@ import { changePassword } from '../api/auth';
 /**
  * P26 账号编辑：资料展示/显示名编辑 + 修改密码。
  *
- * - 资料：GET/POST `/api/user/profile`（后端已有写接口：display_name/avatar_url/plan）；
+ * - 资料：GET/POST `/api/user/profile`（后端字段：display_name/avatar_url/plan）；
  * - 改密码：`changePassword`（oldPassword / newPassword，见 api/auth.ts）；
+ * - ★v1.1：本程序**纯免费、无任何会员/套餐体系**——账号区不再展示「套餐」，
+ *   `plan` 仅为后端历史遗留字段（恒 'free'），保存资料时原样回传即可；
  * - ★所有文本输入非受控（Android WebView IME 铁律）：defaultValue + ref 读 DOM 真值。
  */
 
@@ -161,9 +163,7 @@ export default function AccountPage() {
           {/* 账号信息（只读展示） */}
           <section className="rounded-card border border-line bg-surface p-4">
             <h2 className="text-sm font-semibold">账号</h2>
-            <p className="mt-1 text-xs text-ink-3">
-              {email || '未知邮箱'} · {loading ? '加载中…' : `套餐：${profile?.plan ?? 'free'}`}
-            </p>
+            <p className="mt-1 text-xs text-ink-3">{email || '未知邮箱'}</p>
           </section>
 
           {/* 显示名编辑 */}

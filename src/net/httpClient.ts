@@ -49,11 +49,21 @@ export interface RequestOptions {
   /** true：401 只抛错，不触发用户登录态过期回调（管理后台等独立鉴权体系用） */
   ignoreUnauth?: boolean;
   headers?: Record<string, string>;
+  /**
+   * v1.1：响应按二进制原文返回（.flyme 备份下载用）——跳过 JSON 解析与 ok 校验，
+   * data 为 ArrayBuffer；配合 wantHeaders 取出服务端自定义响应头
+   * （如 X-Nawu-Backup-Summary）。大文件不重试。
+   */
+  responseType?: 'json' | 'arraybuffer';
+  /** arraybuffer 模式下要透出的响应头名（小写） */
+  wantHeaders?: string[];
 }
 
 export interface HttpResponse<T> {
   status: number;
   data: T;
+  /** wantHeaders 命中时的响应头（小写名 → 值） */
+  headers?: Record<string, string>;
 }
 
 /** 默认超时（ms）。 */
@@ -123,7 +133,7 @@ async function nativeRequest(
   opts: RequestOptions,
   headers: Record<string, string>,
   timeoutMs: number,
-): Promise<{ status: number; data: unknown }> {
+): Promise<{ status: number; data: unknown; headers?: Record<string, string> }> {
   let CapacitorHttp: {
     request: (o: Record<string, unknown>) => Promise<{ status: number; data: unknown; headers?: unknown; url?: string }>;
   };
@@ -134,21 +144,57 @@ async function nativeRequest(
     throw classifyUnknownError(e, Math.round(timeoutMs / 1000));
   }
 
+  // v1.1：二进制响应（.flyme 下载）。注意：
+  //  - responseType 只影响**响应**解析；dataType 只影响**请求体**序列化（Android 源码
+  //    HttpRequestHandler：responseType 走 ResponseType.parse，dataType 走 setRequestBody）；
+  //  - Android 侧 arraybuffer → data 是 base64 字符串（Content-Type 非 JSON 时），
+  //    这里统一转成 ArrayBuffer，与 fetch 分支形态一致。
+  const wantBinary = opts.responseType === 'arraybuffer';
+  const reqOpts: Record<string, unknown> = {
+    url,
+    method: opts.method ?? 'GET',
+    headers,
+    data: opts.rawBody !== undefined ? opts.rawBody : opts.body,
+    connectTimeout: timeoutMs,
+    readTimeout: timeoutMs,
+    shouldEncodeUrlParams: false, // query 自己拼，避免二次编码
+  };
+  if (wantBinary) {
+    reqOpts.responseType = 'arraybuffer';
+  } else {
+    reqOpts.dataType = 'json'; // 响应按 JSON 解析；非 JSON 时 data 回落为字符串
+  }
+
   try {
-    const res = await CapacitorHttp.request({
-      url,
-      method: opts.method ?? 'GET',
-      headers,
-      data: opts.rawBody !== undefined ? opts.rawBody : opts.body,
-      dataType: 'json', // 响应按 JSON 解析；非 JSON 时 data 回落为字符串
-      connectTimeout: timeoutMs,
-      readTimeout: timeoutMs,
-      shouldEncodeUrlParams: false, // query 自己拼，避免二次编码
-    });
-    return { status: Number(res.status ?? 0), data: res.data };
+    const res = await CapacitorHttp.request(reqOpts);
+    let data: unknown = res.data;
+    if (wantBinary && typeof data === 'string') {
+      data = base64ToArrayBuffer(data);
+    }
+    return { status: Number(res.status ?? 0), data, headers: pickHeaders(res.headers, opts.wantHeaders) };
   } catch (e) {
     throw classifyNativeError(e, Math.round(timeoutMs / 1000));
   }
+}
+
+/** base64 → ArrayBuffer（CapacitorHttp Android arraybuffer 响应的落地形态）。 */
+function base64ToArrayBuffer(b64: string): ArrayBuffer {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+/** 从 Headers 对象 / 普通对象里挑出想要的响应头（小写名 → 值）。 */
+function pickHeaders(source: unknown, names?: string[]): Record<string, string> | undefined {
+  if (!source || !names || names.length === 0) return undefined;
+  const out: Record<string, string> = {};
+  for (const n of names) {
+    const getter = (source as { get?: (k: string) => string | null }).get;
+    const v = typeof getter === 'function' ? getter.call(source, n) : (source as Record<string, unknown>)[n];
+    if (typeof v === 'string') out[n] = v;
+  }
+  return out;
 }
 
 /** 浏览器分支：fetch（dev 走 Vite 代理的相对路径）。 */
@@ -158,7 +204,7 @@ async function fetchRequest(
   opts: RequestOptions,
   headers: Record<string, string>,
   timeoutMs: number,
-): Promise<{ status: number; data: unknown }> {
+): Promise<{ status: number; data: unknown; headers?: Record<string, string> }> {
   const url = isDevProxy() ? path : fullUrl;
   const controller = new AbortController();
   const timer = setTimeout(() => {
@@ -182,6 +228,9 @@ async function fetchRequest(
       signal: opts.signal ?? controller.signal,
       credentials: 'omit',
     });
+    if (opts.responseType === 'arraybuffer') {
+      return { status: res.status, data: await res.arrayBuffer(), headers: pickHeaders(res.headers, opts.wantHeaders) };
+    }
     const text = await res.text();
     return { status: res.status, data: text };
   } catch (e) {
@@ -226,6 +275,30 @@ export async function request<T = unknown>(
   if (needAuth) {
     const token = currentToken();
     if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
+  /* v1.1：二进制响应直达路径（.flyme 备份下载）——不重试、不解析 ok 字段，
+     错误时把响应体按文本解出服务端文案（flyme_fail 输出 JSON）。 */
+  if (opts.responseType === 'arraybuffer') {
+    try {
+      const res = isNative()
+        ? await nativeRequest(fullUrl, opts, headers, timeoutMs)
+        : await fetchRequest(fullUrl, joinUrl('', opts.path, opts.query), opts, headers, timeoutMs);
+      const status = Number(res.status ?? 0);
+      if (status < 200 || status >= 300) {
+        const data = res.data;
+        let text: string;
+        if (typeof data === 'string') text = data;
+        else if (data instanceof ArrayBuffer) text = new TextDecoder().decode(new Uint8Array(data));
+        else text = String(data ?? '');
+        throw classifyStatus(status, coerceBody(text) ?? text);
+      }
+      return { status, data: res.data as T, headers: res.headers };
+    } catch (e) {
+      const err = e instanceof ApiError ? e : classifyUnknownError(e, timeoutSec);
+      logger.error('http', `${method} ${opts.path} 失败(raw)`, err.kind, err.message);
+      throw err;
+    }
   }
 
   const maxRetry = opts.retry ?? (method === 'GET' ? 1 : 0);

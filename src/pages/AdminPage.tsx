@@ -5,7 +5,9 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { request } from '../net/httpClient';
+import type { HttpResponse } from '../net/httpClient';
 import { ApiError } from '../lib/error';
+import { decodeFlyme, isEncryptedFlyme, isFlyme } from '../lib/flymeFile';
 import { currentServer, toastError, toastSuccess, useUiStore } from '../store';
 import type { ServerConfig } from '../types/entities';
 import { compressIconFile } from '../lib/brandIcon';
@@ -121,6 +123,58 @@ export default function AdminPage(): JSX.Element {
     [serverNow, token],
   );
 
+  /**
+   * v1.1：备份导出专用——二进制 GET。服务端下发 FLYME1 加密容器原文（application/octet-stream），
+   * 跳过 JSON 解析与 ok 校验，data 为 ArrayBuffer；wantHeaders 取出 X-Nawu-Backup-Summary。
+   */
+  const adminGetBinary = useCallback(
+    async (path: string, query: Record<string, string>, wantHeaders: string[]): Promise<HttpResponse<ArrayBuffer>> =>
+      request<ArrayBuffer>(serverNow(), {
+        method: 'GET',
+        path,
+        query,
+        auth: false,
+        retry: 0,
+        ignoreUnauth: true,
+        responseType: 'arraybuffer',
+        wantHeaders,
+        headers: token ? adminHeaders(token) : undefined,
+        timeoutMs: 300000,
+      }),
+    [serverNow, token],
+  );
+
+  /**
+   * v1.1：备份导入专用——原始字节 POST（.flyme 文件原文透传，不经 JSON 序列化），
+   * mode/includeAdmins/password 等参数走 query（服务端从 $_GET 取）。
+   */
+  const adminPostRaw = useCallback(
+    async (
+      path: string,
+      query: Record<string, string>,
+      body: ArrayBuffer,
+      contentType: string,
+    ): Promise<Record<string, unknown>> => {
+      const res = await request<Record<string, unknown>>(serverNow(), {
+        method: 'POST',
+        path,
+        query,
+        rawBody: body,
+        contentType,
+        auth: false,
+        retry: 0,
+        ignoreUnauth: true,
+        headers: token ? adminHeaders(token) : undefined,
+        timeoutMs: 600000,
+      });
+      if (!res.data || res.data.ok !== true) {
+        throw new ApiError('http', (res.data as { error?: string })?.error ?? '请求失败', res.status, res.data);
+      }
+      return res.data;
+    },
+    [serverNow, token],
+  );
+
   const loadAll = useCallback(async (): Promise<void> => {
     if (!token) return;
     setBusy(true);
@@ -227,7 +281,7 @@ export default function AdminPage(): JSX.Element {
       {tab === 'users' ? <UsersTab users={users} adminPost={adminPost} reload={() => void loadAll()} /> : null}
       {tab === 'switches' ? <SwitchesTab settings={settings} adminPost={adminPost} reload={() => void loadAll()} /> : null}
       {tab === 'mail' ? <MailTab adminGet={adminGet} adminPost={adminPost} /> : null}
-      {tab === 'db' ? <DbTab adminGet={adminGet} adminPost={adminPost} /> : null}
+      {tab === 'db' ? <DbTab adminGet={adminGet} adminPost={adminPost} adminGetBinary={adminGetBinary} adminPostRaw={adminPostRaw} /> : null}
       {tab === 'update' ? <ServerUpdateTab token={token} onDot={setUpdateDot} /> : null}
       {tab === 'security' ? <SecurityTab admins={admins} adminPost={adminPost} onLogout={() => setToken('')} /> : null}
     </div>
@@ -919,9 +973,15 @@ interface DbConf {
 function DbTab({
   adminGet,
   adminPost,
+  adminGetBinary,
+  adminPostRaw,
 }: {
   adminGet: (path: string) => Promise<Record<string, unknown>>;
   adminPost: (path: string, body?: unknown) => Promise<Record<string, unknown>>;
+  /** v1.1：二进制 GET（备份导出 .flyme），返回原文字节 + 指定响应头 */
+  adminGetBinary: (path: string, query: Record<string, string>, wantHeaders: string[]) => Promise<HttpResponse<ArrayBuffer>>;
+  /** v1.1：原始字节 POST（备份导入 .flyme 回灌），参数走 query */
+  adminPostRaw: (path: string, query: Record<string, string>, body: ArrayBuffer, contentType: string) => Promise<Record<string, unknown>>;
 }): JSX.Element {
   const [info, setInfo] = useState<DbInfo | null>(null);
   const [conf, setConf] = useState<DbConf | null>(null);
@@ -932,6 +992,24 @@ function DbTab({
   const [includeAdmins, setIncludeAdmins] = useState(false);
   const [importMsg, setImportMsg] = useState('');
   const importFileRef = useRef<HTMLInputElement | null>(null);
+  /* v1.1：备份导出改为「.flyme 加密容器」——导出前先设密码（面板内联，非受控输入），
+     导入侧对加密文件先解密预览再确认，全程复用用户端同款 FLYME1 格式。 */
+  const [exportPanel, setExportPanel] = useState<null | 'all' | 'site'>(null);
+  const exportPwdRef = useRef<HTMLInputElement | null>(null);
+  const exportPwd2Ref = useRef<HTMLInputElement | null>(null);
+  /** 已选中、等待输入密码解密的加密备份 */
+  const [pendingEncrypted, setPendingEncrypted] = useState<{ bytes: Uint8Array } | null>(null);
+  const importPwdRef = useRef<HTMLInputElement | null>(null);
+  /** 解密预览用的密码（确认导入时原样带给服务端再解一次） */
+  const importPwdUsedRef = useRef('');
+  /** 解密预览成功的备份（待确认导入） */
+  const [importPreview, setImportPreview] = useState<{
+    names: string[];
+    rowTotal: number;
+    scope: 'all' | 'site';
+    bytes: Uint8Array;
+    encrypted: boolean;
+  } | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -981,26 +1059,43 @@ function DbTab({
     }
   };
 
-  /** 导出备份为 JSON 文件下载。 */
-  const exportBackup = async (scope: 'all' | 'site'): Promise<void> => {
+  /**
+   * 导出备份（v1.1：.flyme 加密容器）。
+   * 密码面板确认后调用；服务端用密码做 FLYME1 加密（PBKDF2 20 万次 + AES-256-GCM，
+   * 与用户端「导出 .flyme」同一格式），原文二进制下发。
+   */
+  const doExport = async (scope: 'all' | 'site', password: string): Promise<void> => {
     setBusy(scope);
     setMsg('');
     try {
-      const res = await adminGet(`/api/admin/backup?scope=${scope}`);
-      const dump = {
-        app: 'nawu',
-        exportedAt: new Date().toISOString(),
-        scope,
-        tables: res.tables ?? {},
-      };
-      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+      const res = await adminGetBinary('/api/admin/backup', { scope, password }, ['x-nawu-backup-summary']);
+      const bytes = new Uint8Array(res.data);
+      if (bytes.byteLength < 8) {
+        throw new Error('备份文件异常（内容过小）');
+      }
+      const blob = new Blob([bytes], { type: 'application/octet-stream' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `nawu-backup-${scope}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `nawu-backup-${scope}-${new Date().toISOString().slice(0, 10)}.flyme`;
       a.click();
       URL.revokeObjectURL(a.href);
-      const n = Object.values(dump.tables as Record<string, unknown[]>).reduce((acc, v) => acc + (Array.isArray(v) ? v.length : 0), 0);
-      setMsg(`备份已下载（${Object.keys(dump.tables as object).length} 张表 / ${n} 行）。可在下方「导入备份」里把这份文件灌回去。`);
+      let summary = '';
+      const raw = res.headers?.['x-nawu-backup-summary'];
+      if (raw) {
+        try {
+          const s = JSON.parse(raw) as { tables?: number; rows?: number };
+          summary = `（${s.tables ?? '?'} 张表 / ${s.rows ?? '?'} 行）`;
+        } catch {
+          /* 头缺失不影响主流程 */
+        }
+      }
+      setMsg(
+        `加密备份已下载${summary}。文件为 FLYME1 加密格式（PBKDF2 + AES-256-GCM），` +
+          '导入时需要同一密码；密码丢失无法恢复，请妥善保管。',
+      );
+      setExportPanel(null);
+      if (exportPwdRef.current) exportPwdRef.current.value = '';
+      if (exportPwd2Ref.current) exportPwd2Ref.current.value = '';
       toastSuccess('备份已下载');
     } catch (err) {
       setMsg(err instanceof Error ? err.message : '导出失败');
@@ -1010,67 +1105,149 @@ function DbTab({
     }
   };
 
-  /** 读取本地 JSON 文件为文本（FileReader，兼容低版本 WebView）。 */
-  const readText = (file: File): Promise<string> =>
+  /** 导出密码面板：校验后执行导出。 */
+  const submitExport = (scope: 'all' | 'site'): void => {
+    const p1 = exportPwdRef.current?.value ?? '';
+    const p2 = exportPwd2Ref.current?.value ?? '';
+    if (p1.trim().length < 4) {
+      toastError('备份密码至少 4 位');
+      exportPwdRef.current?.focus();
+      return;
+    }
+    if (p1 !== p2) {
+      toastError('两次输入的密码不一致');
+      return;
+    }
+    void doExport(scope, p1);
+  };
+
+  /** 读取本地文件字节（FileReader，兼容低版本 WebView）。 */
+  const readBytes = (file: File): Promise<Uint8Array> =>
     new Promise((resolve, reject) => {
       const fr = new FileReader();
       fr.onerror = () => reject(new Error('读取文件失败'));
       fr.onload = () => {
-        if (typeof fr.result === 'string') resolve(fr.result);
+        if (fr.result instanceof ArrayBuffer) resolve(new Uint8Array(fr.result));
         else reject(new Error('读取文件失败'));
       };
-      fr.readAsText(file);
+      fr.readAsArrayBuffer(file);
     });
 
+  /** 把解析出的 dump 转成预览状态（顺带做格式体检）。 */
+  const showImportPreview = (
+    dump: { scope?: string; tables?: Record<string, unknown> },
+    bytes: Uint8Array,
+    encrypted: boolean,
+    password: string,
+  ): boolean => {
+    const rawTables = dump && dump.tables;
+    if (!rawTables || typeof rawTables !== 'object' || Array.isArray(rawTables)) {
+      setImportMsg('备份文件里没有 tables 字段（不是本系统「数据备份」导出的文件）');
+      return false;
+    }
+    const tables = rawTables as Record<string, unknown>;
+    const names = Object.keys(tables);
+    if (names.length === 0) {
+      setImportMsg('备份文件里没有任何数据表');
+      return false;
+    }
+    const rowTotal = names.reduce((acc, k) => acc + (Array.isArray(tables[k]) ? (tables[k] as unknown[]).length : 0), 0);
+    const scope = dump && dump.scope === 'site' ? 'site' : 'all';
+    importPwdUsedRef.current = password;
+    setImportPreview({ names, rowTotal, scope, bytes, encrypted });
+    setImportMsg('');
+    return true;
+  };
+
   /**
-   * 导入备份（v1.0.34）：选文件 → 本地预览概要并二次确认 → 交给服务端事务导入。
-   *
-   * 客户端只做「格式体检 + 让人看清要覆盖什么」；真正的表名/列名白名单校验
-   * 与事务回滚都在服务端（app/Api.php 的 /api/admin/backup/import）。
+   * 导入备份（v1.1：.flyme 加密文件）。
+   * 选文件 → 加密的先输密码解密预览 → 本地预览概要并二次确认 →
+   * 字节 + 密码交给服务端事务导入（表名/列名白名单 + 事务回滚都在服务端）。
    */
   const doImport = async (file: File): Promise<void> => {
     setBusy('import');
     setImportMsg('');
+    setImportPreview(null);
+    setPendingEncrypted(null);
     try {
-      const text = await readText(file);
-      let dump: { scope?: string; tables?: Record<string, unknown> } | null = null;
-      try {
-        dump = JSON.parse(text) as { scope?: string; tables?: Record<string, unknown> };
-      } catch {
-        throw new Error('备份文件不是合法的 JSON');
+      const bytes = await readBytes(file);
+      if (isFlyme(bytes) && isEncryptedFlyme(bytes)) {
+        setPendingEncrypted({ bytes });
+        setMsg('该备份已加密，请输入备份密码后点「解密并预览」。');
+        return; // busy 保持 'import'，由预览/确认流程继续接管
       }
-      const rawTables = dump && dump.tables;
-      if (!rawTables || typeof rawTables !== 'object' || Array.isArray(rawTables)) {
-        throw new Error('备份文件里没有 tables 字段（不是本系统「数据备份」导出的文件）');
+      let dump: { scope?: string; tables?: Record<string, unknown> };
+      if (isFlyme(bytes)) {
+        dump = (await decodeFlyme(bytes, '')) as { scope?: string; tables?: Record<string, unknown> };
+      } else {
+        // 兼容 v1.1 之前的明文 .json 备份
+        try {
+          dump = JSON.parse(new TextDecoder().decode(bytes)) as { scope?: string; tables?: Record<string, unknown> };
+        } catch {
+          throw new Error('备份文件不是合法的 .flyme / JSON');
+        }
       }
-      const tables = rawTables as Record<string, unknown>;
-      const names = Object.keys(tables);
-      if (names.length === 0) {
-        throw new Error('备份文件里没有任何数据表');
-      }
-      const rowTotal = names.reduce((acc, k) => acc + (Array.isArray(tables[k]) ? (tables[k] as unknown[]).length : 0), 0);
-      const scope = dump && dump.scope === 'site' ? 'site' : 'all';
-
-      const head =
-        importMode === 'replace'
-          ? `⚠ 覆盖模式：会先【清空】下面这些表再导入，备份之后新增的数据会丢。\n${names.join('、')}`
-          : '合并模式：只覆盖同名主键的行，备份里没有的现有数据一律保留。';
-      const tail = includeAdmins
-        ? '⚠ 已勾选「同时导入管理员表」：导入后后台登录账号与密码会变成备份里的那一套。'
-        : '管理员账号表不会被改动。';
-      const summary = `范围：${scope === 'site' ? '站点数据' : '全站'} · ${names.length} 张表 · ${rowTotal} 行`;
-      if (!window.confirm(`${head}\n\n${summary}\n${tail}\n\n确定现在导入？`)) {
+      if (!showImportPreview(dump, bytes, false, '')) {
         setBusy('');
         return;
       }
+      setMsg('');
+    } catch (err) {
+      setImportMsg(err instanceof Error ? err.message : '导入失败');
+      setBusy('');
+    }
+  };
 
-      const res = await adminPost('/api/admin/backup/import', { scope, mode: importMode, includeAdmins, tables });
+  /** 加密备份：输密码 → 解密预览。 */
+  const submitImportPwd = async (): Promise<void> => {
+    if (!pendingEncrypted) return;
+    const pwd = importPwdRef.current?.value ?? '';
+    if (!pwd) {
+      toastError('请输入备份密码');
+      return;
+    }
+    setBusy('import');
+    try {
+      const dump = (await decodeFlyme(pendingEncrypted.bytes, pwd)) as {
+        scope?: string;
+        tables?: Record<string, unknown>;
+      };
+      if (showImportPreview(dump, pendingEncrypted.bytes, true, pwd)) {
+        setPendingEncrypted(null);
+        setMsg('');
+      } else {
+        setBusy('');
+      }
+    } catch {
+      setImportMsg('密码错误，或文件已损坏');
+      toastError('解密失败');
+      setBusy('');
+    }
+  };
+
+  /** 预览确认后：字节 + 密码 POST 给服务端事务导入。 */
+  const confirmImport = async (): Promise<void> => {
+    if (!importPreview) return;
+    setBusy('import');
+    setImportMsg('');
+    try {
+      const res = await adminPostRaw(
+        '/api/admin/backup/import',
+        {
+          mode: importMode,
+          includeAdmins: includeAdmins ? '1' : '0',
+          ...(importPreview.encrypted ? { password: importPwdUsedRef.current } : {}),
+        },
+        importPreview.bytes.buffer.slice(importPreview.bytes.byteOffset, importPreview.bytes.byteOffset + importPreview.bytes.byteLength) as ArrayBuffer,
+        'application/octet-stream',
+      );
       const detail = (res.tables ?? {}) as Record<string, { imported?: number; total?: number }>;
       const skipped = (res.skipped ?? []) as Array<{ table?: string; reason?: string }>;
       const lines = Object.keys(detail).map(
         (t) => `  ${t}：导入 ${detail[t]?.imported ?? 0} / 备份 ${detail[t]?.total ?? 0} 行`,
       );
       const skipLines = skipped.map((s) => `  ${s.table ?? '?'}：${s.reason ?? ''}`);
+      setImportPreview(null);
       setImportMsg(
         [
           `导入完成（${importMode === 'replace' ? '覆盖' : '合并'}模式）：${Number(res.tableCount ?? 0)} 张表 / ${Number(res.rowCount ?? 0)} 行。`,
@@ -1091,84 +1268,204 @@ function DbTab({
 
   return (
     <div className="space-y-2">
-      {/* 备份导出 */}
+      {/* 备份导出（v1.1：.flyme 加密容器，与用户端导出同格式） */}
       <div className="rounded-card border border-line bg-surface p-4">
         <p className="text-sm font-medium">数据备份 / 恢复</p>
-        <p className="mt-0.5 text-[11px] text-ink-3">导出为 JSON 文件保存在本地；建议定期下载留存，需要时可在下面直接导入回去。</p>
+        <p className="mt-0.5 text-[11px] text-ink-3">
+          导出为 <span className="font-mono">.flyme</span> 加密文件保存在本地（PBKDF2 20 万次派生密钥 + AES-256-GCM，
+          与用户端「导出 .flyme」同一容器格式），防止备份被窃取后直接读取；导入时需要同一密码，密码丢失无法恢复，请妥善保管。
+        </p>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
-            onClick={() => void exportBackup('site')}
-            disabled={busy === 'site' || busy === 'import'}
+            onClick={() => setExportPanel('site')}
+            disabled={busy === 'site' || busy === 'all' || busy === 'import'}
             className="h-10 rounded-btn border border-accent px-4 text-sm font-medium text-accent disabled:opacity-60"
           >
             {busy === 'site' ? '导出中…' : '站点数据备份（用户/云备份/名册）'}
           </button>
           <button
-            onClick={() => void exportBackup('all')}
-            disabled={busy === 'all' || busy === 'import'}
+            onClick={() => setExportPanel('all')}
+            disabled={busy === 'site' || busy === 'all' || busy === 'import'}
             className="h-10 rounded-btn border border-accent px-4 text-sm font-medium text-accent disabled:opacity-60"
           >
             {busy === 'all' ? '导出中…' : '全站备份（全部数据表）'}
           </button>
         </div>
 
-        {/* 导入备份（v1.0.34 补的缺口：此前只有导出、没有导入） */}
-        <div className="mt-4 border-t border-line pt-3">
-          <p className="text-sm font-medium">导入备份</p>
-          <p className="mt-0.5 text-[11px] text-ink-3">
-            选一份上面导出的 .json 文件灌回当前数据库。服务端会先校验表名与列名白名单，全部写入包在一个事务里，任一步失败自动回滚。
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-ink-2">
-            <label className="flex items-center gap-1.5">
+        {/* 导出密码面板（内联展开，不用弹窗，移动端更稳） */}
+        {exportPanel ? (
+          <div className="mt-2 rounded-btn border border-line bg-surface-2 p-3">
+            <p className="text-xs text-ink-2">
+              正在导出：{exportPanel === 'all' ? '全站备份（全部数据表）' : '站点数据备份（用户/云备份/名册）'}
+            </p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
               <input
-                type="radio"
-                name="nawuImportMode"
-                checked={importMode === 'merge'}
-                onChange={() => setImportMode('merge')}
+                ref={exportPwdRef}
+                type="password"
+                autoComplete="new-password"
+                placeholder="备份密码（至少 4 位）"
+                className="h-10 rounded-btn border border-line bg-surface px-3 text-sm"
               />
-              合并（保留现有，同名覆盖）
-            </label>
-            <label className="flex items-center gap-1.5">
               <input
-                type="radio"
-                name="nawuImportMode"
-                checked={importMode === 'replace'}
-                onChange={() => setImportMode('replace')}
-                style={{ accentColor: 'var(--danger)' }}
+                ref={exportPwd2Ref}
+                type="password"
+                autoComplete="new-password"
+                placeholder="再输一次确认"
+                className="h-10 rounded-btn border border-line bg-surface px-3 text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') submitExport(exportPanel);
+                }}
               />
-              <span style={importMode === 'replace' ? { color: 'var(--danger)' } : undefined}>覆盖（先清空再导入）</span>
-            </label>
-            <label className="flex items-center gap-1.5">
-              <input type="checkbox" checked={includeAdmins} onChange={(e) => setIncludeAdmins(e.target.checked)} />
-              同时导入管理员表
-            </label>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => submitExport(exportPanel)}
+                disabled={busy === 'site' || busy === 'all'}
+                className="h-9 rounded-btn bg-accent px-4 text-xs font-medium text-on-accent disabled:opacity-60"
+              >
+                确认导出
+              </button>
+              <button
+                onClick={() => {
+                  setExportPanel(null);
+                  if (exportPwdRef.current) exportPwdRef.current.value = '';
+                  if (exportPwd2Ref.current) exportPwd2Ref.current.value = '';
+                }}
+                disabled={busy === 'site' || busy === 'all'}
+                className="h-9 rounded-btn border border-line px-4 text-xs text-ink-2 disabled:opacity-60"
+              >
+                取消
+              </button>
+            </div>
+            <p className="mt-1.5 text-[11px] text-ink-3">加密在本机与服务端之间完成，密码不会保存在服务器。</p>
           </div>
-          <button
-            onClick={() => {
-              if (busy === '') importFileRef.current?.click();
-            }}
-            disabled={busy !== ''}
-            className="mt-2 h-10 rounded-btn border border-accent px-4 text-sm font-medium text-accent disabled:opacity-60"
-          >
-            {busy === 'import' ? '导入中…' : '选择备份文件并导入'}
-          </button>
-          <input
-            ref={importFileRef}
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = '';
-              if (f) void doImport(f);
-            }}
-          />
-          {importMsg ? (
-            <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-btn border border-line bg-surface-2 p-3 text-[11px] leading-5 text-ink-2">
-              {importMsg}
-            </pre>
-          ) : null}
-        </div>
+        ) : null}
+      </div>
+
+      <div className="rounded-card border border-line bg-surface p-4">
+        <p className="text-sm font-medium">导入备份</p>
+        <p className="mt-0.5 text-[11px] text-ink-3">
+          选一份上面导出的 <span className="font-mono">.flyme</span> 加密备份（也兼容 v1.1 之前的明文 .json）灌回当前数据库。
+          服务端会先校验表名与列名白名单，全部写入包在一个事务里，任一步失败自动回滚；导入前会先在本地解密预览概要，确认无误才提交。
+        </p>
+
+        {/* 加密备份：先输密码解密预览 */}
+        {pendingEncrypted ? (
+          <div className="mt-2 rounded-btn border border-line bg-surface-2 p-3">
+            <p className="text-xs text-ink-2">该备份已加密（FLYME1 / AES-256-GCM），请输入导出时设置的密码。</p>
+            <input
+              ref={importPwdRef}
+              type="password"
+              autoComplete="off"
+              placeholder="备份密码"
+              className="mt-2 h-10 w-full max-w-xs rounded-btn border border-line bg-surface px-3 text-sm"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void submitImportPwd();
+              }}
+            />
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => void submitImportPwd()}
+                className="h-9 rounded-btn bg-accent px-4 text-xs font-medium text-on-accent"
+              >
+                解密并预览
+              </button>
+              <button
+                onClick={() => {
+                  setPendingEncrypted(null);
+                  if (importPwdRef.current) importPwdRef.current.value = '';
+                }}
+                className="h-9 rounded-btn border border-line px-4 text-xs text-ink-2"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* 本地预览 + 二次确认卡 */}
+        {importPreview ? (
+          <div className="mt-2 rounded-btn border border-line bg-surface-2 p-3">
+            <p className="text-sm font-medium">
+              备份概要：{importPreview.names.length} 张表 / {importPreview.rowTotal} 行
+              {importPreview.encrypted ? '（已解密校验）' : ''}
+            </p>
+            <p className="mt-0.5 max-h-32 overflow-auto whitespace-pre-wrap text-[11px] leading-5 text-ink-3">
+              {importPreview.names.join('、')}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-ink-2">
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="nawuImportMode"
+                  checked={importMode === 'merge'}
+                  onChange={() => setImportMode('merge')}
+                />
+                合并（保留现有，同名覆盖）
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="nawuImportMode"
+                  checked={importMode === 'replace'}
+                  onChange={() => setImportMode('replace')}
+                  style={{ accentColor: 'var(--danger)' }}
+                />
+                <span style={importMode === 'replace' ? { color: 'var(--danger)' } : undefined}>覆盖（先清空再导入）</span>
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" checked={includeAdmins} onChange={(e) => setIncludeAdmins(e.target.checked)} />
+                同时导入管理员表
+              </label>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => void confirmImport()}
+                disabled={busy === 'import'}
+                className="h-9 rounded-btn bg-accent px-4 text-xs font-medium text-on-accent disabled:opacity-60"
+              >
+                {busy === 'import' ? '导入中…' : '确认导入'}
+              </button>
+              <button
+                onClick={() => setImportPreview(null)}
+                disabled={busy === 'import'}
+                className="h-9 rounded-btn border border-line px-4 text-xs text-ink-2 disabled:opacity-60"
+              >
+                换一份文件
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {!importPreview && !pendingEncrypted ? (
+          <>
+            <button
+              onClick={() => {
+                if (busy === '') importFileRef.current?.click();
+              }}
+              disabled={busy !== ''}
+              className="mt-2 h-10 rounded-btn border border-accent px-4 text-sm font-medium text-accent disabled:opacity-60"
+            >
+              {busy === 'import' ? '读取中…' : '选择备份文件'}
+            </button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".flyme,application/octet-stream,.json,application/json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (f) void doImport(f);
+              }}
+            />
+          </>
+        ) : null}
+        {importMsg ? (
+          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-btn border border-line bg-surface-2 p-3 text-[11px] leading-5 text-ink-2">
+            {importMsg}
+          </pre>
+        ) : null}
       </div>
 
       {/* 连接状态 */}
@@ -1679,7 +1976,7 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
           <input
             value={appVersion}
             onChange={(e) => setAppVersion(e.target.value)}
-            placeholder="版本号（如 1.0.36）"
+            placeholder="版本号（如 1.1）"
             className={inputCls}
           />
           <input
