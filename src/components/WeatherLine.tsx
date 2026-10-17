@@ -97,7 +97,9 @@ const writeCache = (data: WeatherInfo): void => {
   }
 };
 
-/** IP 定位：先 ipwho.is，再 ipapi.co；只要 city + 经纬度。 */
+/** IP 定位：先 ipwho.is，再 get.geojs.io；只要城市 + 经纬度。
+ *  注：ipapi.co 现在对服务器 IP 返回 Cloudflare 403，已弃用。
+ *  geojs 的 latitude/longitude 是字符串，需 parseFloat。 */
 async function locate(): Promise<{ city: string; lat: number; lon: number } | null> {
   const timeout = (ms: number): AbortSignal => AbortSignal.timeout(ms);
   try {
@@ -110,11 +112,11 @@ async function locate(): Promise<{ city: string; lat: number; lon: number } | nu
     /* 换下一个源 */
   }
   try {
-    const r = await fetch('https://ipapi.co/json/', { signal: timeout(6000) });
-    const j = (await r.json()) as { city?: string; latitude?: number; longitude?: number };
-    if (typeof j.latitude === 'number' && typeof j.longitude === 'number') {
-      return { city: j.city || '本地', lat: j.latitude, lon: j.longitude };
-    }
+    const r = await fetch('https://get.geojs.io/v1/ip/geo.json', { signal: timeout(6000) });
+    const j = (await r.json()) as { city?: string; latitude?: string | number; longitude?: string | number };
+    const lat = typeof j.latitude === 'number' ? j.latitude : parseFloat(String(j.latitude ?? ''));
+    const lon = typeof j.longitude === 'number' ? j.longitude : parseFloat(String(j.longitude ?? ''));
+    if (Number.isFinite(lat) && Number.isFinite(lon)) return { city: j.city || '本地', lat, lon };
   } catch {
     /* 全失败 */
   }
