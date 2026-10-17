@@ -38,7 +38,7 @@ import {
 import { GLASS_STYLE } from '../components/layout/MainShell';
 import { useDataStore, useSettingsStore, useUiStore, toastSuccess, toastError } from '../store';
 import { dailyCost, holdDays, perUseCost, sortGoods, totalInvest, achieveRate } from '../domain/goods';
-import { formatMoney, symbolOf } from '../lib/money';
+import { formatMoney, symbolOf, round } from '../lib/money';
 import { fmtDate, today } from '../lib/date';
 import { drawGoodsCard, shareOrDownload } from '../lib/shareCard';
 import { compressDataUrlUnder, IMAGE_MAX_KB } from '../lib/imageCompress';
@@ -449,6 +449,7 @@ export function GoodsFormSheet({
   const categories = useDataStore((s) => s.categories);
   const addGoods = useDataStore((s) => s.addGoods);
   const updateGoods = useDataStore((s) => s.updateGoods);
+  const syncSaleIncome = useDataStore((s) => s.syncSaleIncome);
   const currency = useSettingsStore((s) => s.settings.currency);
   const { confirm } = useUiStore.getState();
 
@@ -533,9 +534,15 @@ export function GoodsFormSheet({
         const sp = sellPrice.trim() ? Number(sellPrice) : 0;
         let markSold = false;
         if (Number.isFinite(sp) && sp > 0 && initial.status !== 'retired') {
+          // ★v1.1.3：confirm 里就把净赚算出来——用户答「是」时知道会计入生活流收入
+          const invest = round(p + fees.reduce((acc, f) => acc + (Number(f.amount) || 0), 0));
+          const profit = round(sp - invest);
           markSold = await confirm({
             title: '标记为已转卖？',
-            message: '已填写出售价，是否同时标记为已转卖（退役）？',
+            message:
+              profit > 0
+                ? `已填写出售价，是否同时标记为已转卖（退役）？净赚 ${formatMoney(profit, currency)} 将记入生活流收入`
+                : '已填写出售价，是否同时标记为已转卖（退役）？按此价格暂无净收益，不会记入生活流',
           });
         }
         // 编辑：一次提交全量 patch（空值=清除该字段；incomes 不在 patch 里 → 原样保留）
@@ -553,7 +560,15 @@ export function GoodsFormSheet({
           warrantyDate: warrantyDate || undefined,
           ...(markSold ? { status: 'retired' as const } : {}),
         });
-        toastSuccess(markSold ? '已保存并标记为已转卖' : '已保存');
+        // ★v1.1.3：净赚同步生活流（改出售价 / 恢复在用也会走到这里，store 内幂等）
+        const sync = await syncSaleIncome(initial.id);
+        let msg = markSold ? '已保存并标记为已转卖' : '已保存';
+        if (sync.action === 'created' || sync.action === 'updated') {
+          msg += `，净赚 ${formatMoney(sync.amount ?? 0, currency)} 已记入生活流`;
+        } else if (sync.action === 'removed') {
+          msg += '，生活流中的转卖收益已移除';
+        }
+        toastSuccess(msg);
       } else {
         // 新增：轻量基础信息，其余字段走 store 默认值
         await addGoods(base);
@@ -829,6 +844,7 @@ export default function HomePage() {
   const categories = useDataStore((s) => s.categories);
   const records = useDataStore((s) => s.valueRecords);
   const updateGoods = useDataStore((s) => s.updateGoods);
+  const syncSaleIncome = useDataStore((s) => s.syncSaleIncome);
   const removeById = useDataStore((s) => s.removeById);
   const useGoodsOnce = useDataStore((s) => s.useGoodsOnce);
   const currency = useSettingsStore((s) => s.settings.currency);
@@ -1070,8 +1086,10 @@ export default function HomePage() {
     const ok = await confirm({ title: `删除「${g.name}」？`, message: '删除后不可恢复（建议先退役保留记录）。' });
     if (!ok) return;
     await removeById('goods', g.id);
+    // ★v1.1.3：清掉该物品关联的转卖收益记录，避免生活流里留下孤儿收入
+    const sync = await syncSaleIncome(g.id);
     setDetailId(null);
-    toastSuccess('已删除');
+    toastSuccess(sync.action === 'removed' ? '已删除，关联的转卖收益已一并移除' : '已删除');
   };
 
   const symbol = symbolOf(currency);
@@ -1592,9 +1610,24 @@ export default function HomePage() {
                         编辑
                       </button>
                       <button
-                        onClick={() =>
-                          void updateGoods(detail.id, { status: detail.status === 'retired' ? 'active' : 'retired' })
-                        }
+                        onClick={() => {
+                          // ★v1.1.3：退役/恢复后用后净赚同步生活流（store 内幂等）：
+                          // 标记退役且填过出售价 → 记收入；恢复在用 → 撤回收入。
+                          const toRetired = detail.status !== 'retired';
+                          void updateGoods(detail.id, { status: toRetired ? 'retired' : 'active' })
+                            .then(() => syncSaleIncome(detail.id))
+                            .then((res) => {
+                              const base = toRetired ? '已标记退役' : '已恢复在用';
+                              if (res.action === 'created' || res.action === 'updated') {
+                                toastSuccess(`${base}，净赚 ${formatMoney(res.amount ?? 0, currency)} 已记入生活流`);
+                              } else if (res.action === 'removed') {
+                                toastSuccess(`${base}，生活流中的转卖收益已移除`);
+                              } else {
+                                toastSuccess(base);
+                              }
+                            })
+                            .catch(() => toastError('操作失败，请重试'));
+                        }}
                         className="h-10 flex-1 rounded-btn border border-line text-xs text-ink-2 active:scale-95 transition-transform"
                       >
                         {detail.status === 'retired' ? '恢复在用' : '标记退役'}

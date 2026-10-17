@@ -12,6 +12,7 @@ import { isNative } from '../net/env';
 import { haptic } from '../lib/haptics';
 import { checkAppUpdate, type AppUpdateTarget } from '../api/appUpdate';
 import { runAppUpdate, fmtSize, type UpdateProgress } from '../api/appUpdateFlow';
+import { chatComplete } from '../net/aiClient';
 import type { ThemeMode } from '../types/entities';
 
 const THEMES: Array<{ value: ThemeMode; label: string }> = [
@@ -33,6 +34,8 @@ export default function SettingsPage() {
   const [aiEndpoint, setAiEndpoint] = useState(settings.aiEndpoint ?? '');
   const [aiKey, setAiKey] = useState(settings.aiKey ?? '');
   const [aiModel, setAiModel] = useState(settings.aiModel ?? '');
+  /** ★v1.1.3 测试连接中（发一句最小请求验证 endpoint/key/model 是否可用）。 */
+  const [testing, setTesting] = useState(false);
 
   const saveAi = async () => {
     await update({
@@ -41,6 +44,28 @@ export default function SettingsPage() {
       aiModel: aiModel.trim(),
     });
     toastSuccess('AI 配置已保存');
+  };
+
+  /** 测试连接：拿输入框里的值（不强制先保存）发一句最小对话，验证三件套是否配对了。 */
+  const testAi = async () => {
+    const cfg = {
+      endpoint: aiEndpoint.trim().replace(/\/+$/, ''),
+      key: aiKey.trim(),
+      model: aiModel.trim() || 'gpt-4o-mini',
+    };
+    if (!cfg.endpoint || !cfg.key) {
+      toastError('请先填写接口地址和 API Key');
+      return;
+    }
+    setTesting(true);
+    try {
+      const text = await chatComplete(cfg, [{ role: 'user', content: 'ping，请只回复一个字：好' }], 15000);
+      toastSuccess(`连接成功，模型回复：${(text || '').slice(0, 20) || '（空）'}`);
+    } catch (e) {
+      toastError(`连接失败：${e instanceof Error && e.message ? e.message : '未知错误'}`);
+    } finally {
+      setTesting(false);
+    }
   };
 
   const [checking, setChecking] = useState(false);
@@ -139,8 +164,9 @@ export default function SettingsPage() {
       {/* AI 助手 */}
       <section className="mt-3 rounded-card border border-line bg-surface p-4">
         <h2 className="text-sm font-semibold">AI 助手（可选）</h2>
-        <p className="mt-1 text-[11px] text-ink-3">
+        <p className="mt-1 text-[11px] leading-5 text-ink-3">
           填 OpenAI 兼容接口直连第三方；留空则只使用本地识别规则。Key 只保存在本机。
+          配置后用于两处：① AI 记一笔（一句话 / 识图记账解析）② 报表页「AI 分析」（按当前粒度生成消费洞察）。
         </p>
         <div className="mt-3 space-y-3">
           <PageField label="接口地址 Endpoint">
@@ -171,9 +197,18 @@ export default function SettingsPage() {
               className="h-11 w-full nw-input"
             />
           </PageField>
-          <button onClick={() => void saveAi()} className="h-11 w-full rounded-btn bg-accent text-sm font-semibold text-white">
-            保存 AI 配置
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => void saveAi()} className="h-11 flex-1 rounded-btn bg-accent text-sm font-semibold text-white">
+              保存 AI 配置
+            </button>
+            <button
+              onClick={() => void testAi()}
+              disabled={testing}
+              className="h-11 rounded-btn border border-line px-4 text-sm text-ink-2 active:bg-surface-2 disabled:opacity-50"
+            >
+              {testing ? '测试中…' : '测试连接'}
+            </button>
+          </div>
         </div>
       </section>
 

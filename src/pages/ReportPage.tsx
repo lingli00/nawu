@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Brain, Heart, Hourglass, Snowflake, Sprout } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Brain, Heart, Hourglass, Snowflake, Sprout, Sparkles } from 'lucide-react';
 import CategoryGlyph from '../components/CategoryGlyph';
 import { cooldownExpired } from '../components/LifeSheets';
 import QuickSheetHost from '../components/QuickSheets';
@@ -7,8 +8,10 @@ import { useDataStore, useSettingsStore } from '../store';
 import { categoryShare, judgementBreakdown } from '../domain/stats';
 import type { CategorySlice } from '../domain/stats';
 import { ofMonth, sumExpense, sumIncome } from '../domain/ledger';
-import { formatMoney, formatCompactMoney, formatNetMoney } from '../lib/money';
+import { formatMoney, formatCompactMoney, formatNetMoney, round } from '../lib/money';
 import { haptic } from '../lib/haptics';
+import { analyze, type AnalyzeInput, type AnalyzeOutcome } from '../ai/analyzeService';
+import { aiConfigOf, isAiConfigured } from '../ai/parseService';
 import { addDays, fmtDate, lastNDays, lastNMonths, monthKey, monthLabel, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
 import type { ValueRecord } from '../types/entities';
 import type { SheetKey } from '../lib/sheetBus';
@@ -215,9 +218,11 @@ function NetTrend({
 
 /** P08 报表：分类环图 + 趋势 + 归/需/否结构（支持日/月/年三种粒度）。 */
 export default function ReportPage() {
+  const nav = useNavigate();
   const records = useDataStore((s) => s.valueRecords);
   const categories = useDataStore((s) => s.categories);
   const currency = useSettingsStore((s) => s.settings.currency);
+  const settings = useSettingsStore((s) => s.settings);
   /* v1.0.24 · 生活流四集合（报表理智指数板块数据源）。 */
   const wishlist = useDataStore((s) => s.wishlist);
   const cooldowns = useDataStore((s) => s.cooldowns);
@@ -338,6 +343,41 @@ export default function ReportPage() {
   }, [grain, day, ym, year]);
   /** ★v1.0.35：净值趋势「怎么读」展开态。 */
   const [netHow, setNetHow] = useState(false);
+
+  /** ★v1.1.3 · AI 分析（本地规则洞察 + AI 点评；粒度切换后作废重算）。 */
+  const [analysis, setAnalysis] = useState<AnalyzeOutcome | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  useEffect(() => {
+    setAnalysis(null);
+  }, [grain, day, ym, year]);
+
+  /** 组装分析 payload（与页面展示同源：同一份 windowRows / slices / stack / trend）。 */
+  const analysisInput = (): AnalyzeInput => ({
+    windowLabel,
+    currency,
+    income,
+    expense,
+    topCategories: slices.slice(0, 5).map((s) => ({ name: s.name, amount: s.amount, ratio: s.ratio })),
+    judgement: stack.map((s) => ({ label: s.label, amount: s.amount, ratio: s.ratio })),
+    trend: trend.map((b) => ({ label: b.label, expense: b.expense, income: b.income })),
+    // v1.1.3：转卖净赚（src='goods-sale' 的收入记录）也是本期收入的一部分
+    saleProfit: round(
+      windowRows.filter((r) => r.src === 'goods-sale').reduce((s, r) => s + r.amount, 0),
+    ),
+    recordCount: windowRows.length,
+  });
+
+  const runAnalyze = async (): Promise<void> => {
+    if (analyzing) return;
+    setAnalyzing(true);
+    try {
+      const out = await analyze(analysisInput(), settings);
+      setAnalysis(out);
+      if (out.source === 'ai') void haptic('success');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   /* ★v1.0.33 P0-4：中间档改用 --tint-warm 令牌（原写死 #c98a2d）。 */
   const healthTint =
@@ -614,6 +654,56 @@ export default function ReportPage() {
               {grain === 'day' ? '今天' : grain === 'month' ? '本月' : '本年'}暂无支出，先去记一笔吧
             </p>
           ) : null}
+        </div>
+
+        {/* ★v1.1.3 · AI 分析：本地规则洞察 + AI 点评（未配 AI 也有洞察，配了才有点评） */}
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12">
+          <div className="flex items-baseline justify-between">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold dt:text-[15px]">
+              <Sparkles size={15} style={{ color: 'var(--accent)' }} />
+              AI 分析
+            </h2>
+            <button
+              onClick={() => void runAnalyze()}
+              disabled={analyzing}
+              className="h-8 rounded-full bg-accent px-3.5 text-xs font-medium text-white active:opacity-90 disabled:opacity-40"
+            >
+              {analyzing ? '分析中…' : analysis ? '重新分析' : '开始分析'}
+            </button>
+          </div>
+          <p className="mt-0.5 text-[11px] text-ink-3">
+            按当前粒度（{windowLabel}）聚合 · 本地规则洞察始终可用，配置 AI 后附点评
+          </p>
+          {analysis ? (
+            <div className="mt-3 space-y-2.5">
+              <ul className="space-y-1.5">
+                {analysis.local.map((t, i) => (
+                  <li key={i} className="flex gap-2 text-xs leading-5 text-ink-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                    <span className="min-w-0 flex-1">{t}</span>
+                  </li>
+                ))}
+              </ul>
+              {analysis.ai ? (
+                <div className="rounded-card bg-surface-2 p-3">
+                  <p className="mb-1 text-[11px] font-medium" style={{ color: 'var(--accent)' }}>
+                    AI 点评
+                  </p>
+                  <p className="whitespace-pre-line text-xs leading-5 text-ink-2">{analysis.ai}</p>
+                </div>
+              ) : null}
+              {analysis.reason ? <p className="text-[11px] leading-5 text-ink-3">{analysis.reason}</p> : null}
+              {isAiConfigured(aiConfigOf(settings)) ? null : (
+                <button onClick={() => nav('/settings')} className="text-[11px] text-accent active:opacity-60">
+                  去设置里配置 AI，获得更具体的点评 ›
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="mt-3 rounded-card border border-dashed border-line p-4 text-center text-xs text-ink-3">
+              点「开始分析」，看看这一期花得怎么样
+            </p>
+          )}
         </div>
 
         {/* ★v1.0.33 · 趋势（后置）：柱顶直接给金额，点柱子看该期收/支/结余明细 */}

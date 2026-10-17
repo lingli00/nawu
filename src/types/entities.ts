@@ -37,6 +37,10 @@ export interface ValueRecord {
   note?: string;
   /** ISO 8601 UTC */
   createdAt: string;
+  /** ★v1.1.3 来源标记：'goods-sale' = 物品转卖净赚自动生成（随物品状态同步，请勿手改）。 */
+  src?: string;
+  /** ★v1.1.3 关联业务 id（如物品 id）：供出售价变更时同步更新、恢复在用时删除。 */
+  refId?: string;
 }
 
 /** 物品附加费用（运费/配件/维修……）。 */

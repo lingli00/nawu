@@ -20,6 +20,7 @@ import type {
   WishItem,
 } from '../types/entities';
 import { loadAllCollections, saveAllCollections, saveCollection, saveCollectionNow } from '../storage/repo';
+import { sellProfit } from '../domain/goods';
 import { useSettingsStore } from './useSettingsStore';
 
 /**
@@ -65,6 +66,11 @@ interface DataState {
   addLedgerMany: (drafts: Array<Partial<ValueRecord> & { amount: number }>) => Promise<ValueRecord[]>;
   updateLedger: (id: string, patch: Partial<ValueRecord>) => Promise<void>;
   removeLedger: (id: string) => Promise<void>;
+  /**
+   * ★v1.1.3 把「转卖净赚」同步进生活流（标记退役/改出售价/恢复在用/删物品都走它）。
+   * @returns `{ action, amount }`：action = created/updated/removed/none，供 UI 提示。
+   */
+  syncSaleIncome: (goodsId: string) => Promise<{ action: 'created' | 'updated' | 'removed' | 'none'; amount?: number }>;
 
   /* —— 物品 —— */
   addGoods: (draft: Partial<Goods> & { name: string; price: number }) => Promise<Goods>;
@@ -225,6 +231,65 @@ export const useDataStore = create<DataState>()((set, get) => {
     removeLedger: async (id) => {
       const prev = get().valueRecords;
       await commit('valueRecords', prev.filter((r) => r.id !== id), { label: '删除一笔', prev });
+    },
+
+    /**
+     * ★v1.1.3 同步「转卖净赚」→ 生活流收入（单一入口，幂等）：
+     * - 物品已退役且净赚 > 0 → 建/更新一条 income 记录
+     *   （src='goods-sale'、refId=物品 id、分类 cl7「其他」、判断「归」、
+     *    备注「转卖「名」净赚」；更新时保留原 id 与 date，只改金额/备注）；
+     * - 未退役 / 无净赚 / 物品已删除 → 移除该物品关联的记录（恢复在用=撤回收益）。
+     *
+     * 为什么放 store 而不是页面：标记退役（详情弹窗）、改出售价（编辑表单）、
+     * AI 退役转卖（AiPage）、删除物品（HomePage.del）四处都会触发，
+     * 口径必须只有一份。生活流记录带 src/refId，恢复备份时按集合原样透传。
+     */
+    syncSaleIncome: async (goodsId) => {
+      const goods = get().goods.find((g) => g.id === goodsId);
+      const prev = get().valueRecords;
+      const linked = prev.filter((r) => r.refId === goodsId && r.src === 'goods-sale');
+      const profit = goods && goods.status === 'retired' ? sellProfit(goods) : 0;
+
+      // 无收益可记：清掉历史关联记录（含物品被删后的孤儿记录）
+      if (!goods || profit <= 0) {
+        if (linked.length === 0) return { action: 'none' as const };
+        await commit(
+          'valueRecords',
+          prev.filter((r) => !(r.refId === goodsId && r.src === 'goods-sale')),
+          { label: '同步转卖收益', prev },
+        );
+        return { action: 'removed' as const, amount: linked[0]?.amount };
+      }
+
+      const note = `转卖「${goods.name}」净赚`;
+      if (linked.length > 0) {
+        // 更新：保留首条（id/date 不动），异常重复行顺手清理
+        let kept = false;
+        const rows = prev.flatMap((r) => {
+          if (!(r.refId === goodsId && r.src === 'goods-sale')) return [r];
+          if (kept) return [];
+          kept = true;
+          return [{ ...r, amount: profit, note, date: r.date }];
+        });
+        await commit('valueRecords', rows, { label: '同步转卖收益', prev });
+        return { action: 'updated' as const, amount: profit };
+      }
+
+      const row: ValueRecord = {
+        id: newId(),
+        type: 'income',
+        amount: profit,
+        currency: goods.currency || defaultCurrency(),
+        date: today(),
+        categoryId: 'cl7',
+        judgement: 'gui',
+        note,
+        createdAt: nowISO(),
+        src: 'goods-sale',
+        refId: goodsId,
+      };
+      await commit('valueRecords', [row, ...prev], { label: '同步转卖收益', prev });
+      return { action: 'created' as const, amount: profit };
     },
 
     /* —— 物品 —— */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { addDays } from '../src/lib/date';
-import { achieveRate, dailyCost, netInvest, perUseCost, totalInvest } from '../src/domain/goods';
+import { achieveRate, dailyCost, netInvest, perUseCost, sellProfit, totalInvest } from '../src/domain/goods';
 import { monthlyAmount, monthlyAvg, nextRenewCountdown, yearlyAvg } from '../src/domain/subscription';
 import { categoryShare, judgementBreakdown, monthlyTrend } from '../src/domain/stats';
 import { groupByDay, monthCompare, sumByJudgement } from '../src/domain/ledger';
@@ -44,6 +44,15 @@ describe('domain/goods · 日均与单次成本', () => {
     expect(perUseCost(g)).toBe(50);
     // 实际日均 100 > 目标 50 → 50/100 = 0.5
     expect(achieveRate(g, TODAY)).toBe(0.5);
+  });
+
+  it('转卖净赚 = 出售价 − 总投入（未填/亏损返回原值，由调用方决定是否入账）', () => {
+    // 1000 买入 + 50 运费，卖 1400 → 净赚 350
+    expect(sellProfit(goods({ price: 1000, extraFees: [{ name: '运费', amount: 50 }], sellPrice: 1400 }))).toBe(350);
+    // 未填出售价 → 0
+    expect(sellProfit(goods({ price: 1000 }))).toBe(0);
+    // 亏损转卖 → 负值（syncSaleIncome 不记收入）
+    expect(sellProfit(goods({ price: 1000, sellPrice: 800 }))).toBe(-200);
   });
 });
 

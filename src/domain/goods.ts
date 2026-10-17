@@ -8,6 +8,7 @@ import type { Goods } from '../types/entities';
  * 口径：
  * - 总投入 = 购入价 + 附加费用
  * - 净投入 = 总投入 − 转卖收入（退役物品）
+ * - 转卖净赚 = 出售价 − 总投入（仅正数入生活流，见 useDataStore.syncSaleIncome）
  * - 日均成本 = 净投入 / 持有天数（持有天数至少 1，避免除零）
  * - 单次成本 = 净投入 / 使用次数
  */
@@ -25,6 +26,19 @@ export function totalInvest(g: Goods): number {
 export function netInvest(g: Goods): number {
   const sold = Number.isFinite(g?.sellPrice) ? (g.sellPrice as number) : 0;
   return round(totalInvest(g) - sold);
+}
+
+/**
+ * ★v1.1.3 转卖净赚：出售价 − 总投入。
+ *
+ * 口径与首页卡片 cardAmount 完全一致（净赚 = sellPrice − price − extraFees）。
+ * 未填出售价返回 0；可能为负（亏损转卖）——是否入生活流由调用方判断
+ * （useDataStore.syncSaleIncome：仅正净赚记收入）。
+ */
+export function sellProfit(g: Goods): number {
+  const sold = Number.isFinite(g?.sellPrice) ? (g.sellPrice as number) : 0;
+  if (sold <= 0) return 0;
+  return round(sold - totalInvest(g));
 }
 
 /** 持有天数（至少 1 天）。 */
