@@ -196,29 +196,6 @@ async function geocode(city: string, province: string): Promise<{ lat: number; l
   return null;
 }
 
-/** 兜底坐标：境外接口只借经纬度，地名仍用 IP 库的（避免「桐柏被写成北京」）。 */
-async function fallbackCoords(): Promise<{ lat: number; lon: number } | null> {
-  try {
-    const r = await fetch('https://ipwho.is/?fields=success,latitude,longitude', { signal: AbortSignal.timeout(6000) });
-    const j = (await r.json()) as { success?: boolean; latitude?: number; longitude?: number };
-    if (j?.success !== false && typeof j.latitude === 'number' && typeof j.longitude === 'number') {
-      return { lat: j.latitude, lon: j.longitude };
-    }
-  } catch {
-    /* 换源 */
-  }
-  try {
-    const r = await fetch('https://get.geojs.io/v1/ip/geo.json', { signal: AbortSignal.timeout(6000) });
-    const j = (await r.json()) as { latitude?: string; longitude?: string };
-    const lat = parseFloat(String(j.latitude ?? ''));
-    const lon = parseFloat(String(j.longitude ?? ''));
-    if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon };
-  } catch {
-    /* 全失败 */
-  }
-  return null;
-}
-
 async function fetchWeather(loc: Loc): Promise<WeatherInfo | null> {
   const url =
     'https://api.open-meteo.com/v1/forecast'
@@ -265,8 +242,8 @@ async function resolveLoc(): Promise<Loc | null> {
       && Number.isFinite(geo.lat) && Number.isFinite(geo.lon)) {
     coords = { lat: geo.lat, lon: geo.lon };
   }
+  /* 坐标拿不到就直接不显示天气行：绝不为了「有个温度」把用户 IP 交给第三方接口 */
   if (!coords) coords = await geocode(city || province, province);
-  if (!coords) coords = await fallbackCoords();
   if (!coords) return null;
 
   const parts: string[] = [];
