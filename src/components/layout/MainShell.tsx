@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Home, Plus, ScrollText, Shield, Smartphone, User } from 'lucide-react';
+import { BarChart3, ChevronDown, ChevronUp, Home, Plus, ScrollText, Shield, Smartphone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { APP_VERSION } from '../../lib/appVersion';
 import { haptic } from '../../lib/haptics';
@@ -34,6 +34,8 @@ const SHELL_PATHS = new Set(['/home', '/ledger', '/report', '/me']);
 
 export type ShellPref = 'auto' | 'pc' | 'mobile';
 const PREF_KEY = 'gf.shellPref';
+/** 底部导航收起状态（v1.1.4）。 */
+const TABBAR_KEY = 'gf.tabbar.hidden';
 
 function readPrefFromUrl(): ShellPref | null {
   try {
@@ -273,6 +275,26 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
   const { pathname } = useLocation();
   /** v1.0.22：中央 FAB 改开「加号动作菜单」（对标竞品），不再直跳 AI 页。 */
   const [menuOpen, setMenuOpen] = useState(false);
+  /** v1.1.4：底部导航可收起（阅读/看长列表时腾出空间），状态记忆到 localStorage。 */
+  const [barHidden, setBarHidden] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(TABBAR_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleBar = (): void => {
+    void haptic('select');
+    setBarHidden((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem(TABBAR_KEY, next ? '1' : '0');
+      } catch {
+        /* 隐私模式忽略 */
+      }
+      return next;
+    });
+  };
 
   if (!SHELL_PATHS.has(pathname)) {
     return <>{children}</>;
@@ -283,13 +305,37 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
       className="flex min-h-full flex-col bg-surface-2 text-ink"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
-      <main className="mx-auto w-full max-w-xl flex-1 px-4 pb-36 pt-2">{children}</main>
+      <main className={`mx-auto w-full max-w-xl flex-1 px-4 pt-2 ${barHidden ? 'pb-16' : 'pb-36'}`}>
+        {children}
+      </main>
+
+      {/* 收起/展开手柄：一枚小圆钮贴右侧，视觉重量低于底栏本身 */}
+      <button
+        onClick={toggleBar}
+        aria-label={barHidden ? '显示底部导航' : '隐藏底部导航'}
+        className="fixed right-3 z-30 flex h-7 w-7 items-center justify-center rounded-full border border-line bg-surface/85 text-ink-3 shadow-sm backdrop-blur active:scale-95"
+        style={{
+          bottom: barHidden
+            ? 'calc(env(safe-area-inset-bottom) + 10px)'
+            : 'calc(env(safe-area-inset-bottom) + 84px)',
+          transition: 'bottom .28s cubic-bezier(.32,.72,0,1)',
+        }}
+      >
+        {barHidden ? <ChevronUp size={15} strokeWidth={2} /> : <ChevronDown size={15} strokeWidth={2} />}
+      </button>
 
       {/* 悬浮玻璃底栏：安全区放进定位而非内边距——手势导航机型（bottom inset 可达 30-40px）
           不再把框内撑出空洞，整体抬升悬浮避开手势条 */}
       <nav
         className="fixed inset-x-3 z-30 mx-auto flex w-[calc(100%-1.5rem)] max-w-[calc(36rem-1.5rem)] items-stretch rounded-[28px] shadow-lg shadow-black/10"
-        style={{ ...GLASS_STYLE, bottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}
+        style={{
+          ...GLASS_STYLE,
+          bottom: 'calc(env(safe-area-inset-bottom) + 8px)',
+          transform: barHidden ? 'translateY(calc(100% + 24px))' : 'none',
+          opacity: barHidden ? 0 : 1,
+          transition: 'transform .28s cubic-bezier(.32,.72,0,1), opacity .22s ease',
+          pointerEvents: barHidden ? 'none' : 'auto',
+        }}
       >
         {TABS.slice(0, 2).map((t) => (
           <Tab key={t.to} {...t} />

@@ -2,7 +2,6 @@ import { useRef, useState, useEffect } from 'react';
 import { Camera } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
-import PageField from '../components/ui/PageField';
 import { useDataStore, useSettingsStore, toastSuccess, toastError } from '../store';
 import { parse, parseImage } from '../ai/parseService';
 import { convertItem, switchableKindOf, SWITCH_KINDS } from '../ai/convert';
@@ -26,7 +25,6 @@ export default function AiPage() {
   const categories = useDataStore((s) => s.categories);
   const goods = useDataStore((s) => s.goods);
   const settings = useSettingsStore((s) => s.settings);
-  const updateSettings = useSettingsStore((s) => s.update);
   const addLedger = useDataStore((s) => s.addLedger);
   const addLedgerMany = useDataStore((s) => s.addLedgerMany);
   const addGoods = useDataStore((s) => s.addGoods);
@@ -42,24 +40,8 @@ export default function AiPage() {
   const [hasText, setHasText] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  /** ★v1.1.3 AI 未配置时的内嵌设置卡：就地配好即刻生效，不用跑去设置页再回来。
-   *  需求原点：「我设置好 API，它到时候不能一下子使用就很麻烦」。 */
+  /** v1.1.4：AI 配置统一收口到「我的 → 设置」，本页不再内嵌配置卡。 */
   const aiReady = Boolean(settings.aiEndpoint?.trim() && settings.aiKey?.trim());
-  const [aiDraft, setAiDraft] = useState({
-    endpoint: settings.aiEndpoint ?? '',
-    key: settings.aiKey ?? '',
-    model: settings.aiModel ?? '',
-  });
-  const saveAiInline = async (): Promise<void> => {
-    const endpoint = aiDraft.endpoint.trim().replace(/\/+$/, '');
-    const key = aiDraft.key.trim();
-    if (!endpoint || !key) {
-      toastError('接口地址和 API Key 都要填');
-      return;
-    }
-    await updateSettings({ aiEndpoint: endpoint, aiKey: key, aiModel: aiDraft.model.trim() });
-    toastSuccess('AI 配置已保存，即刻生效');
-  };
 
   // 本地 OCR 预热：进页即后台初始化 wasm + 中文语言包，点识图时省 1-2s（失败静默）
   useEffect(() => {
@@ -304,7 +286,7 @@ export default function AiPage() {
 
         <div className="mt-2 flex items-center justify-between">
           <p className="text-[11px] text-ink-3">
-            {aiReady ? 'AI 模式' : '本地规则模式（下方可配 AI）'}
+            {aiReady ? 'AI 模式' : '本地规则模式（在「我的 → 设置」里配置 AI）'}
           </p>
           <button
             onClick={run}
@@ -315,61 +297,6 @@ export default function AiPage() {
           </button>
         </div>
       </div>
-
-      {/* ★v1.1.3 未配置 AI → 内嵌设置卡：就地填、保存即生效，不用跳设置页再回来 */}
-      {aiReady ? null : (
-        <div className="mt-3 rounded-card border border-line bg-surface p-4">
-          <p className="text-sm font-semibold">配置 AI，识别更准</p>
-          <p className="mt-1 text-[11px] leading-5 text-ink-3">
-            当前是本地规则模式：离线可用，但分句和金额靠关键词猜。填入 OpenAI
-            兼容接口后，「AI 记一笔」与报表页「AI 分析」都会走 AI。Key 只保存在本机，直连第三方、不经服务器。
-          </p>
-          <div className="mt-3 space-y-2.5">
-            <PageField label="接口地址 Endpoint">
-              <input
-                value={aiDraft.endpoint}
-                onChange={(e) => setAiDraft((d) => ({ ...d, endpoint: e.target.value }))}
-                placeholder="https://api.example.com/v1"
-                autoCapitalize="off"
-                className="h-10 w-full nw-input"
-              />
-            </PageField>
-            <PageField label="API Key">
-              <input
-                value={aiDraft.key}
-                onChange={(e) => setAiDraft((d) => ({ ...d, key: e.target.value }))}
-                type="password"
-                placeholder="sk-…"
-                autoCapitalize="off"
-                className="h-10 w-full nw-input"
-              />
-            </PageField>
-            <PageField label="模型">
-              <input
-                value={aiDraft.model}
-                onChange={(e) => setAiDraft((d) => ({ ...d, model: e.target.value }))}
-                placeholder="例如 gpt-4o-mini"
-                autoCapitalize="off"
-                className="h-10 w-full nw-input"
-              />
-            </PageField>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={() => void saveAiInline()}
-              className="h-10 flex-1 rounded-btn bg-accent text-sm font-semibold text-white active:opacity-90"
-            >
-              保存并启用
-            </button>
-            <button
-              onClick={() => nav('/settings')}
-              className="h-10 rounded-btn border border-line px-4 text-sm text-ink-2 active:bg-surface-2"
-            >
-              去设置页
-            </button>
-          </div>
-        </div>
-      )}
 
       {items ? (
         <div className="mt-4">
@@ -447,36 +374,7 @@ export default function AiPage() {
             记下选中的 {checked.filter(Boolean).length} 条
           </button>
         </div>
-      ) : (
-        <div className="mt-4 rounded-card border border-dashed border-line bg-surface p-4">
-          <p className="text-xs font-medium text-ink-2">可以这样说</p>
-          <ul className="mt-2 space-y-1.5">
-            {[
-              '今天早上吃了油条包子花了30',
-              '然后坐火车花了60去桐柏',
-              '在闲鱼买了魅族20花了两千',
-              '开了个B站会员25',
-              '把魅族20卖了1400',
-            ].map((s) => (
-              <li key={s}>
-                <button
-                  onClick={() => {
-                    const el = textRef.current;
-                    if (!el) return;
-                    // 非受控：直接写 DOM 追加示例句，光标位置由浏览器保持
-                    el.value = el.value ? `${el.value}${s}` : s;
-                    setHasText(true);
-                    el.focus();
-                  }}
-                  className="text-xs text-accent"
-                >
-                  「{s}」
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      ) : null}
       </div>
     </PageShell>
   );

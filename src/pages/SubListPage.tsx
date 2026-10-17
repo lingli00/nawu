@@ -529,16 +529,33 @@ function SubCatChips({
     [categories],
   );
   const active = value || subCats[0]?.id || '';
+  /* v1.1.4：分类默认只铺 8 个，其余收进「更多」；当前选中的始终可见。 */
+  const [expanded, setExpanded] = useState(false);
+  const PREVIEW = 8;
+  const shown = useMemo(() => {
+    if (expanded || subCats.length <= PREVIEW) return subCats;
+    const head = subCats.slice(0, PREVIEW);
+    const sel = subCats.find((c) => c.id === active);
+    if (sel && !head.some((c) => c.id === sel.id)) return [...head, sel];
+    return head;
+  }, [subCats, expanded, active]);
   return (
     <div>
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-ink-2">分类</p>
-        <button type="button" onClick={onManage} className="text-xs font-medium text-accent">
-          管理
-        </button>
+        <div className="flex items-center gap-3">
+          {subCats.length > PREVIEW ? (
+            <button type="button" onClick={() => setExpanded((v) => !v)} className="text-xs font-medium text-ink-2">
+              {expanded ? '收起' : `更多 ${subCats.length - PREVIEW} 个`}
+            </button>
+          ) : null}
+          <button type="button" onClick={onManage} className="text-xs font-medium text-accent">
+            管理
+          </button>
+        </div>
       </div>
       <div className="mt-1.5 flex flex-wrap gap-1.5">
-        {subCats.map((c) => (
+        {shown.map((c) => (
           <button
             key={c.id}
             type="button"

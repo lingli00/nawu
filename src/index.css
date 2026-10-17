@@ -496,23 +496,32 @@ textarea {
   text-align: center;
   opacity: 0.7;
 }
-/* ⑤ 呼气：开屏整体上滑 + 淡出（1.35–1.95s，ease-in） */
+/* ⑤ 呼气：开屏作为「幕布」整体上移揭开首页（v1.1.4 调优）
+ *
+ * 旧实现：开屏 translateY(-100%) 且同时淡出，首页又从 translateY(100%) 滑入，
+ * 两层整屏以相反缓动（ease-in vs ease-out）对着跑，视觉上发虚、掉帧、不连贯。
+ *
+ * 现在：
+ * - 幕布**不淡出**（保持完全不透明），只做位移——揭开关系干净，没有重影；
+ * - 缓动统一为 easeOutCubic，两段同速同曲线，不再互相打架；
+ * - 首页只做 8px 微升（不再是整屏 100%），减少大面积重绘，弱机型也稳；
+ * - will-change 让幕布在位移期间固定在合成层，避免每帧重排。 */
 .nawu-splash.is-leaving {
-  animation: nawu-splash-exit 600ms cubic-bezier(0.42, 0, 1, 1) both;
+  animation: nawu-splash-exit 520ms cubic-bezier(0.33, 1, 0.68, 1) both;
+  will-change: transform;
 }
 @keyframes nawu-splash-exit {
   to {
-    opacity: 0;
     transform: translateY(-100%);
   }
 }
-/* ⑤ 呼气同步：首页自屏幕下方滑入（挂在 #root 上，播完即摘） */
+/* ⑤ 呼气同步：首页 8px 微升（挂在 #root 上，播完即摘） */
 .nawu-home-enter {
-  animation: nawu-home-in 600ms cubic-bezier(0, 0, 0.58, 1) both;
+  animation: nawu-home-in 520ms cubic-bezier(0.33, 1, 0.68, 1) both;
 }
 @keyframes nawu-home-in {
   from {
-    transform: translateY(100%);
+    transform: translateY(8px);
   }
   to {
     transform: none;

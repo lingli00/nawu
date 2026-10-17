@@ -52,6 +52,18 @@ export default function ManualRecordSheet() {
   );
   const activeCat = categoryId || ledgerCats[0]?.id || '';
 
+  /* v1.1.4：分类默认只铺 8 个（两行），避免一屏全是分类把备注挤到折叠线以下。
+     已选中的分类永远可见——即便它在 8 个之外也会补在末尾。 */
+  const [catsExpanded, setCatsExpanded] = useState(false);
+  const CAT_PREVIEW = 8;
+  const shownCats = useMemo(() => {
+    if (catsExpanded || ledgerCats.length <= CAT_PREVIEW) return ledgerCats;
+    const head = ledgerCats.slice(0, CAT_PREVIEW);
+    const sel = ledgerCats.find((c) => c.id === activeCat);
+    if (sel && !head.some((c) => c.id === sel.id)) return [...head, sel];
+    return head;
+  }, [ledgerCats, catsExpanded, activeCat]);
+
   const numAmount = Number(amount);
   const valid = Number.isFinite(numAmount) && numAmount > 0 && activeCat;
 
@@ -146,15 +158,25 @@ export default function ManualRecordSheet() {
         <QuickCooldownSheet presetName={(noteRef.current?.value ?? '').trim()} onClose={() => setLaterOpen(false)} />
       ) : null}
 
-      {/* 分类（末尾常驻「管理」贴片：就地增删改/排序，不打断记一笔） */}
+      {/* 分类（默认 8 个 + 更多；末尾常驻「管理」贴片：就地增删改/排序，不打断记一笔） */}
       <div className="mb-2 mt-4 flex items-center justify-between px-1">
         <p className="text-xs font-medium text-ink-2">分类</p>
-        <button onClick={() => setManagingCats(true)} className="text-xs font-medium text-accent">
-          管理
-        </button>
+        <div className="flex items-center gap-3">
+          {ledgerCats.length > CAT_PREVIEW ? (
+            <button
+              onClick={() => setCatsExpanded((v) => !v)}
+              className="text-xs font-medium text-ink-2"
+            >
+              {catsExpanded ? '收起' : `更多 ${ledgerCats.length - CAT_PREVIEW} 个`}
+            </button>
+          ) : null}
+          <button onClick={() => setManagingCats(true)} className="text-xs font-medium text-accent">
+            管理
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-4 gap-2">
-        {ledgerCats.map((c) => (
+        {shownCats.map((c) => (
           <button
             key={c.id}
             onClick={() => setCategoryId(c.id)}

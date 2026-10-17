@@ -27,6 +27,7 @@ import { useBackGuard } from '../lib/backGuard';
 import { useShellMode } from '../components/layout/MainShell';
 import SubListPage from './SubListPage';
 import CategoryManageSheet from '../components/CategoryManageSheet';
+import WeatherLine from '../components/WeatherLine';
 import IconPicker, { IconPreview, type Tab as PickerTab } from '../components/IconPicker';
 import {
   goodsIconValue,
@@ -469,6 +470,8 @@ export function GoodsFormSheet({
   const cropFileRef = useRef<HTMLInputElement>(null);
   /** 就地管理物品分类（对标竞品：不打断添加流程）。 */
   const [managingCats, setManagingCats] = useState(false);
+  /** v1.1.4：分类默认只铺 8 个，其余收进「更多」——避免分类区把备注挤到屏外。 */
+  const [catsExpanded, setCatsExpanded] = useState(false);
   /** v1.0.18：点图标区直接开 picker（跳过五来源 sheet），默认系统图标。 */
   const [pickerTab, setPickerTab] = useState<PickerTab | null>(null);
 
@@ -503,6 +506,16 @@ export function GoodsFormSheet({
     () => categories.filter((c) => c.kind === 'goods').sort((a, b) => a.order - b.order),
     [categories],
   );
+  /* v1.1.4：折叠态只显示前 8 个；当前选中的分类始终补在可见列表里。 */
+  const GOODS_CAT_PREVIEW = 8;
+  const shownGoodsCats = useMemo(() => {
+    const activeId = catId || goodsCats[0]?.id || '';
+    if (catsExpanded || goodsCats.length <= GOODS_CAT_PREVIEW) return goodsCats;
+    const head = goodsCats.slice(0, GOODS_CAT_PREVIEW);
+    const sel = goodsCats.find((c) => c.id === activeId);
+    if (sel && !head.some((c) => c.id === sel.id)) return [...head, sel];
+    return head;
+  }, [goodsCats, catsExpanded, catId]);
 
   const onPickImage = (file: File | undefined): void => {
     if (!file) return;
@@ -636,12 +649,19 @@ export function GoodsFormSheet({
               <div>
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-medium text-ink-2">分类</p>
-                  <button onClick={() => setManagingCats(true)} className="text-xs font-medium text-accent">
-                    管理
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {goodsCats.length > GOODS_CAT_PREVIEW ? (
+                      <button onClick={() => setCatsExpanded((v) => !v)} className="text-xs font-medium text-ink-2">
+                        {catsExpanded ? '收起' : `更多 ${goodsCats.length - GOODS_CAT_PREVIEW} 个`}
+                      </button>
+                    ) : null}
+                    <button onClick={() => setManagingCats(true)} className="text-xs font-medium text-accent">
+                      管理
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-2">
-                  {goodsCats.map((c) => {
+                  {shownGoodsCats.map((c) => {
                     const ChipIcon = getCategoryIcon(c.icon);
                     return (
                       <button
@@ -1100,7 +1120,7 @@ export default function HomePage() {
       {/* ============ 顶栏：大字标题 + 视图 / 搜索 / 新增 ============
           ★v1.0.33 P1-7：搜索从「点图标展开下方输入框」改为「顶行整框 + 取消」，
           自动聚焦、两级操作变一级；P0-2：＋ 与 FAB / 侧边栏统一开加号菜单。 */}
-      <header className="flex items-center justify-between pb-3 pt-2">
+      <header className="flex items-center justify-between pb-1 pt-2">
         <h1 className="text-3xl font-bold leading-9">纳物</h1>
         <div className="flex items-center gap-1">
           <button
@@ -1137,6 +1157,9 @@ export default function HomePage() {
           </button>
         </div>
       </header>
+
+      {/* 天气行（v1.1.4）：一行 11px 次级信息，取不到数据时整行不渲染 */}
+      <WeatherLine className="mb-3 px-0.5" />
 
       {/* 搜索行（P1-7：整行搜索框 + 取消按钮；非受控：关闭即卸载，重开为空） */}
       {searchOpen ? (

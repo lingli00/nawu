@@ -1900,21 +1900,9 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
             <p className="mt-1 text-ink-2">
               新增 {check.diff.added} · 更新 {check.diff.updated} · 删除 {check.diff.deleted} · 保留 {check.diff.kept} · 清单共 {check.diff.totalRemote} 个文件
             </p>
-            {check.remote.notes ? (
-              <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-[11px] leading-relaxed text-ink-2">
-                {check.remote.notes}
-              </pre>
-            ) : null}
-            {check.diff.deleted > 0 ? (
-              <div className="mt-2">
-                <p className="text-danger">将删除的文件（前 {Math.min(check.diff.deletedList.length, 50)} 个）：</p>
-                <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-[11px] leading-relaxed text-ink-2">
-                  {check.diff.deletedList.slice(0, 50).join('\n')}
-                  {check.diff.deleted > 50 ? `\n…等共 ${check.diff.deleted} 个` : ''}
-                </pre>
-              </div>
-            ) : null}
-            <div className="mt-3">
+            {/* v1.1.4：按钮上移——旧版把「立即更新」放在可能很长的文件清单之后，
+                批量删除几十个历史 chunk 时按钮会被顶到屏外。清单改为可折叠。 */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 onClick={() => void doUpdate()}
                 disabled={!check.canUpdate || busy === 'update' || jobActive}
@@ -1922,7 +1910,30 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
               >
                 {busy === 'update' ? '启动中…' : jobActive ? '更新进行中…' : '立即更新'}
               </button>
+              {check.diff.deleted > 0 ? (
+                <span className="text-[11px] text-ink-3">
+                  将清理 {check.diff.deleted} 个旧版本遗留文件（不影响现有数据）
+                </span>
+              ) : null}
             </div>
+            {check.remote.notes ? (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[11px] font-medium text-ink-2">更新说明</summary>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-[11px] leading-relaxed text-ink-2">
+                  {check.remote.notes}
+                </pre>
+              </details>
+            ) : null}
+            {check.diff.deleted > 0 ? (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[11px] font-medium text-danger">
+                  查看将删除的 {check.diff.deleted} 个文件
+                </summary>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-[11px] leading-relaxed text-ink-2">
+                  {check.diff.deletedList.join('\n')}
+                </pre>
+              </details>
+            ) : null}
           </div>
         ) : null}
       </div>

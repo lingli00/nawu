@@ -53,10 +53,12 @@ const SEAL = 108;
 /** 印内「纳」视觉字面高 = 印高 x 47% x 描边外扩（与 PIL 开屏 PNG 一致）。 */
 const NA_INK = SEAL * 0.47 * 1.0237;
 
-/** 呼气段起点 / 时长 / 收尾卸载（规范：①–④ 至 1.35s，⑤ 1.35–1.95s）。 */
+/** 呼气段起点 / 时长 / 收尾卸载（规范：①–④ 至 1.35s，⑤ 1.35–1.87s）。
+ *  v1.1.4：幕布上移 520ms（与 index.css 的 nawu-splash-exit 保持一致），
+ *  卸载留 80ms 余量，避免动画末帧被硬切。 */
 const EXHALE_AT = 1350;
-const EXHALE_MS = 600;
-const UNMOUNT_MS = 2050;
+const EXHALE_MS = 520;
+const UNMOUNT_MS = 1950;
 
 /** 三色判断点（归 / 需 / 否，与 src/domain/stats.ts 一致）。 */
 const DOT_COLORS = ['#3f8f6a', '#4a7fb5', '#c2603f'];
