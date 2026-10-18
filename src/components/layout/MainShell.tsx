@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BarChart3, ChevronDown, ChevronUp, Home, Plus, ScrollText, Smartphone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { APP_VERSION } from '../../lib/appVersion';
@@ -31,6 +31,17 @@ const TABS: Array<{ to: string; label: string; Icon: LucideIcon }> = [
  *  带底部 TabBar 的子页，观感上不像「我的」里的小页面；移出后与其他
  *  子页（备份/分类/设置）一致：全屏 PageShell + 返回箭头。 */
 const SHELL_PATHS = new Set(['/home', '/ledger', '/report', '/me']);
+
+/**
+ * ★v1.1.8 修订：「我的」里六个功能入口点开后的页面，在**电脑网页端**改成右侧抽屉弹出
+ * （原来是整页跳走，一下子铺满整个内容区）。手机端 / App 完全不受影响，仍是整页。
+ * 用前缀匹配，/servers/new、/servers/:id 这类二级页也留在抽屉里。
+ */
+const DRAWER_PATHS = ['/wall', '/backup', '/categories', '/rules', '/servers', '/settings'];
+
+function isDrawerPath(p: string): boolean {
+  return DRAWER_PATHS.some((d) => p === d || p.startsWith(`${d}/`));
+}
 
 /* ---------------- 壳模式偏好（手动切换手机版 / 电脑版） ---------------- */
 
@@ -159,8 +170,10 @@ export default function MainShell({ children }: { children: ReactNode }): JSX.El
 
 function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
   const { pathname } = useLocation();
+  const nav = useNavigate();
   const narrow = !useMediaQuery('(min-width: 1024px)'); // 手机上强制 PC 版 → 图标窄栏
   const inShell = SHELL_PATHS.has(pathname);
+  const drawerPage = !inShell && isDrawerPath(pathname);
   const skin = useSkin();
   const rail = narrow ? 'w-14' : 'w-60';
   /** 主行动钮开「加号动作菜单」（与移动壳 FAB 同一组件）。 */
@@ -172,6 +185,16 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
    */
   const sideWidth = narrow ? 56 : 240;
   const contentLeft = skin === 'glass' && !narrow ? sideWidth + 12 : sideWidth;
+
+  /** 抽屉页：Esc 关闭（走回 /me，不依赖历史栈，直接访问链接也不会退出站点）。 */
+  useEffect(() => {
+    if (!drawerPage) return;
+    const fn = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') nav('/me');
+    };
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
+  }, [drawerPage, nav]);
 
   return (
     <div className="flex min-h-screen bg-paper text-ink">
@@ -243,6 +266,24 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
            *   页面上有什么模块、什么顺序，全部由页面组件自己决定 —— 这里不重排。
            */
           <div className="nw-main">{children}</div>
+        ) : drawerPage ? (
+          /**
+           * ★v1.1.8 修订：从「我的」点进来的功能页，桌面端以右侧抽屉弹出。
+           * 遮罩只铺内容区（左侧栏仍可点），面板 32rem、整高、左圆角。
+           */
+          <div
+            className="nw-drawer-mask fixed inset-0 z-40 flex justify-end"
+            style={{ left: contentLeft }}
+            onClick={() => nav('/me')}
+          >
+            <div
+              className="nw-drawer-enter ml-auto flex h-full w-full flex-col overflow-y-auto bg-surface"
+              style={{ maxWidth: '32rem', boxShadow: '-18px 0 48px rgba(0,0,0,0.18)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {children}
+            </div>
+          </div>
         ) : (
           <div className="mx-auto w-full max-w-3xl px-6 pb-20 pt-8">{children}</div>
         )}

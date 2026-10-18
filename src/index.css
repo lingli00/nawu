@@ -817,3 +817,41 @@ html[data-shell='pc'][data-skin-preview='1'] .nw-skinbar {
   font-size: 11px;
   color: var(--ink-3);
 }
+
+/* ============================================================
+   「我的」功能页桌面抽屉（v1.1.8 修订）
+   只在桌面壳生效（由 MainShell 的 DesktopShell 渲染并套这两个类）；
+   手机端 / App 不经过这里，仍是整页跳转，样式零影响。
+   ============================================================ */
+.nw-drawer-mask {
+  background: rgba(12, 18, 16, 0.32);
+  animation: nw-drawer-fade 200ms ease both;
+}
+.nw-drawer-enter {
+  border-radius: 1rem 0 0 1rem;
+  animation: nw-drawer-in 260ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes nw-drawer-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes nw-drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nw-drawer-mask,
+  .nw-drawer-enter {
+    animation: none !important;
+  }
+}
