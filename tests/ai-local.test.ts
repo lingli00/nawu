@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cnToNumber } from '../src/ai/cnNumber';
 import { splitSentences } from '../src/ai/split';
-import { parseLocal } from '../src/ai/localParser';
+import { cleanNote, parseLocal } from '../src/ai/localParser';
 import { parseLocalOnly } from '../src/ai/parseService';
 import { convertItem, switchableKindOf } from '../src/ai/convert';
 import { SEED_CATEGORIES } from '../src/storage/seed';
@@ -222,5 +222,49 @@ describe('v1.0.27 · ai/convert 识别结果类型切换', () => {
     const back = convertItem(asLedger, 'sub', SEED_CATEGORIES, today);
     expect(back.action).toBe('create_subscription');
     expect(back.subDraft?.name).toBe('B站会员');
+  });
+});
+
+/**
+ * ★v1.1.10 回归：名称里的型号码与金额要分得清。
+ * 用户在真机上遇到的三个现象都落在这里：
+ *   ① 名称里的「N95」被当金额删掉 → 只剩后半截；
+ *   ② 「8G+128G」里的 128 被当金额 → 一台 4600 的笔记本记成 ¥128；
+ *   ③ 认不出类别时默认落「餐饮」→ 笔记本被记成饭钱。
+ */
+describe('ai/localParser · 型号码 vs 金额（v1.1.10）', () => {
+  it('note 保留型号码，不把 N95 拆掉', () => {
+    expect(cleanNote('N95笔记淮系统粉色花了190')).toBe('N95笔记淮系统粉色');
+    expect(cleanNote('N95口罩')).toBe('N95口罩');
+    expect(cleanNote('iPhone 15 Pro 花了8999')).toBe('iPhone 15 Pro');
+    expect(cleanNote('N95笔记本 8G+128G')).toBe('N95笔记本 8G+128G');
+    expect(cleanNote('买了RTX4090显卡12000')).toBe('RTX4090显卡');
+  });
+
+  it('孤立出现的金额仍然会被清掉', () => {
+    expect(cleanNote('油条包子 30')).toBe('油条包子');
+    expect(cleanNote('买了外套 199')).toBe('外套');
+  });
+
+  it('8G+128G 不会被当成 ¥128', () => {
+    const items = parseAll('买了台N95笔记本 8G+128G 4600');
+    expect(items[0]?.goodsDraft?.name).toBe('N95笔记本 8G+128G');
+    expect(items[0]?.goodsDraft?.price).toBe(4600);
+  });
+
+  it('「N95 型号码 + 花了 N」名称完整、金额正确', () => {
+    const items = parseAll('N95笔记淮系统粉色花了190');
+    expect(items[0]?.ledgerDraft?.note).toBe('N95笔记淮系统粉色');
+    expect(items[0]?.ledgerDraft?.amount).toBe(190);
+  });
+
+  it('认不出类别时归「其他」，不再默认餐饮', () => {
+    const items = parseAll('N95笔记淮系统粉色花了190');
+    expect(items[0]?.ledgerDraft?.categoryId).toBe('cl7');
+  });
+
+  it('「粉色」不会被「粉」（米粉）误判成餐饮', () => {
+    const items = parseAll('粉色台灯 89');
+    expect(items[0]?.ledgerDraft?.categoryId).not.toBe('cl0');
   });
 });

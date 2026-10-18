@@ -231,7 +231,13 @@ export default function AiPage({
       case 'create_ledger': {
         const d = it.ledgerDraft!;
         const cat = catOf(d.categoryId);
-        return `${d.type === 'income' ? '收入' : '支出'} ¥${d.amount} · ${cat ? cat.name : d.categoryId} · ${d.judgement === 'gui' ? '归' : d.judgement === 'xu' ? '需' : '否'} · ${d.date}`;
+        /**
+         * ★v1.1.10：把 note（解析出来的名称）露在标题里。
+         * 旧摘要只有「支出 ¥190 · 其他 · 需 · 日期」，用户看不到这句话被理解成了什么，
+         * 于是「名字没记上」和「AI 不准」都无从核对。
+         */
+        const note = (d.note ?? '').trim();
+        return `${note ? `${note} · ` : ''}${d.type === 'income' ? '收入' : '支出'} ¥${d.amount} · ${cat ? cat.name : d.categoryId} · ${d.judgement === 'gui' ? '归' : d.judgement === 'xu' ? '需' : '否'} · ${d.date}`;
       }
       case 'create_goods':
         return `新增物品 ${it.goodsDraft!.name} ¥${it.goodsDraft!.price}`;

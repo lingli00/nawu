@@ -456,6 +456,13 @@ export function GoodsFormSheet({
 
   const isEdit = Boolean(initial);
   /* 文本输入非受控：defaultValue + onChange 收集（IME 铁律）；关闭即卸载，无需重置 */
+  /**
+   * ★v1.1.10：名称/备注这类**要过输入法**的字段，提交时一律以 DOM 里的真实值为准。
+   * 只读 state 会踩到「输入法组合期间 onChange 没有触发」的机型差异：
+   * 屏幕上明明写着「N95 笔记本」，点保存却存成了旧值，用户看到的就是「编辑了没记住」。
+   */
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const noteInputRef = useRef<HTMLInputElement | null>(null);
   const [name, setName] = useState(initial?.name ?? prefill?.name ?? '');
   const [price, setPrice] = useState(
     initial ? String(initial.price ?? '') : prefill?.price != null ? String(prefill.price) : '',
@@ -526,17 +533,20 @@ export function GoodsFormSheet({
   };
 
   const submit = async (): Promise<void> => {
+    // 以 DOM 为准（输入法组合中的文字可能还没回写到 state）
+    const nameNow = (nameInputRef.current?.value ?? name).trim();
+    const noteNow = (noteInputRef.current?.value ?? note).trim();
     const p = Number(price);
-    if (!name.trim() || !Number.isFinite(p) || p <= 0) {
+    if (!nameNow || !Number.isFinite(p) || p <= 0) {
       toastError('请填写名称和大于 0 的价格');
       return;
     }
     const base = {
-      name: name.trim(),
+      name: nameNow,
       price: p,
       buyDate,
       categoryId: catId || goodsCats[0]?.id,
-      note: note.trim() || undefined,
+      note: noteNow || undefined,
       image,
     };
     // ★v1.0.29：任何一步异常都要给用户明确反馈。旧代码把异常直接吞掉：
@@ -605,6 +615,7 @@ export function GoodsFormSheet({
         <div className="space-y-3">
               <PageField label="名称">
                 <input
+                  ref={nameInputRef}
                   defaultValue={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="买了什么"
@@ -682,6 +693,7 @@ export function GoodsFormSheet({
               </div>
               <PageField label="备注（可选）">
                 <input
+                  ref={noteInputRef}
                   defaultValue={note}
                   onChange={(e) => setNote(e.target.value)}
                   className="h-10 w-full nw-input"

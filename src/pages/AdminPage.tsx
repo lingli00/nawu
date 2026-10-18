@@ -1641,36 +1641,67 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
     })();
   }, [token, onDot]);
 
-  /* ---- 任务轮询：轮询即推进（服务端每次响应前先干 ≤18s 的活） ---- */
+  /* ---- 任务轮询：轮询即推进（服务端每次响应前先干 ≤5s 的活） ---- */
   useEffect(() => {
     const id = job?.id;
     const st = job?.status;
     if (!id || (st !== 'running' && st !== 'stalled')) return;
-    const timer = window.setInterval(() => {
-      void (async () => {
-        try {
-          const r = await fetchJob(currentServer(), token, id);
-          setJob(r.job);
-          const j = r.job;
-          if (j && j.status !== 'running' && j.status !== 'stalled') {
-            window.clearInterval(timer);
-            if (j.status === 'done') {
-              toastSuccess('更新完成，页面即将刷新');
-              window.setTimeout(() => window.location.reload(), 1500);
-            } else if (j.status === 'rolled_back') {
-              toastError('更新失败，已自动回滚：' + (j.error ?? ''));
-            } else {
-              toastError('更新失败：' + (j.error ?? ''));
-            }
-            void loadInfo();
+    let stopped = false;
+    let inFlight = false; // 上一次没回来就跳过本轮：早期用裸 setInterval，慢网下会堆一串并发请求
+    const tick = async (): Promise<void> => {
+      if (inFlight || stopped) return;
+      inFlight = true;
+      try {
+        const r = await fetchJob(currentServer(), token, id);
+        if (stopped) return;
+        setJob(r.job);
+        const j = r.job;
+        if (j && j.status !== 'running' && j.status !== 'stalled') {
+          if (j.status === 'done') {
+            toastSuccess('更新完成，页面即将刷新');
+            window.setTimeout(() => window.location.reload(), 1500);
+          } else if (j.status === 'rolled_back') {
+            toastError('更新失败，已自动回滚：' + (j.error ?? ''));
+          } else if (j.status !== 'cancelled') {
+            toastError('更新失败：' + (j.error ?? ''));
           }
-        } catch {
-          /* 轮询失败不打断，下一轮再试 */
+          void loadInfo();
         }
-      })();
-    }, 2000);
-    return () => window.clearInterval(timer);
+      } catch {
+        /* 轮询失败不打断，下一轮再试 */
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => void tick(), 2000);
+    void tick();
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
   }, [job?.id, job?.status, token, loadInfo]);
+
+  /* ---- 接管残局：页面重新打开时，服务端可能还没跑完一个我们不知道 jobId 的任务 ----
+     旧版只靠 startUpdate 的返回值启动轮询，那次响应一旦超时，任务就永远"看不见"了，
+     再点更新只会得到「已有更新任务正在进行」。这里主动查一次并接上。 */
+  useEffect(() => {
+    if (!token || job) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetchJob(currentServer(), token);
+        if (!cancelled && r.job && (r.job.status === 'running' || r.job.status === 'stalled')) {
+          setJob(r.job);
+          setMsg(`已接管未完成的更新任务（${r.job.phaseLabel} ${r.job.percent}%），正在继续…`);
+        }
+      } catch {
+        /* 静默：没有任务或服务端不支持都无所谓 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, job]);
 
   const doCheck = async (forceMode = false): Promise<void> => {
     setBusy('check');

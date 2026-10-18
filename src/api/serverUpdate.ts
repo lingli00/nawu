@@ -172,13 +172,25 @@ export function checkServerUpdate(
   return adminRequest<UpdateCheckResult>(server, token, '/api/admin/server/check', { method: 'POST', body: { force } });
 }
 
+/**
+ * 注意超时：`/status` 是「轮询即推进」——服务端每次响应前先干一片活（SLICE_MS）。
+ * 默认 15s 会和服务端的 18s 预算打架，导致跨公网更新时前端永远收不到 jobId，
+ * 表现为「连接超时（15s）」+「已有更新任务正在进行」死循环。这里统一给 30s。
+ */
+const UPDATE_TIMEOUT_MS = 30000;
+
 export function startServerUpdate(
   server: Pick<ServerConfig, 'url'> | null,
   token: string,
   force: boolean,
   siteUrl = '',
 ): Promise<{ jobId: string; resumed: boolean }> {
-  return adminRequest(server, token, '/api/admin/server/update', { method: 'POST', body: { force, siteUrl } });
+  return adminRequest(
+    server,
+    token,
+    '/api/admin/server/update',
+    { method: 'POST', body: { force, siteUrl }, timeoutMs: UPDATE_TIMEOUT_MS },
+  );
 }
 
 export function fetchJob(
@@ -188,6 +200,7 @@ export function fetchJob(
 ): Promise<{ job: UpdateJob | null }> {
   return adminRequest<{ job: UpdateJob | null }>(server, token, '/api/admin/server/status', {
     query: jobId ? { jobId } : undefined,
+    timeoutMs: UPDATE_TIMEOUT_MS,
   });
 }
 

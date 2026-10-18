@@ -84,7 +84,13 @@ export function extractAmount(text: string): AmountHit | null {
   return fallbackAmount(text);
 }
 
-/** 兜底数字（跳过年/月/日/号 等日期后缀，跳过单个中文数字）。 */
+/**
+ * 兜底数字（跳过年/月/日/号 等日期后缀，跳过单个中文数字，跳过型号码）。
+ *
+ * ★v1.1.10：与字母紧邻的数字是**型号**不是金额。
+ * 旧版取「最后一个数字」，于是「买了台 N95笔记本 8G+128G 4600」会取到 128，
+ * 记成 ¥128 —— 这是「AI 记一笔不准」的另一个来源。
+ */
 function fallbackAmount(text: string): AmountHit | null {
   const re = new RegExp(`(${NUM})`, 'g');
   const hits: AmountHit[] = [];
@@ -93,8 +99,11 @@ function fallbackAmount(text: string): AmountHit | null {
   while (m) {
     const token = m[0];
     const next = text.slice(m.index + token.length, m.index + token.length + 1);
+    const prev = text.slice(Math.max(0, m.index - 1), m.index);
     const isChineseOnly = !/\d/.test(token);
-    if (!/^[年月日号点岁度层楼]/.test(next) && !(isChineseOnly && token.length === 1)) {
+    // 型号：N95 / 8G / 128G / RTX4090（前后紧邻 ASCII 字母）
+    const isModelNumber = /[A-Za-z]/.test(prev) || /[A-Za-z]/.test(next);
+    if (!isModelNumber && !/^[年月日号点岁度层楼]/.test(next) && !(isChineseOnly && token.length === 1)) {
       const v = toNumber(token);
       if (isAmountLike(v)) hits.push({ value: v, raw: token, index: m.index });
     }
@@ -161,9 +170,21 @@ export function categoryIdByName(name: string, categories: Category[], kind: 'go
 
 /** 某 kind 的默认 id（查不到就取该 kind 第一条，ledger 兜底 cl7）。 */
 export function defaultCategoryId(categories: Category[], kind: 'goods' | 'sub' | 'ledger'): string {
+  if (kind === 'ledger') {
+    /**
+     * ★v1.1.10：认不出类别时归「其他」，不能落到数组第一条（餐饮）。
+     * 旧行为让「N95 笔记本 花了 190」这种没有任何餐饮词的句子一律记成餐饮，
+     * 用户对着一台笔记本却看到「餐饮」分类 —— 这就是「AI 记一笔不准」的主要感受来源。
+     */
+    const list = categories.filter((c) => c.kind === 'ledger');
+    const other = list.find((c) => c.name === '其他') ?? list.find((c) => c.id === 'cl7');
+    if (other) return other.id;
+    const lastByOrder = list.slice().sort((a, b) => a.order - b.order).pop();
+    return lastByOrder?.id ?? 'cl7';
+  }
   const first = categories.find((c) => c.kind === kind);
   if (first) return first.id;
-  return kind === 'ledger' ? 'cl7' : kind === 'goods' ? 'cg0' : 'cs0';
+  return kind === 'goods' ? 'cg0' : 'cs0';
 }
 
 /**
@@ -214,18 +235,38 @@ function buildLedgerDraft(
   };
 }
 
-/** 关键词命中（大小写不敏感）。 */
+/**
+ * 单字关键词的「后缀黑名单」：命中后面紧跟这些字就不算命中。
+ * 「米粉/凉粉」是餐饮，但「粉色/粉红/粉底」不是 —— 否则「N95 粉色笔记本」会被记成餐饮。
+ */
+const SINGLE_CHAR_TAIL_BLOCK = /[色红蓝紫黄金绿白黑灰嫩底饼]/;
+
+/**
+ * 关键词命中（大小写不敏感）。
+ *
+ * ★v1.1.10：从「表内先出现者赢」改为「**命中的词最长者赢**」。
+ * 旧规则下单个汉字关键词会抢在长词前面：「粉色」被「粉」（米粉/凉粉，餐饮）吃掉。
+ */
 function hitCategoryName(
   text: string,
   table: Array<{ name: string; words: string[] }>,
 ): string {
   const lower = text.toLowerCase();
+  let bestName = '';
+  let bestLen = 0;
   for (const entry of table) {
     for (const w of entry.words) {
-      if (lower.includes(w.toLowerCase())) return entry.name;
+      const lw = w.toLowerCase();
+      if (!lw || lw.length <= bestLen) continue;
+      const at = lower.indexOf(lw);
+      if (at < 0) continue;
+      // 单字关键词（粉/面/米…）容易撞到颜色与常用词，按后缀黑名单挡一下
+      if (lw.length === 1 && SINGLE_CHAR_TAIL_BLOCK.test(lower.slice(at + 1, at + 2))) continue;
+      bestName = entry.name;
+      bestLen = lw.length;
     }
   }
-  return '';
+  return bestName;
 }
 
 /** 分类匹配（顺序敏感，先命中先得）。 */
@@ -255,6 +296,21 @@ export function guessJudgement(
   return 'xu';
 }
 
+/**
+ * 「裸数字」清理用的正则：只清掉**独立出现**的数字串（真正的金额残留）。
+ *
+ * ★v1.1.10 修复（名称里的型号码被吃掉）：旧版在 note 清洗末尾做了一次
+ * `s.replace(/(数字)/g, ' ')` —— 把所有数字无差别删掉，于是
+ *   「N95口罩」→「N 口罩」
+ *   「N95笔记淮系统粉色」→「N 笔记淮系统粉色」
+ *   「N95笔记本 8G+128G」→「N 笔记本 G+ G」
+ * 用户看到的就是「名字只记下了 N95 后面那截」，只能去 AI 记一笔里手打补回来。
+ *
+ * 现在把与字母/型号连写的数字保护起来：前后紧邻字母、数字、+、#、. 的一律不动，
+ * 后面跟空格再跟英文单词的（iPhone 15 Pro）也不动；只清「包子 30」「第 3 次」这类孤立数字。
+ */
+const RE_BARE_NUM = new RegExp(`(?<![A-Za-z0-9_+#.])${NUM}(?![A-Za-z0-9_+#%.]|\\s*[A-Za-z])`, 'g');
+
 /** note 清洗（k0）：去金额、去口水词、标点归一、截 40 字。 */
 export function cleanNote(text: string, meal = ''): string {
   let s = text;
@@ -275,7 +331,8 @@ export function cleanNote(text: string, meal = ''): string {
   // 标点归一 + 压缩空白
   s = s.replace(/[，,。.；;！!？?、：:~～\-—]/g, ' ');
   s = s.replace(/\s+/g, ' ').trim();
-  s = s.replace(new RegExp(`(${NUM})`, 'g'), ' ').replace(/\s+/g, ' ').trim();
+  // 只清「裸金额」，保留 N95 / 8G+128G / RTX4090 这类型号码（见 RE_BARE_NUM）
+  s = s.replace(RE_BARE_NUM, ' ').replace(/\s+/g, ' ').trim();
   if (meal) return `${meal}·${s}`.slice(0, 40);
   return s.slice(0, 40);
 }
