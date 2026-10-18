@@ -4,7 +4,9 @@ import { BarChart3, ChevronDown, ChevronUp, Home, Plus, ScrollText, Smartphone, 
 import type { LucideIcon } from 'lucide-react';
 import { APP_VERSION } from '../../lib/appVersion';
 import { haptic } from '../../lib/haptics';
+import { getSkin, type Skin } from '../../lib/skin';
 import RecordMenu from '../RecordMenu';
+import SkinBar from '../SkinBar';
 import { BrandMark } from '../BrandMark';
 
 /**
@@ -106,6 +108,17 @@ export function useShellMode(): 'desktop' | 'mobile' {
   return desktop ? 'desktop' : 'mobile';
 }
 
+/** 桌面外观皮肤（lib/skin.ts）——只影响桌面壳材质，手机端恒为 classic 观感。 */
+function useSkin(): Skin {
+  const [skin, setLocal] = useState<Skin>(() => getSkin());
+  useEffect(() => {
+    const fn = (): void => setLocal(getSkin());
+    window.addEventListener('gf:skin', fn);
+    return () => window.removeEventListener('gf:skin', fn);
+  }, []);
+  return skin;
+}
+
 /* ---------------- 样式常量 ---------------- */
 
 /** 液态玻璃面板样式（v1.0.16 对齐 iOS 26 Liquid Glass）：
@@ -148,9 +161,17 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
   const { pathname } = useLocation();
   const narrow = !useMediaQuery('(min-width: 1024px)'); // 手机上强制 PC 版 → 图标窄栏
   const inShell = SHELL_PATHS.has(pathname);
+  const skin = useSkin();
   const rail = narrow ? 'w-14' : 'w-60';
-  /** v1.0.22：主行动钮改开「加号动作菜单」（与移动壳 FAB 同一组件）。 */
+  /** 主行动钮开「加号动作菜单」（与移动壳 FAB 同一组件）。 */
   const [menuOpen, setMenuOpen] = useState(false);
+  /**
+   * 玻璃皮肤下侧栏是浮起的圆角卡（离左边 12px），
+   * 内容区要多让出这 12px，否则卡片会被侧栏压住。
+   * classic / night 是通栏侧栏，宽度即 240。
+   */
+  const sideWidth = narrow ? 56 : 240;
+  const contentLeft = skin === 'glass' && !narrow ? sideWidth + 12 : sideWidth;
 
   return (
     <div className="flex min-h-screen bg-paper text-ink">
@@ -213,16 +234,22 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
         </div>
       </aside>
 
-      <div className="min-w-0 flex-1" style={{ paddingLeft: narrow ? 56 : 240 }}>
+      <div className="min-w-0 flex-1" style={{ paddingLeft: contentLeft }}>
         {inShell ? (
-          // ★v1.0.25：宽屏内容放宽到 1240px（原 5xl=1024 在 1080p+ 下留白过大，像手机页拉伸）
-          <div className="mx-auto w-full max-w-[1240px] px-8 pb-20 pt-8 2xl:max-w-[1320px]">{children}</div>
+          /**
+           * ★ 内容列宽交给 CSS 的 .nw-main（见 index.css 皮肤段）：
+           *   classic → 1240（现状不变）；glass / night → 900，向手机的单列宽度看齐，
+           *   不把手机版排版硬拉成 1240 宽条。
+           *   页面上有什么模块、什么顺序，全部由页面组件自己决定 —— 这里不重排。
+           */
+          <div className="nw-main">{children}</div>
         ) : (
           <div className="mx-auto w-full max-w-3xl px-6 pb-20 pt-8">{children}</div>
         )}
       </div>
 
       {menuOpen ? <RecordMenu onClose={() => setMenuOpen(false)} /> : null}
+      <SkinBar />
     </div>
   );
 }

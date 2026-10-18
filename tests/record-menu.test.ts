@@ -109,3 +109,85 @@ describe('RecordMenu · 就地弹层（v1.0.28 / v1.1.6 整页化）', () => {
     expect(closed).toBe(true);
   });
 });
+
+/**
+ * v1.1.7 桌面皮肤重构守护：桌面端只换材质，入口与表单字段必须与手机端一字不差。
+ * 这条测试锁住「加号菜单 = 4 记录卡 + 4 生活流入口 + 取消」，
+ * 以及四个记录抽屉里的关键字段 —— 防止以后为了「桌面优化」把东西做丢。
+ */
+describe('RecordMenu · 入口与字段完整性（桌面/手机同一套）', () => {
+  const CARDS = ['AI 记一笔', '价值记账', '手动录入', '新增订阅'];
+  const LIFE = ['购物冷静', '心动清单', '时间切片', '情绪速写'];
+
+  it('加号菜单：4 张记录卡 + 4 个生活流入口 + 取消，一个不少', async () => {
+    await renderMenu('/home');
+    const txt = document.body.textContent ?? '';
+    for (const t of [...CARDS, ...LIFE]) expect(txt).toContain(t);
+    const hasCancel = [...document.body.querySelectorAll('button')].some((b) => (b.textContent ?? '').trim() === '取消');
+    expect(hasCancel).toBe(true);
+  });
+
+  it('价值记账抽屉：支出/收入、金额、归需否+稍后、分类、备注都在', async () => {
+    await renderMenu('/home');
+    await act(async () => {
+      findButton('价值记账').click();
+    });
+    const txt = document.body.textContent ?? '';
+    for (const t of ['支出', '收入', '这笔花得怎么样', '归', '需', '否', '稍后', '分类', '日期', '备注']) {
+      expect(txt).toContain(t);
+    }
+    expect(document.body.querySelector('input[placeholder="买了什么？（可选）"]')).not.toBeNull();
+  });
+
+  it('手动录入抽屉：名称/价格/购买日期/图标/分类/备注都在', async () => {
+    await renderMenu('/home');
+    await act(async () => {
+      findButton('手动录入').click();
+    });
+    const txt = document.body.textContent ?? '';
+    expect(txt).toContain('物品入库');
+    for (const t of ['名称', '价格', '购买日期', '图标', '分类', '备注']) expect(txt).toContain(t);
+    expect(document.body.querySelector('input[placeholder="买了什么"]')).not.toBeNull();
+  });
+});
+
+/**
+ * v1.1.7 桌面皮肤重构守护：桌面端只换材质，入口与表单字段必须与手机端一字不差。
+ * 这条测试锁住「加号菜单 = 4 记录卡 + 4 生活流入口 + 取消」，
+ * 以及四个记录抽屉里的关键字段 —— 防止以后为了「桌面优化」把东西做丢。
+ */
+describe('RecordMenu · 入口与字段完整性（桌面/手机同一套）', () => {
+  const CARDS = ['AI 记一笔', '价值记账', '手动录入', '新增订阅'];
+  const LIFE = ['购物冷静', '心动清单', '时间切片', '情绪速写'];
+
+  it('加号菜单：4 张记录卡 + 4 个生活流入口 + 取消，一个不少', async () => {
+    await renderMenu('/home');
+    const txt = document.body.textContent ?? '';
+    for (const t of [...CARDS, ...LIFE]) expect(txt).toContain(t);
+    const hasCancel = [...document.body.querySelectorAll('button')].some((b) => (b.textContent ?? '').trim() === '取消');
+    expect(hasCancel).toBe(true);
+  });
+
+  it('价值记账抽屉：支出/收入、金额、归需否+稍后、分类、备注都在', async () => {
+    await renderMenu('/home');
+    await act(async () => {
+      findButton('价值记账').click();
+    });
+    const txt = document.body.textContent ?? '';
+    for (const t of ['支出', '收入', '这笔花得怎么样', '归', '需', '否', '稍后', '分类', '日期', '备注']) {
+      expect(txt).toContain(t);
+    }
+    expect(document.body.querySelector('input[placeholder="买了什么？（可选）"]')).not.toBeNull();
+  });
+
+  it('手动录入抽屉：名称/价格/购买日期/图标/分类/备注都在', async () => {
+    await renderMenu('/home');
+    await act(async () => {
+      findButton('手动录入').click();
+    });
+    const txt = document.body.textContent ?? '';
+    expect(txt).toContain('物品入库');
+    for (const t of ['名称', '价格', '购买日期', '图标', '分类', '备注']) expect(txt).toContain(t);
+    expect(document.body.querySelector('input[placeholder="买了什么"]')).not.toBeNull();
+  });
+});

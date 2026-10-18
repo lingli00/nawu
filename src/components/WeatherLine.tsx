@@ -334,28 +334,33 @@ export default function WeatherLine({ className = '' }: { className?: string }):
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title={`${loc.full} · 按网络 IP 定位${wx ? ` · 今日 ${wx.tMin}~${wx.tMax}° · 降水概率 ${wx.pop}% · 紫外线 ${wx.uv}` : ''}（点击查看定位详情）`}
-        className={`flex w-full items-center gap-1.5 text-left text-[11px] text-ink-3 active:opacity-70 ${className}`}
-      >
-        {advice ? (
-          <advice.Icon size={12} strokeWidth={1.8} className="shrink-0 text-ink-3/80" aria-hidden />
-        ) : (
-          <MapPin size={12} strokeWidth={1.8} className="shrink-0 text-ink-3/80" aria-hidden />
-        )}
-        <span className="min-w-0 truncate">
-          {loc.short}
-          {wx ? ` ${wx.temp}° ${label}` : ' …'}
+      {/* ★v1.1.8：原来是 11px 的 ink-3 纯文字，在玻璃皮肤的浅色渐变背景上几乎看不见；
+          改成带描边的浅底胶囊（12px / ink-2 / 图标用主色），任何皮肤与深浅色下都能读出来 */}
+      {/* 块级容器：否则 inline-flex 的胶囊会和下面的「物品/订阅」分段控件挤在同一行 */}
+      <div className={`flex ${className}`}>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title={`${loc.full} · 按网络 IP 定位${wx ? ` · 今日 ${wx.tMin}~${wx.tMax}° · 降水概率 ${wx.pop}% · 紫外线 ${wx.uv}` : ''}（点击查看定位详情）`}
+          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-left text-xs font-medium leading-4 text-ink-2 active:opacity-80"
+        >
           {advice ? (
-            <>
-              <span className="mx-1 text-ink-3/50">·</span>
-              {advice.text}
-            </>
-          ) : null}
-        </span>
-      </button>
+            <advice.Icon size={13} strokeWidth={1.9} className="shrink-0 text-accent" aria-hidden />
+          ) : (
+            <MapPin size={13} strokeWidth={1.9} className="shrink-0 text-accent" aria-hidden />
+          )}
+          <span className="min-w-0 truncate">
+            {loc.short}
+            {wx ? ` ${wx.temp}° ${label}` : ' …'}
+            {advice ? (
+              <>
+                <span className="mx-1 text-ink-3/50">·</span>
+                {advice.text}
+              </>
+            ) : null}
+          </span>
+        </button>
+      </div>
 
       {open ? (
         <Sheet side="center" title="天气位置" onClose={() => setOpen(false)}>

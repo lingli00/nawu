@@ -46,7 +46,7 @@ function Donut({ slices, total }: { slices: CategorySlice[]; total: number }) {
   const C = 2 * Math.PI * R;
   let acc = 0;
   return (
-    <svg viewBox="0 0 140 140" className="h-36 w-36 shrink-0">
+    <svg viewBox="0 0 140 140" className="h-36 w-36 shrink-0 dt:h-44 dt:w-44">
       <circle cx="70" cy="70" r={R} fill="none" stroke="var(--line)" strokeWidth="16" />
       {slices.map((s) => {
         const dash = s.ratio * C;
@@ -116,7 +116,7 @@ function NetTrend({
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[92px] w-full dt:h-[136px]" style={{ overflow: 'visible' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[92px] w-full dt:h-[176px]" style={{ overflow: 'visible' }}>
         <defs>
           <linearGradient id="netTrendFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.26" />
@@ -397,19 +397,23 @@ export default function ReportPage() {
     <div className="text-ink">
       {/* 自绘 Tab 头（底栏页不带返回箭头；safe-area 由 MainShell 外层统一处理） */}
       {/* 宽度/边距全部交给 MainShell 的 main（max-w-xl px-4），页面不再自带宽度容器 */}
-      <header className="page-enter flex w-full items-end justify-between pb-1 pt-2">
+      <header className="page-enter flex w-full items-end justify-between pb-1 pt-2 dt:items-center dt:pb-3">
         <div className="min-w-0">
-          <h1 className="text-3xl font-bold leading-9">报表</h1>
-          <p className="truncate text-xs text-ink-3">{windowLabel} · 看清钱花在哪、花得值不值</p>
+          <h1 className="text-3xl font-bold leading-9 dt:text-[32px] dt:leading-none">报表</h1>
+          <p className="truncate text-xs text-ink-3 dt:mt-2 dt:text-[13px]">{windowLabel} · 看清钱花在哪、花得值不值</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button
             onClick={() => step(-1)}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-ink-2 active:scale-95 active:bg-surface transition-transform"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-ink-2 transition-transform active:scale-95 active:bg-surface dt:hover:bg-surface-2"
             aria-label="上一期"
           >
             ‹
           </button>
+          {/* ★PC：期次做成居中的胶囊标签（手机上这段信息在副标题里，故隐藏） */}
+          <span className="hidden dt:inline-flex dt:h-9 dt:min-w-[150px] dt:items-center dt:justify-center dt:rounded-full dt:border dt:border-line dt:bg-surface dt:px-4 dt:text-xs dt:font-medium">
+            {windowLabel}
+          </span>
           {grain === 'day' ? (
             <input
               type="date"
@@ -421,18 +425,18 @@ export default function ReportPage() {
           ) : null}
           <button
             onClick={() => step(1)}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-ink-2 active:scale-95 active:bg-surface transition-transform"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-ink-2 transition-transform active:scale-95 active:bg-surface dt:hover:bg-surface-2"
             aria-label="下一期"
           >
             ›
           </button>
         </div>
       </header>
-      {/* ★v1.0.25 PC 重构：12 列桌面栅格（环图5+趋势7 / 净值7+归需否5 / 生活流整行），
-          间距统一交给 grid gap，卡片不再自带 mt-3。 */}
-      <div className="grid grid-cols-1 gap-3 dt:grid-cols-12">
+      {/* ★v1.1.8 PC 重排：12 列桌面栅格 + dt:order 重排（手机端顺序与样式完全不变）
+          —— 概览条 → 占比|生活流 → 趋势|归需否 → 净值|AI，两块一行，减少上下滚动。 */}
+      <div className="grid grid-cols-1 gap-3 dt:grid-cols-12 dt:gap-4">
         {/* 粒度切换 chips（与首页筛选 chips 同样式） */}
-        <div className="mb-1 flex gap-2 dt:col-span-12">
+        <div className="mb-1 flex items-center gap-2 dt:col-span-12 dt:order-1 dt:mb-0 dt:gap-2.5">
           {GRAIN_CHIPS.map(([g, label]) => (
             <button
               key={g}
@@ -440,45 +444,47 @@ export default function ReportPage() {
                 void haptic('select');
                 setGrain(g);
               }}
-              className={`h-8 rounded-full border px-3.5 text-xs transition-all active:scale-95 ${
-                grain === g ? 'border-accent bg-accent-soft font-medium text-accent' : 'border-line bg-surface text-ink-3'
+              className={`h-8 rounded-full border px-3.5 text-xs transition-all active:scale-95 dt:h-9 dt:px-4 dt:text-[13px] ${
+                grain === g ? 'border-accent bg-accent-soft font-medium text-accent' : 'border-line bg-surface text-ink-3 dt:hover:text-ink-2'
               }`}
             >
               {label}
             </button>
           ))}
+          {/* PC：这一期一共记了几笔（手机上不显示，避免多一行） */}
+          <p className="ml-auto hidden text-[11px] text-ink-3 dt:block">本期 {windowRows.length} 笔流水</p>
         </div>
 
         {/* ★v1.0.33：顶部概览条——此前页头只有标题+小字，下方留白显得空落
             ★v1.0.35：① 结余改带符号显示（此前 -47.59 显示成 47.59，红字让人
             误读成「还剩 47.59」）；② 点「结余」展开口径解释。 */}
-        <div className="page-enter rounded-card border border-line bg-surface p-3 dt:col-span-12">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="text-center">
-              <p className="text-[11px] text-ink-3">支出</p>
-              <p className="tnum mt-0.5 text-base font-semibold">{formatMoney(expense, currency)}</p>
+        <div className="page-enter rounded-card border border-line bg-surface p-3 dt:col-span-12 dt:order-2 dt:p-0">
+          <div className="grid grid-cols-3 gap-2 dt:gap-0">
+            <div className="text-center dt:px-7 dt:py-5 dt:text-left">
+              <p className="text-[11px] text-ink-3 dt:text-xs">支出</p>
+              <p className="tnum mt-0.5 text-base font-semibold dt:mt-2 dt:text-[26px] dt:leading-none">{formatMoney(expense, currency)}</p>
             </div>
-            <div className="border-x border-line-2 text-center">
-              <p className="text-[11px] text-ink-3">收入</p>
-              <p className="tnum mt-0.5 text-base font-semibold">{formatMoney(income, currency)}</p>
+            <div className="border-x border-line-2 text-center dt:px-7 dt:py-5 dt:text-left">
+              <p className="text-[11px] text-ink-3 dt:text-xs">收入</p>
+              <p className="tnum mt-0.5 text-base font-semibold dt:mt-2 dt:text-[26px] dt:leading-none">{formatMoney(income, currency)}</p>
             </div>
             <button
               type="button"
               onClick={() => setNetOpen((v) => !v)}
               aria-expanded={netOpen}
-              className="text-center transition-opacity active:opacity-60"
+              className="text-center transition-opacity active:opacity-60 dt:px-7 dt:py-5 dt:text-left dt:hover:opacity-80"
             >
-              <p className="text-[11px] text-ink-3">
+              <p className="text-[11px] text-ink-3 dt:text-xs">
                 结余
                 <span className="ml-0.5 inline-block h-3.5 w-3.5 rounded-full border border-line-2 text-[9px] leading-[13px] text-ink-3">?</span>
               </p>
-              <p className="tnum mt-0.5 text-base font-semibold" style={{ color: income - expense >= 0 ? 'var(--gui)' : 'var(--fou)' }}>
+              <p className="tnum mt-0.5 text-base font-semibold dt:mt-2 dt:text-[26px] dt:leading-none" style={{ color: income - expense >= 0 ? 'var(--gui)' : 'var(--fou)' }}>
                 {formatNetMoney(income - expense, currency)}
               </p>
             </button>
           </div>
           {netOpen ? (
-            <p className="mt-2 rounded-btn bg-surface-2 px-3 py-2 text-[11px] leading-5 text-ink-3">
+            <p className="mt-2 rounded-btn bg-surface-2 px-3 py-2 text-[11px] leading-5 text-ink-3 dt:mt-0 dt:rounded-none dt:border-t dt:border-line-2 dt:px-7 dt:py-4 dt:text-xs">
               <b className="text-ink-2">结余 = 收入 − 支出</b>＝ {formatMoney(income, currency)} − {formatMoney(expense, currency)} ＝{' '}
               {formatNetMoney(income - expense, currency)}。
               {income - expense < 0
@@ -489,26 +495,26 @@ export default function ReportPage() {
         </div>
 
         {/* 分类环图 */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-7">
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-5 dt:order-3 dt:p-5">
           <h2 className="text-sm font-semibold dt:text-[15px]">支出分类占比</h2>
-          <p className="mt-0.5 text-[11px] text-ink-3">这一期钱主要花在了哪些地方</p>
+          <p className="mt-0.5 text-[11px] text-ink-3 dt:text-xs">这一期钱主要花在了哪些地方</p>
           {slices.length === 0 ? (
             <p className="py-10 text-center text-sm text-ink-3">
               {grain === 'day' ? '今天' : grain === 'month' ? '本月' : '本年'}还没有支出记录
             </p>
           ) : (
-            <div className="mt-3 flex items-center gap-4">
+            <div className="mt-3 flex items-center gap-4 dt:mt-6 dt:gap-6">
               <Donut slices={slices} total={expense} />
-              <ul className="min-w-0 flex-1 space-y-1.5">
+              <ul className="min-w-0 flex-1 space-y-1.5 dt:space-y-2.5">
                 {slices.slice(0, 6).map((s) => (
-                  <li key={s.categoryId} className="flex items-center gap-2 text-xs">
+                  <li key={s.categoryId} className="flex items-center gap-2 text-xs dt:text-[13px]">
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
                     <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
                       <CategoryGlyph id={s.icon} size={14} className="shrink-0 text-ink-2" />
                       {s.name}
                     </span>
                     <span className="text-ink-3">{Math.round(s.ratio * 100)}%</span>
-                    <span className="w-16 text-right font-medium">{formatCompactMoney(s.amount, currency)}</span>
+                    <span className="w-16 text-right font-medium dt:w-20">{formatCompactMoney(s.amount, currency)}</span>
                   </li>
                 ))}
                 {slices.length > 6 ? (
@@ -523,8 +529,9 @@ export default function ReportPage() {
 
         {/* 归 / 需 / 否 结构：v1.0.33 起排在「生活流」之后（占比 + 生活流状态前置） */}
 
-        {/* v1.0.24 · 生活流板块：理智指数（时间健康度）+ 心动清单 + 冲动拦截 + 情绪晴雨（v1.0.33 与占比并排） */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-5">
+        {/* v1.0.24 · 生活流板块：理智指数（时间健康度）+ 心动清单 + 冲动拦截 + 情绪晴雨
+            ★v1.1.8 PC：整行 12 列，内层「主指标 + 三小卡」排成一行 4 格（手机仍为上下两段） */}
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12 dt:order-5 dt:p-5">
           <div className="flex items-baseline justify-between">
             <h2 className="flex items-center gap-1.5 text-sm font-semibold">
               <Brain size={15} style={{ color: 'var(--accent)' }} />
@@ -549,12 +556,18 @@ export default function ReportPage() {
               ))}
             </div>
           </div>
-          <p className="mt-0.5 text-[11px] text-ink-3">统计心动清单 / 购物冷静 / 时间切片 / 情绪速写（随上方粒度切换）</p>
+          <p className="mt-0.5 text-[11px] text-ink-3 dt:text-xs">统计心动清单 / 购物冷静 / 时间切片 / 情绪速写（随上方粒度切换）</p>
 
+          {/* PC：主指标 + 三小卡同一行；手机上这个 wrapper 是透明块，不影响原布局 */}
+          <div className="dt:mt-5 dt:grid dt:grid-cols-[1.35fr_1fr_1fr_1fr] dt:gap-3">
           {/* 主指标：时间健康度 = 归 + 需 时长占全部时间切片之比 */}
-          <div className="mt-3 flex items-center gap-4 rounded-card bg-surface-2 p-3.5">
+          <div className="mt-3 flex items-center gap-4 rounded-card bg-surface-2 p-3.5 dt:mt-0 dt:p-4">
             <div className="shrink-0 text-center">
-              <p className="tnum text-3xl font-bold leading-none dt:text-4xl" style={{ color: healthTint }}>
+              {/* ★v1.1.8：无数据时「—」用大字会渲染成一条横线（像分隔符），故降字号 */}
+              <p
+                className={`tnum text-3xl font-bold leading-none ${life.health === null ? 'text-ink-3 dt:text-2xl' : 'dt:text-[44px]'}`}
+                style={{ color: healthTint }}
+              >
                 {life.health ?? '—'}
               </p>
               <p className="mt-1 text-[11px] text-ink-3">时间健康度</p>
@@ -579,62 +592,64 @@ export default function ReportPage() {
             </div>
           </div>
 
-          {/* 三小卡：心动清单 / 冲动拦截 / 情绪晴雨（桌面窄栏内竖排）
-              ★v1.0.33 P0-4：tint 收敛语义令牌；小号文字用 ink-2 保对比度，tint 只上图标与描边 */}
-          <div className="mt-2.5 grid grid-cols-3 gap-2.5 dt:grid-cols-1">
+          {/* 三小卡：心动清单 / 冲动拦截 / 情绪晴雨
+              ★v1.0.33 P0-4：tint 收敛语义令牌；小号文字用 ink-2 保对比度，tint 只上图标与描边
+              ★v1.1.8 PC：dt:contents 让三卡成为外层 4 格栅格的直接子项（手机仍为 3 列一行） */}
+          <div className="mt-2.5 grid grid-cols-3 gap-2.5 dt:mt-0 dt:gap-3 dt:contents">
             <div
-              className="rounded-card border border-line p-3"
+              className="rounded-card border border-line p-3 dt:p-4"
               style={{ borderColor: 'color-mix(in srgb, var(--tint-warm) 28%, transparent)' }}
             >
               <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                 <Sprout size={13} style={{ color: 'var(--tint-warm)' }} />
                 心动清单
               </p>
-              <p className="mt-1.5 text-lg font-semibold leading-none">{life.wishCount} 件</p>
+              <p className="mt-1.5 text-lg font-semibold leading-none dt:text-xl">{life.wishCount} 件</p>
               <p className="mt-1 text-[11px] text-ink-3">合计 {formatMoney(life.wishSum, currency)}</p>
             </div>
             <div
-              className="rounded-card border border-line p-3"
+              className="rounded-card border border-line p-3 dt:p-4"
               style={{ borderColor: 'color-mix(in srgb, var(--tint-cool) 28%, transparent)' }}
             >
               <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                 <Snowflake size={13} style={{ color: 'var(--tint-cool)' }} />
                 冲动拦截
               </p>
-              <p className="mt-1.5 text-lg font-semibold leading-none">入池 {life.coolCount} 件</p>
+              <p className="mt-1.5 text-lg font-semibold leading-none dt:text-xl">入池 {life.coolCount} 件</p>
               <p className="mt-1 text-[11px] text-ink-3">
                 到期未动 {life.coolHold} 件 · 涉及 {formatMoney(life.coolAmount, currency)}
               </p>
             </div>
             <div
-              className="rounded-card border border-line p-3"
+              className="rounded-card border border-line p-3 dt:p-4"
               style={{ borderColor: 'color-mix(in srgb, var(--tint-clay) 28%, transparent)' }}
             >
               <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
                 <Heart size={13} style={{ color: 'var(--tint-clay)' }} />
                 情绪晴雨
               </p>
-              <p className="mt-1.5 text-lg font-semibold leading-none">{life.moodCount} 次</p>
+              <p className="mt-1.5 text-lg font-semibold leading-none dt:text-xl">{life.moodCount} 次</p>
               <p className="mt-1 text-[11px] text-ink-3">
                 归入心底 {life.moodHeart} · 粉碎 {life.moodCrush}
               </p>
             </div>
           </div>
+          </div>
         </div>
 
         {/* 归 / 需 / 否 */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12">
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-5 dt:order-6 dt:p-5">
           <h2 className="text-sm font-semibold dt:text-[15px]">归 / 需 / 否 结构</h2>
-          <p className="mt-0.5 text-[11px] text-ink-3">回头看看哪些花得值、哪些本可避免</p>
-          <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-surface-2">
+          <p className="mt-0.5 text-[11px] text-ink-3 dt:text-xs">回头看看哪些花得值、哪些本可避免</p>
+          <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-surface-2 dt:mt-4">
             {stack.map((s) => (
               <div key={s.judgement} style={{ width: `${s.ratio * 100}%`, background: s.color }} />
             ))}
           </div>
-          <ul className="mt-3 space-y-2.5 dt:grid dt:grid-cols-3 dt:gap-4 dt:space-y-0">
+          <ul className="mt-3 space-y-2.5 dt:mt-4 dt:space-y-3.5">
             {stack.map((s) => (
               <li key={s.judgement}>
-                <div className="flex items-baseline justify-between text-xs">
+                <div className="flex items-baseline justify-between text-xs dt:text-[13px]">
                   <span style={{ color: s.color }}>
                     {s.label} · {J_META[s.judgement].desc}
                   </span>
@@ -657,7 +672,7 @@ export default function ReportPage() {
         </div>
 
         {/* ★v1.1.3 · AI 分析：本地规则洞察 + AI 点评（未配 AI 也有洞察，配了才有点评） */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12">
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12 dt:order-8 dt:p-5">
           <div className="flex items-baseline justify-between">
             <h2 className="flex items-center gap-1.5 text-sm font-semibold dt:text-[15px]">
               <Sparkles size={15} style={{ color: 'var(--accent)' }} />
@@ -675,10 +690,10 @@ export default function ReportPage() {
             按当前粒度（{windowLabel}）聚合 · 本地规则洞察始终可用，配置 AI 后附点评
           </p>
           {analysis ? (
-            <div className="mt-3 space-y-2.5">
-              <ul className="space-y-1.5">
+            <div className="mt-3 space-y-2.5 dt:mt-4 dt:max-w-[880px] dt:space-y-3">
+              <ul className="space-y-1.5 dt:space-y-2">
                 {analysis.local.map((t, i) => (
-                  <li key={i} className="flex gap-2 text-xs leading-5 text-ink-2">
+                  <li key={i} className="flex gap-2 text-xs leading-5 text-ink-2 dt:text-[13px] dt:leading-6">
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
                     <span className="min-w-0 flex-1">{t}</span>
                   </li>
@@ -706,11 +721,12 @@ export default function ReportPage() {
           )}
         </div>
 
-        {/* ★v1.0.33 · 趋势（后置）：柱顶直接给金额，点柱子看该期收/支/结余明细 */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12">
+        {/* ★v1.0.33 · 趋势（后置）：柱顶直接给金额，点柱子看该期收/支/结余明细
+            ★v1.1.8 PC：与「支出分类占比」并排（钱花在哪 / 钱怎么走），柱体加高 */}
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-7 dt:order-4 dt:p-5">
           <div className="flex items-baseline justify-between">
             <h2 className="text-sm font-semibold dt:text-[15px]">{trendTitle}</h2>
-            <p className="text-[11px] text-ink-3">
+            <p className="text-[11px] text-ink-3 dt:text-xs">
               <span className="mr-2 inline-flex items-center gap-1">
                 <span className="inline-block h-2 w-2 rounded-full bg-accent" />
                 支出
@@ -740,7 +756,7 @@ export default function ReportPage() {
                   <span className={`tnum h-3.5 text-[11px] leading-none ${on ? 'font-semibold text-accent' : 'text-ink-3'}`}>
                     {b.expense > 0 ? formatCompactMoney(b.expense, currency) : ''}
                   </span>
-                  <div className="flex h-28 w-full items-end justify-center gap-1 dt:h-40">
+                  <div className="flex h-28 w-full items-end justify-center gap-1 dt:h-44 dt:gap-1.5">
                     <div
                       className="w-3.5 rounded-t bg-accent transition-all dt:w-6"
                       style={{ height: `${Math.max((b.expense / maxBar) * 100, b.expense > 0 ? 3 : 0)}%` }}
@@ -773,7 +789,7 @@ export default function ReportPage() {
 
         {/* v1.0.21 · M3.2：净值趋势（收入 − 支出）；v1.0.33 起置于最后
             ★v1.0.35：可点选每期看明细 + 「怎么读」解释（点击反馈） */}
-        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12">
+        <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-7 dt:order-7 dt:p-5">
           <div className="flex items-baseline justify-between">
             <h2 className="text-sm font-semibold dt:text-[15px]">净值趋势</h2>
             <p className="text-[11px] text-ink-3">{trendTitle.replace('趋势', '')} · 收入 − 支出</p>

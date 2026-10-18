@@ -74,6 +74,9 @@ async function bootstrap(): Promise<void> {
   mount(<BootSkeleton />);
 
   try {
+    // ★桌面外观皮肤（预览）：必须在首屏之前应用，避免浅色闪一下再变深色
+    const { bootSkin } = await import('./lib/skin');
+    bootSkin();
     // ★v1.0.26：旧 flyme.* localStorage 键一次性迁移到 flyme.*（必须在 hydrate 之前）
     const { migrateLegacyKeys } = await import('./storage/keys');
     migrateLegacyKeys();
@@ -86,6 +89,9 @@ async function bootstrap(): Promise<void> {
     });
     const store = useAppStore.getState();
     await store.init();
+    /* 预览演示数据：仅在带过 ?demo=1 且本地为空时灌（已有数据一律不动） */
+    const { seedDemoIfEmpty } = await import('./lib/demoSeed');
+    await seedDemoIfEmpty();
     const theme = useAppStore.getState().theme;
     document.documentElement.setAttribute('data-theme', theme);
     void initNativePlugins(theme);

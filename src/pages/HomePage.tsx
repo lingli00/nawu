@@ -1159,7 +1159,7 @@ export default function HomePage() {
       </header>
 
       {/* 天气行（v1.1.4）：一行 11px 次级信息，取不到数据时整行不渲染 */}
-      <WeatherLine className="mb-3 px-0.5" />
+      <WeatherLine className="mb-3" />
 
       {/* 搜索行（P1-7：整行搜索框 + 取消按钮；非受控：关闭即卸载，重开为空） */}
       {searchOpen ? (

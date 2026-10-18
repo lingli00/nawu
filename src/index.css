@@ -658,3 +658,162 @@ textarea {
     animation: sheet-in-right 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
   }
 }
+
+/* ============================================================
+   桌面外观皮肤（预览）
+   ------------------------------------------------------------
+   ★ 只在 data-shell="pc" 时生效 —— 手机端 / 手机网页版零影响。
+   ★ 不做任何排版重构：模块、按钮、顺序、表单字段全部沿用现有
+     组件；这里只换材质（底色、侧栏形态、阴影、圆角）与配色。
+   ★ 内容列宽：classic 1240（现状不变）/ glass 1120（v1.1.8 起，配合 12 列桌面栅格），
+     仍窄于 1240，不把单列内容硬拉成宽条。
+   ============================================================ */
+
+/* —— 桌面内容列：统一宽度与留白 —— */
+html[data-shell='pc'] .nw-main {
+  width: 100%;
+  margin-inline: auto;
+  padding: 32px 32px 96px;
+}
+html[data-shell='pc'][data-skin='classic'] .nw-main {
+  max-width: 1240px;
+}
+/* 现状在 2xl 屏是 1320 —— 保持一致，避免开了皮肤开关反而变窄 */
+@media (min-width: 1536px) {
+  html[data-shell='pc'][data-skin='classic'] .nw-main {
+    max-width: 1320px;
+  }
+}
+/* ★v1.1.8 PC 重排：内容列由 900 放宽到 1120 —— 报表/我的已改成 12 列桌面栅格，
+   900 宽下两栏卡片会被挤成竖条；1120 在 1440 屏下左右各留 ~110，仍是「窄栏」气质。 */
+html[data-shell='pc'][data-skin='glass'] .nw-main,
+html[data-shell='pc'][data-skin='night'] .nw-main {
+  max-width: 1120px;
+  padding: 34px 32px 96px;
+}
+@media (min-width: 1536px) {
+  html[data-shell='pc'][data-skin='glass'] .nw-main,
+  html[data-shell='pc'][data-skin='night'] .nw-main {
+    max-width: 1180px;
+  }
+}
+
+/* ============================ 07 玻璃浮层 ============================ */
+html[data-skin='glass'][data-shell='pc'] {
+  --side: rgba(255, 255, 255, 0.62);
+  --side-2: rgba(63, 125, 103, 0.1);
+  --side-ink: #18201c;
+  --side-dim: #4d5751;
+  --shadow: 0 1px 2px rgba(24, 32, 28, 0.04), 0 10px 30px -18px rgba(24, 32, 28, 0.22);
+  --shadow-lg: 0 12px 34px -20px rgba(24, 32, 28, 0.28);
+}
+html[data-skin='glass'][data-shell='pc'] body {
+  background-color: #f4f5f3;
+  background-image:
+    radial-gradient(58% 46% at 6% 2%, rgba(63, 125, 103, 0.17), transparent 72%),
+    radial-gradient(52% 44% at 98% 6%, rgba(74, 127, 181, 0.14), transparent 72%),
+    radial-gradient(56% 48% at 62% 104%, rgba(185, 127, 34, 0.1), transparent 72%);
+  background-attachment: fixed;
+}
+/* 侧栏：浮起的玻璃圆角卡 */
+html[data-skin='glass'][data-shell='pc'] aside {
+  top: 12px;
+  bottom: 12px;
+  left: 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 20px 50px -28px rgba(24, 32, 28, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  overflow: hidden;
+}
+/* 内容卡片：白玻璃 + 轻浮起（只加强材质，尺寸与内边距不动） */
+html[data-skin='glass'][data-shell='pc'] .nw-main .rounded-card,
+html[data-skin='glass'][data-shell='pc'] .nw-main .rounded-2xl {
+  background-color: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ============================ 09 暗夜夜航 ============================ */
+html[data-skin='night'][data-shell='pc'] {
+  --paper: #0f1412;
+  --surface: #171d1a;
+  --surface-2: #1c2320;
+  --ink: #e9ecea;
+  --ink-2: #b2bab5;
+  --ink-3: #8a938d;
+  --line: #28302c;
+  --line-2: #212825;
+  --accent: #63a68c;
+  --accent-2: #7bb99f;
+  --accent-soft: #1e2c26;
+  --tint-warm: #cf9f3f;
+  --tint-cool: #4aa696;
+  --tint-clay: #d07067;
+  --tint-violet: #9d86e8;
+  --side: #0b100e;
+  --side-2: #161f1a;
+  --side-ink: #e8edea;
+  --side-dim: #8c9b93;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -20px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 18px 44px -24px rgba(0, 0, 0, 0.7);
+  color-scheme: dark;
+}
+/* 侧栏：通栏扁平 + 选中项发光竖条与柔光底 */
+html[data-skin='night'][data-shell='pc'] aside {
+  border-right: 1px solid #1d2621;
+}
+html[data-skin='night'][data-shell='pc'] aside a[aria-current='page'] {
+  box-shadow:
+    inset 2px 0 0 0 var(--accent),
+    0 0 22px -10px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+html[data-skin='night'][data-shell='pc'] .nw-main .rounded-card,
+html[data-skin='night'][data-shell='pc'] .nw-main .rounded-2xl {
+  box-shadow: var(--shadow);
+}
+
+/* ============================ 预览切换条 ============================ */
+.nw-skinbar {
+  display: none;
+}
+html[data-shell='pc'][data-skin-preview='1'] .nw-skinbar {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+}
+.nw-skinbar button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--ink-3);
+  transition: background 0.16s, color 0.16s;
+}
+.nw-skinbar button:hover {
+  color: var(--ink);
+}
+.nw-skinbar button[aria-pressed='true'] {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.nw-skinbar .nw-skinbar-hint {
+  padding: 0 8px 0 6px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
