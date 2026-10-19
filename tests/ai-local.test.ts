@@ -131,6 +131,16 @@ describe('ai/localParser · 本地规则解析（验收 7）', () => {
     expect(time.timeDraft?.meaning).toBe('gui');
   });
 
+  it('★v1.3.0：「买了B站大会员年卡」→ 名称保留「大会员」专名（不被当订阅词剥掉）', () => {
+    const sub = parseAll('买了B站大会员年卡');
+    expect(sub[0]?.action).toBe('create_subscription');
+    expect(sub[0]?.subDraft?.name).toBe('B站大会员');
+    expect(sub[0]?.subDraft?.period).toBe('year');
+    // 对照：普通「XX会员」后缀仍要剥掉
+    const plain = parseAll('开了个腾讯视频会员');
+    expect(plain[0]?.subDraft?.name).toBe('腾讯视频');
+  });
+
   it('未配置 AI 时 parse 自动回落本地规则，source 为 local', async () => {
     const { parse } = await import('../src/ai/parseService');
     const out = await parse('今天早上吃了油条包子花了30', { categories: SEED_CATEGORIES, today: '2026-10-06' });
@@ -266,5 +276,29 @@ describe('ai/localParser · 型号码 vs 金额（v1.1.10）', () => {
   it('「粉色」不会被「粉」（米粉）误判成餐饮', () => {
     const items = parseAll('粉色台灯 89');
     expect(items[0]?.ledgerDraft?.categoryId).not.toBe('cl0');
+  });
+});
+
+/* ---------- ★v1.3.0 物品处置（退役转卖识别） ---------- */
+
+describe('ai/localParser · 退役转卖（v1.3.0）', () => {
+  it('「我的相机卖了36000。」→ retire_sell，match=相机、sellPrice=36000', () => {
+    const items = parseAll('我的相机卖了36000。');
+    expect(items).toHaveLength(1);
+    expect(items[0]?.action).toBe('retire_sell');
+    expect(items[0]?.retireDraft?.sellPrice).toBe(36000);
+    expect(items[0]?.retireDraft?.match).toContain('相机');
+  });
+
+  it('「键盘退役了」→ retire_sell（无金额 sellPrice=0）', () => {
+    const items = parseAll('机械键盘退役了');
+    expect(items[0]?.action).toBe('retire_sell');
+    expect(items[0]?.retireDraft?.sellPrice).toBe(0);
+    expect(items[0]?.retireDraft?.match).toContain('键盘');
+  });
+
+  it('「出了」口语（旧键盘已出）也认退役', () => {
+    const items = parseAll('旧键盘已出');
+    expect(items[0]?.action).toBe('retire_sell');
   });
 });

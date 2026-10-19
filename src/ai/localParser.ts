@@ -2,9 +2,12 @@ import { addDays, today as todayStr } from '../lib/date';
 import { emojiForName } from '../lib/emoji';
 import { toJudgement } from '../lib/emoji';
 import type { AiResultItem, GoodsDraft, LedgerDraft, SubDraft, TimeDraft } from '../types/ai';
-import type { Category, Judgement } from '../types/entities';
+import type { Category, CategoryKind, Judgement } from '../types/entities';
 import { cnToNumber, isAmountLike, toNumber, CN_NUM_CHARS } from './cnNumber';
+import { cleanNameText, detailsNote, extractOralDetails } from './colloquial';
+import { matchLearnedRule, type LearnedRule } from './ruleBank';
 import {
+  AMBIGUOUS_CLUSTERS,
   CATEGORY_KEYWORDS,
   CHANNEL_WORDS,
   GOODS_KEYWORDS,
@@ -199,11 +202,24 @@ const CONSUMABLE_LEDGER_NAMES = new Set(
 
 /**
  * 判断这句话是不是「日常消耗品/服务」消费（烟酒槟榔、吃喝、日用品、话费、药…）。
- * 规则：显式消耗词命中 → 是；否则生活流分类命中且不在耐用品三类 → 是。
+ * 规则：学习规则/歧义词簇判定 → 显式消耗词命中 → 生活流分类命中且不在耐用品三类 → 是。
  * 匹配前先剥掉量词（「买包纸巾」的「包」不再是服饰关键词的误命中）。
+ *
+ * ★v1.2.0：学习规则与歧义词簇优先于孤立关键词 ——
+ * 「买了N95笔记本准系统」不再被「N95→口罩→医疗」带偏。
  */
-function isConsumablePurchase(text: string): boolean {
+function isConsumablePurchase(text: string, learned?: LearnedRule[] | null): boolean {
+  if (learned && learned.length > 0) {
+    const hit = matchLearnedRule(text, learned);
+    if (hit) return hit.kind === 'ledger';
+  }
+  const sense = resolveAmbiguous(text);
+  if (sense) return sense.kind === 'ledger';
   if (RE_CONSUMABLE.test(text)) return true;
+  // ★v1.2.1 秤重/容量单位买法：「买了30斤大米/5L油」→ 消耗品；
+  // 「买了苹果15」没有斤两单位，仍是耐用品（品牌词）
+  // （注意：中文之间没有 \b 边界，不能加 \b）
+  if (/(\d+(?:\.\d+)?|[一二三四五六七八九十半两])\s*(斤|公斤|克|千克|kg|ml|升|L)/i.test(text)) return true;
   const goodsName = hitCategoryName(text, GOODS_KEYWORDS);
   if (goodsName) return false; // 明确命中耐用品词 → 物品
   const stripped = text.replace(/[个双只包盒瓶袋罐条支箱斤]+(?=[一-龥])/g, ' ');
@@ -218,20 +234,30 @@ function buildLedgerDraft(
   amount: number,
   date: string,
   meal: string,
+  learned?: LearnedRule[] | null,
 ): LedgerDraft {
   const isIncome = RE_INCOME.test(text);
   // 分类匹配用剥量词文本：「买包纸巾」的「包」不再误归服饰
   const matchText = text.replace(/[个双只包盒瓶袋罐条支箱斤]+(?=[一-龥])/g, ' ');
-  const categoryId = matchCategoryId(matchText, cats, 'ledger');
+  const categoryId = matchCategoryId(matchText, cats, 'ledger', learned);
   const isFood = Boolean(meal) || RE_EAT.test(text) || categoryId === 'cl0';
   const isTraffic = RE_TRAFFIC.test(text) || categoryId === 'cl1';
+  // ★v1.2.1 口头语细节：地点/数量进备注，名称只留商品名（「在斤大米」→「大米」）。
+  // 备注基座沿用 cleanNote（保留「早饭·油条包子」这类既有格式），有细节时加前缀
+  const details = extractOralDetails(text);
+  let base = cleanNote(text, meal);
+  if (details.qty && base.includes(details.qty)) {
+    base = base.replace(details.qty, '').replace(/\s+/g, ' ').trim();
+  }
+  const parts = [details.place, details.qty].filter(Boolean);
   return {
     type: isIncome ? 'income' : 'expense',
     amount,
     categoryId,
     judgement: guessJudgement(text, { isIncome, isTraffic, isFood }),
     date,
-    note: cleanNote(text, meal),
+    name: cleanNameText(text) || undefined,
+    note: parts.length && base ? `${parts.join(' · ')}｜${base}` : base || text,
   };
 }
 
@@ -240,6 +266,27 @@ function buildLedgerDraft(
  * 「米粉/凉粉」是餐饮，但「粉色/粉红/粉底」不是 —— 否则「N95 粉色笔记本」会被记成餐饮。
  */
 const SINGLE_CHAR_TAIL_BLOCK = /[色红蓝紫黄金绿白黑灰嫩底饼]/;
+
+/**
+ * ★v1.2.0 歧义词簇消歧（PRD 四.2：上下文感知，而非孤立关键词）。
+ *
+ * 文本含歧义词（如 N95）时，按共现词选义项：
+ * - 某个义项的共现词命中 → 返回该义项（{kind, name}）；
+ * - 所有义项都没有共现词 → 返回 null（不瞎猜，交给静态表 / 确认卡片兜底）。
+ */
+export function resolveAmbiguous(text: string): { kind: CategoryKind; name: string } | null {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  for (const cluster of AMBIGUOUS_CLUSTERS) {
+    if (!lower.includes(cluster.word)) continue;
+    for (const sense of cluster.senses) {
+      if (sense.words.some((w) => w && lower.includes(w.toLowerCase()))) {
+        return { kind: sense.kind, name: sense.name };
+      }
+    }
+  }
+  return null;
+}
 
 /**
  * 关键词命中（大小写不敏感）。
@@ -269,12 +316,35 @@ function hitCategoryName(
   return bestName;
 }
 
-/** 分类匹配（顺序敏感，先命中先得）。 */
+/**
+ * 分类匹配（顺序敏感，先命中先得）。
+ *
+ * ★v1.2.0 匹配顺序（PRD 四.1：用户人工纠正样本优先级高于旧静态规则）：
+ *   ① 本地自学习规则（用户在确认卡片上纠正过的样本）；
+ *   ② 歧义词簇上下文消歧（N95 + 笔记本 → 物品-数码）；
+ *   ③ 静态关键词表（命中词最长者优先）。
+ */
 export function matchCategoryId(
   text: string,
   categories: Category[],
   kind: 'goods' | 'sub' | 'ledger',
+  learned?: LearnedRule[] | null,
 ): string {
+  // ① 学习规则（仅义项大类一致时才采纳小类）
+  if (learned && learned.length > 0) {
+    const hit = matchLearnedRule(text, learned);
+    if (hit && hit.kind === kind) {
+      const id = categoryIdByName(hit.categoryName, categories, kind);
+      if (id) return id;
+    }
+  }
+  // ② 歧义词簇上下文消歧
+  const sense = resolveAmbiguous(text);
+  if (sense && sense.kind === kind) {
+    const id = categoryIdByName(sense.name, categories, kind);
+    if (id) return id;
+  }
+  // ③ 静态表（最长命中优先）
   const table =
     kind === 'goods' ? GOODS_KEYWORDS : kind === 'sub' ? SUB_KEYWORDS : CATEGORY_KEYWORDS;
   const name = hitCategoryName(text, table);
@@ -386,6 +456,8 @@ export interface LocalParseContext {
   today?: string;
   /** 货币，默认 CNY */
   currency?: string;
+  /** ★v1.2.0 本地自学习规则（用户人工纠正样本，优先级高于静态规则）。 */
+  learned?: LearnedRule[] | null;
 }
 
 /**
@@ -411,50 +483,55 @@ export function parseLocal(
   const date = resolveDate(text, today);
   const meal = detectMeal(text);
   const cats = categories ?? [];
+  const learned = ctx.learned && ctx.learned.length > 0 ? ctx.learned : null;
+  /** 学习规则命中（用户纠正过的样本，PRD：优先级高于旧静态规则）。 */
+  const forced = learned ? matchLearnedRule(text, learned) : null;
+  const withRaw = (item: AiResultItem): AiResultItem => ({ ...item, rawText: text });
 
-  // 1) 情绪记录：没有金额 + 命中情绪词
-  if (!hit && RE_MOOD.test(text)) {
-    return {
+  // 1) 情绪记录：没有金额 + 命中情绪词（学习规则命中时说明这是笔记录，不再抢情绪）
+  if (!forced && !hit && RE_MOOD.test(text)) {
+    return withRaw({
       action: 'create_mood',
       moodDraft: { feeling: moodEmoji(text), text },
       explanation: '本地规则：情绪记录',
       source: 'local',
-    };
+    });
   }
 
-  // 2) 卖出 / 退役
+  // 2) 卖出 / 退役（动作语义优先于分类学习）
   if (RE_SELL.test(text)) {
-    return {
+    return withRaw({
       action: 'retire_sell',
-      retireDraft: { match: extractName(text, hit?.raw), sellPrice: amount },
+      retireDraft: { match: cleanNameText(text, hit?.raw), sellPrice: amount },
       explanation: '本地规则：退役转卖',
       source: 'local',
-    };
+    });
   }
 
   // 3) 订阅（会员 / 月卡 / 续费 / 开通）
-  if (RE_SUBSCRIPTION.test(text)) {
+  //    ★v1.2.0：学习规则指定「订阅」时，即使句中没有订阅词也按订阅建
+  if (forced?.kind === 'sub' || RE_SUBSCRIPTION.test(text)) {
     const { period, every } = detectPeriod(text);
-    const name = extractName(text, hit?.raw) || '订阅';
+    const name = cleanNameText(text, hit?.raw) || '订阅';
     const draft: SubDraft = {
       name,
       amount,
       currency,
       period,
       every,
-      categoryId: matchCategoryId(text, cats, 'sub'),
+      categoryId: matchCategoryId(text, cats, 'sub', learned),
       icon: emojiForName(name),
     };
-    return {
+    return withRaw({
       action: 'create_subscription',
       subDraft: draft,
-      explanation: '本地规则：订阅',
+      explanation: forced?.kind === 'sub' ? '本地规则：订阅（学习规则）' : '本地规则：订阅',
       source: 'local',
-    };
+    });
   }
 
   // 4) 时间记录（有「X小时/X分钟」但没有钱的线索）
-  if (RE_DURATION.test(text) && !hasMoneyCue(text)) {
+  if (!forced && RE_DURATION.test(text) && !hasMoneyCue(text)) {
     const durationMin = extractDurationMin(text);
     const draft: TimeDraft = {
       durationMin,
@@ -462,48 +539,57 @@ export function parseLocal(
       meaning: RE_TIME_GOOD.test(text) ? 'gui' : RE_TIME_BAD.test(text) ? 'fou' : 'xu',
       note: cleanNote(text),
     };
-    return { action: 'create_time', timeDraft: draft, explanation: '本地规则：时间记录', source: 'local' };
+    return withRaw({ action: 'create_time', timeDraft: draft, explanation: '本地规则：时间记录', source: 'local' });
   }
 
   // 5) 买入动作（「冲动/后悔」语义除外 → 走生活流判为「否」）
   //    ★v1.0.27：日常消耗品（烟酒槟榔 / 吃喝 / 日用品 / 药…）即使说「买了」
   //    也归生活流记账（归/需/否判定），不再错建物品档；耐用品（数码/衣物/家电…）才建物品。
-  if (RE_BUY_GOODS.test(text) && !RE_IMPULSE.test(text)) {
-    if (isConsumablePurchase(text)) {
-      return {
-        action: 'create_ledger',
-        ledgerDraft: buildLedgerDraft(text, cats, amount, date, meal),
-        explanation: '本地规则：日常消费（消耗品不入物品库）',
-        source: 'local',
-      };
-    }
-    const name = extractName(text, hit?.raw) || '物品';
+  //    ★v1.2.0：学习规则指定「物品」时跳过消耗品判定（用户明确要建物品档），
+  //    且句中没有买入动词时也按物品建（如「N95准系统笔记本 899」）。
+  const asGoods = (explanation: string): AiResultItem => {
+    const name = cleanNameText(text, hit?.raw) || '物品';
+    const details = extractOralDetails(text);
     const draft: GoodsDraft = {
       name,
       price: amount,
       currency,
       buyDate: date,
-      categoryId: matchCategoryId(text, cats, 'goods'),
+      categoryId: matchCategoryId(text, cats, 'goods', learned),
       icon: emojiForName(name),
       tags: [],
-      note: '',
+      note: detailsNote(text, details),
     };
-    return { action: 'create_goods', goodsDraft: draft, explanation: '本地规则：买入物品', source: 'local' };
+    return withRaw({ action: 'create_goods', goodsDraft: draft, explanation, source: 'local' });
+  };
+  if (RE_BUY_GOODS.test(text) && !RE_IMPULSE.test(text)) {
+    if (forced?.kind !== 'goods' && isConsumablePurchase(text, learned)) {
+      return withRaw({
+        action: 'create_ledger',
+        ledgerDraft: buildLedgerDraft(text, cats, amount, date, meal, learned),
+        explanation: '本地规则：日常消费（消耗品不入物品库）',
+        source: 'local',
+      });
+    }
+    return asGoods(forced?.kind === 'goods' ? '本地规则：买入物品（学习规则）' : '本地规则：买入物品');
+  }
+  if (forced?.kind === 'goods' && !RE_IMPULSE.test(text)) {
+    return asGoods('本地规则：物品（学习规则）');
   }
 
-  // 6) 生活流记账（有金额 / 进食 / 交通）
-  if (amount > 0 || RE_EAT.test(text) || RE_TRAFFIC.test(text)) {
-    return {
+  // 6) 生活流记账（学习规则指定生活流 / 有金额 / 进食 / 交通）
+  if (forced?.kind === 'ledger' || amount > 0 || RE_EAT.test(text) || RE_TRAFFIC.test(text)) {
+    return withRaw({
       action: 'create_ledger',
-      ledgerDraft: buildLedgerDraft(text, cats, amount, date, meal),
-      explanation: '本地规则：生活流',
+      ledgerDraft: buildLedgerDraft(text, cats, amount, date, meal, learned),
+      explanation: forced?.kind === 'ledger' ? '本地规则：生活流（学习规则）' : '本地规则：生活流',
       source: 'local',
-    };
+    });
   }
 
   // 7) 兜底时长（前面被金额规则拦下的场景）
   if (RE_DURATION.test(text)) {
-    return {
+    return withRaw({
       action: 'create_time',
       timeDraft: {
         durationMin: extractDurationMin(text),
@@ -513,7 +599,7 @@ export function parseLocal(
       },
       explanation: '本地规则：时间记录',
       source: 'local',
-    };
+    });
   }
 
   return { action: 'unknown', explanation: '本地规则未能识别', source: 'local' };

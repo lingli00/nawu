@@ -4,13 +4,16 @@ import logger from '../lib/log';
 import { chatJsonArray } from '../net/aiClient';
 import { chatComplete } from '../net/aiClient';
 import { SYSTEM_PROMPT } from './prompt';
+import { convertItem, switchableKindOf } from './convert';
+import { matchLearnedRule, type LearnedRule } from './ruleBank';
 import type { ChatContentPart, ChatMessage } from '../types/ai';
 import type { AiConfig } from '../types/ai';
 import type { AiResultItem, ParseOutcome } from '../types/ai';
 import type { Category, Judgement, Settings } from '../types/entities';
 import { splitSentences } from './split';
 import { buildMessages } from './prompt';
-import { defaultCategoryId, categoryIdByName, parseLocal } from './localParser';
+import { categoryIdByName, defaultCategoryId, parseLocal } from './localParser';
+import { orderNote, orderSentence, parseOrderShot } from './orderShot';
 
 /**
  * 解析编排（架构 §5.2）：
@@ -23,6 +26,8 @@ export interface ParseContext {
   settings?: Settings | null;
   /** 参考「今天」，默认真实今天 */
   today?: string;
+  /** ★v1.2.0 本地自学习规则（用户人工纠正样本，优先级高于静态规则）。 */
+  learned?: LearnedRule[] | null;
 }
 
 /** 从 settings 里取 AI 配置。 */
@@ -189,9 +194,40 @@ export function parseLocalOnly(text: string, ctx: ParseContext): ParseOutcome {
   const currency = ctx.settings?.currency || 'CNY';
   const sentences = splitSentences(text);
   const items = sentences
-    .map((s) => parseLocal(s, ctx.categories, { today, currency }))
+    .map((s) => parseLocal(s, ctx.categories, { today, currency, learned: ctx.learned }))
     .filter((i) => i.action !== 'unknown');
   return { items: normalizeItems(items, ctx.categories, { today, currency }), source: 'local' };
+}
+
+/**
+ * ★v1.2.0 学习规则后处理：AI 路径同样受「用户人工纠正样本」约束。
+ *
+ * 仅当「结果条数与分句数一致」时按序号对齐（多句合并等场景不猜，直接放过）。
+ * 情绪 / 时间 / 退役等动作没有分类字段，不参与覆盖。
+ */
+export function applyLearnedRules(
+  items: AiResultItem[],
+  sentences: string[],
+  learned: LearnedRule[] | null | undefined,
+  categories: Category[],
+  today: string,
+): AiResultItem[] {
+  if (!learned || learned.length === 0 || items.length === 0) return items;
+  if (items.length !== sentences.length) return items;
+  return items.map((it, i) => {
+    const rule = matchLearnedRule(sentences[i] ?? '', learned);
+    if (!rule) return it;
+    const cur = switchableKindOf(it);
+    if (!cur) return it;
+    const catId = categoryIdByName(rule.categoryName, categories, rule.kind);
+    let next = cur === rule.kind ? it : convertItem(it, rule.kind, categories, today);
+    if (catId) {
+      if (next.goodsDraft) next = { ...next, goodsDraft: { ...next.goodsDraft, categoryId: catId } };
+      else if (next.subDraft) next = { ...next, subDraft: { ...next.subDraft, categoryId: catId } };
+      else if (next.ledgerDraft) next = { ...next, ledgerDraft: { ...next.ledgerDraft, categoryId: catId } };
+    }
+    return next;
+  });
 }
 
 /**
@@ -224,7 +260,12 @@ export async function parse(text: string, ctx: ParseContext): Promise<ParseOutco
     if (normalized.length === 0) {
       return { ...parseLocalOnly(text, ctx), reason: 'AI 未识别出有效条目，已使用本地规则解析' };
     }
-    return { items: normalized, source: 'ai' };
+    // 条数与分句数一致时补齐来源原文（供学习样本溯源），并套用本地学习规则
+    const withRaw =
+      normalized.length === sentences.length
+        ? normalized.map((it, i) => ({ ...it, rawText: sentences[i] }))
+        : normalized;
+    return { items: applyLearnedRules(withRaw, sentences, ctx.learned, ctx.categories, today), source: 'ai' };
   } catch (e) {
     logger.warn('parse', 'AI 解析失败，回落本地规则', e);
     return { ...parseLocalOnly(text, ctx), reason: 'AI 调用失败，已使用本地规则解析' };
@@ -266,8 +307,11 @@ async function parseImageAi(dataUrl: string, ctx: ParseContext, cfg: AiConfig): 
         {
           type: 'text',
           text:
-            `这是一张照片/截图。请识别图中所有可记账的信息（账单、小票、订单、物品、会员、订阅等），` +
-            `按系统提示词的 JSON 数组格式输出；识别不到任何可记账内容时输出 []。今天的日期：${today}。`,
+            `这是一张电商订单截图/账单/小票照片。请识别图中**所有**订单并逐条输出（一张图可能有多笔订单）：` +
+            `\n1. 金额优先取「实付/实付款/实付价」，不要取商品总价、原价、划线价、优惠前金额；` +
+            `\n2. name 只保留商品本身名称（如「大米」「磁轴键盘」），去掉「包邮」「顺丰」「专享」「限时抢购」等营销词和规格描述（如「30斤」「80g×3袋」），规格和数量放 note；` +
+            `\n3. note 里写清购买平台/店铺和数量（如「拼多多 · 1件」）；` +
+            `\n4. 每笔订单输出一条 JSON 对象，按系统提示词的数组格式输出；识别不到任何可记账内容时输出 []。今天的日期：${today}。`,
         },
         { type: 'image_url', image_url: { url: dataUrl } },
       ] as ChatContentPart[],
@@ -294,10 +338,32 @@ async function parseImageAi(dataUrl: string, ctx: ParseContext, cfg: AiConfig): 
 
 /** 本地 OCR 路径：Tesseract.js 出文字 → 本地规则解析（离线可用）。 */
 async function parseImageLocal(dataUrl: string, ctx: ParseContext, reason: string): Promise<ParseOutcome> {
-  const { ocrText } = await import('../lib/localOcr');
-  const text = await ocrText(dataUrl);
+  const { ocrLines } = await import('../lib/localOcr');
+  const lines = await ocrLines(dataUrl);
+  const text = lines.join(' ');
   if (!text) {
     return { items: [], source: 'local', reason: `${reason}，但图中没有识别出文字` };
+  }
+  // ★v1.2.2 电商订单截图结构化：锚点行切分订单 → 合成句「买了X 1件 花了Y」
+  // 复用 parseLocal 的全部分类/自学习/口头语逻辑，再覆写备注（店铺/数量/原文行）。
+  // 注意：parseOrderShot 依赖**行边界**，必须用换行还原 OCR 版面（不能空格连接）。
+  const hits = parseOrderShot(lines.join('\n'));
+  if (hits.length > 0) {
+    const today = ctx.today ?? todayStr();
+    const currency = ctx.settings?.currency || 'CNY';
+    const items = hits
+      .map((h) => {
+        const base = parseLocal(orderSentence(h), ctx.categories, { today, currency, learned: ctx.learned });
+        const note = orderNote(h);
+        if (base.ledgerDraft) base.ledgerDraft.note = note;
+        if (base.goodsDraft) base.goodsDraft.note = note;
+        return base;
+      })
+      .filter((i) => i.action !== 'unknown');
+    const normalized = normalizeItems(items, ctx.categories, { today, currency });
+    if (normalized.length > 0) {
+      return { items: normalized, source: 'local', reason: `${reason}，识别出 ${normalized.length} 笔订单` };
+    }
   }
   const outcome = parseLocalOnly(text, ctx);
   if (outcome.items.length === 0) {

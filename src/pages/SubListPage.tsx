@@ -3,7 +3,8 @@ import { CalendarDays, Receipt } from 'lucide-react';
 import PageShell from '../components/layout/PageShell';
 import PageField from '../components/ui/PageField';
 import { Sheet } from '../components/ui/Sheet';
-import IconPicker, { IconPreview } from '../components/IconPicker';
+import { IconPreview } from '../components/IconPicker';
+import SmartIconRow from '../components/SmartIconRow';
 import CategoryManageSheet from '../components/CategoryManageSheet';
 import BillSheet from '../components/BillSheet';
 import SubCalendar from '../components/SubCalendar';
@@ -105,7 +106,7 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
           <div>
             <p className="text-xs font-medium text-ink-2">图标</p>
             <div className="mt-1.5">
-              <IconPicker value={icon} onChange={setIcon} />
+              <SmartIconRow name={name} value={icon} onChange={setIcon} kind="sub" />
             </div>
           </div>
           <SubCatChips value={addCatId} onChange={setAddCatId} onManage={() => setManagingCats(true)} />
@@ -650,7 +651,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
           <div>
             <p className="text-xs font-medium text-ink-2">图标</p>
             <div className="mt-1.5">
-              <IconPicker value={icon} onChange={setIcon} />
+              <SmartIconRow name={name} value={icon} onChange={setIcon} kind="sub" />
             </div>
           </div>
           <SubCatChips value={catId} onChange={setCatId} onManage={() => setManagingCats(true)} />

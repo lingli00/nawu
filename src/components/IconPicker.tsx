@@ -70,8 +70,9 @@ const SYS_GROUPS_ORDERED: typeof SYSTEM_ICON_GROUPS = (() => {
   return SYS_ORDER.map((k) => map.get(k)).filter(Boolean) as typeof SYSTEM_ICON_GROUPS;
 })();
 
-/** 图标服务基址：浏览器 = 当前站点；App = 当前服务器。 */
-function iconBaseOf(): string {
+/** 图标服务基址：浏览器 = 当前站点；App = 当前服务器。
+ *  ★v1.3.0 导出：SmartIconRow 的智能推荐链要用同一口径（不各写一份）。 */
+export function iconBaseOf(): string {
   return currentServer()?.url ?? (typeof window !== 'undefined' ? window.location.origin : '');
 }
 

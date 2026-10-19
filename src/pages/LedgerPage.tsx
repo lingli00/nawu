@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Heart, Leaf, PenLine, ReceiptText, ShoppingBag, Timer } from 'lucide-react';
 import { CooldownSheet, MoodSheet, TimeSheet, WishSheet, cooldownExpired } from '../components/LifeSheets';
 import CategoryGlyph from '../components/CategoryGlyph';
+import { IconPreview, iconBaseOf } from '../components/IconPicker';
 import { MoreMenuButton } from '../components/ui/MoreMenu';
 import { EmptyState } from '../components/ui/EmptyState';
 import { onSheetOpen } from '../lib/sheetBus';
@@ -16,6 +17,7 @@ import { formatSignedMoney, formatMoney } from '../lib/money';
 import { addDays, monthKey, monthLabel, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
 import { haptic } from '../lib/haptics';
 import { dailyQuote } from '../lib/dailyQuote';
+import { topSuggestion } from '../lib/iconSuggest';
 import type { Judgement, ValueRecord } from '../types/entities';
 
 /** P09 生活流：按日/周/月/年粒度查看流水 + 四张生活小卡（心动清单/冷静池等）。 */
@@ -35,6 +37,23 @@ const JUDGEMENT_COLOR: Record<Judgement, string> = {
   fou: 'var(--fou)',
 };
 const JUDGEMENT_LABEL: Record<Judgement, string> = { gui: '归', xu: '需', fou: '否' };
+
+/**
+ * ★v1.3.0 生活流条目的智能图标（用户需求：生活流条目「自动匹配图标」）。
+ * ValueRecord 没有 icon 字段（数据模型不加列），改为**实时推荐**：
+ * note 命中品牌库（B站/网易云/iCloud…）时在分类名旁补一个品牌小图标，
+ * 本地资产/内置 glyph 优先，零网络。纯 builtin 兜底不抢戏（分类 glyph 已在）。
+ */
+function SmartNoteIcon({ note }: { note?: string }): React.ReactNode {
+  const base = useMemo(iconBaseOf, []);
+  const kw = (note ?? '').trim();
+  const top = useMemo(
+    () => (kw.length >= 2 ? topSuggestion(kw, { kind: 'ledger', base }) : null),
+    [kw, base],
+  );
+  if (!top || top.kind === 'builtin') return null;
+  return <IconPreview icon={top.value} size={14} className="shrink-0 text-ink-2" />;
+}
 
 /** 月份键升序去重（某年出现过的月份）。 */
 function monthKeysOf(rows: ValueRecord[]): string[] {
@@ -257,6 +276,7 @@ export default function LedgerPage() {
                     ) : (
                       '未分类'
                     )}
+                    <SmartNoteIcon note={r.note} />
                     {r.note ? <span className="text-ink-3"> · {r.note}</span> : null}
                   </p>
                   <p className="text-[11px] text-ink-3">

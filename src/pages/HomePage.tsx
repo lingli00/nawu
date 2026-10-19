@@ -28,7 +28,8 @@ import { useShellMode } from '../components/layout/MainShell';
 import SubListPage from './SubListPage';
 import CategoryManageSheet from '../components/CategoryManageSheet';
 import WeatherLine from '../components/WeatherLine';
-import IconPicker, { IconPreview, type Tab as PickerTab } from '../components/IconPicker';
+import IconPicker, { IconPreview, iconBaseOf, type Tab as PickerTab } from '../components/IconPicker';
+import { topSuggestion } from '../lib/iconSuggest';
 import {
   goodsIconValue,
   goodsImageFromIcon,
@@ -491,6 +492,22 @@ export function GoodsFormSheet({
     setImage(goodsImageFromIcon(v));
   };
 
+  /** ★v1.3.0 图标智能匹配：名称一出且用户没选过图，自动采纳推荐值
+   *  （本地品牌资产优先 → 内置 glyph → 代理 → 分类默认）。用户手动选过 /
+   *  点过「更换」后不再自动覆盖（matched 置空即退出）。 */
+  const [iconMatched, setIconMatched] = useState<{ value: string; label: string } | null>(null);
+  const iconBase = useMemo(iconBaseOf, []);
+  const iconKw = name.trim();
+  useEffect(() => {
+    if (image || iconMatched || iconKw.length < 2) return;
+    const cat = goodsCats.find((c) => c.id === (catId || goodsCats[0]?.id));
+    const top = topSuggestion(iconKw, { kind: 'goods', base: iconBase, categoryIcon: cat?.icon });
+    if (!top) return;
+    onIconChange(top.value);
+    setIconMatched({ value: top.value, label: top.label });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [iconKw]);
+
   /* —— 编辑模式全量字段（新增模式不展示）—— */
   const [targetDailyCost, setTargetDailyCost] = useState(
     initial?.targetDailyCost != null ? String(initial.targetDailyCost) : '',
@@ -641,7 +658,8 @@ export function GoodsFormSheet({
                   />
                 </PageField>
               </div>
-              {/* 图标 / 图片（v1.0.18：点击直接进选择器，相册/拍照在「相册·拍照」tab） */}
+              {/* 图标 / 图片（v1.0.18：点击直接进选择器，相册/拍照在「相册·拍照」tab）
+                  ★v1.3.0：名称出来后自动匹配（徽标行），「更换」直落网络图片 tab */}
               <PageField label="图标 / 图片">
                 <button
                   type="button"
@@ -656,6 +674,21 @@ export function GoodsFormSheet({
                     <span className="block text-[11px] text-ink-3">系统图标 / 品牌 / 网络商品图 / 相册·拍照</span>
                   </span>
                 </button>
+                {iconMatched && iconValue === iconMatched.value ? (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-[11px] leading-4 text-ink-3">
+                    <span>✨ 已智能匹配 · {iconMatched.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIconMatched(null);
+                        setPickerTab('web');
+                      }}
+                      className="rounded-full border border-line px-2 py-0.5 text-[11px] text-accent active:scale-95"
+                    >
+                      更换
+                    </button>
+                  </p>
+                ) : null}
               </PageField>
               <div>
                 <div className="flex items-center justify-between">

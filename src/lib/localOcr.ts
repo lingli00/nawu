@@ -39,17 +39,29 @@ async function getWorker(): Promise<Worker> {
   return workerPromise;
 }
 
-/** 识别图片中的中文/数字文本（失败返回空串，不抛错——调用方走提示兜底）。 */
-export async function ocrText(dataUrl: string): Promise<string> {
+/**
+ * 识别图片文本并按行返回（v1.2.2：订单截图结构化依赖行边界——
+ * 锚点行（实付/合计）与商品名候选的相对位置是切分订单的依据）。
+ * 失败返回空数组，不抛错。
+ */
+export async function ocrLines(dataUrl: string): Promise<string[]> {
   try {
     const worker = await getWorker();
     const { data } = await worker.recognize(dataUrl);
-    return (data?.text ?? '').replace(/\s+/g, ' ').trim();
+    return (data?.text ?? '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
   } catch (e) {
     // wasm/语言包加载失败等：静默降级为「识别不出」
     console.warn('[localOcr] failed', e);
-    return '';
+    return [];
   }
+}
+
+/** 识别图片中的中文/数字文本（失败返回空串，不抛错——调用方走提示兜底）。 */
+export async function ocrText(dataUrl: string): Promise<string> {
+  return (await ocrLines(dataUrl)).join(' ');
 }
 
 /** 预热（可选）：进 AI 页时提前初始化 worker，用户点识图时省 1-2s。 */

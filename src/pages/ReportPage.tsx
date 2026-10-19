@@ -12,18 +12,23 @@ import { formatMoney, formatCompactMoney, formatNetMoney, round } from '../lib/m
 import { haptic } from '../lib/haptics';
 import { analyze, type AnalyzeInput, type AnalyzeOutcome } from '../ai/analyzeService';
 import { aiConfigOf, isAiConfigured } from '../ai/parseService';
-import { addDays, fmtDate, lastNDays, lastNMonths, monthKey, monthLabel, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
+import { addDays, daysBetween, fmtDate, lastNDays, lastNMonths, mondayOf, monthKey, monthLabel, monthRange, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
 import type { ValueRecord } from '../types/entities';
 import type { SheetKey } from '../lib/sheetBus';
+import { dailyCost } from '../domain/goods';
 
-/** P08 报表：按日/月/年三态粒度看分类环图 + 趋势 + 归/需/否（全部只统计生活流记账）。 */
+/** P08 报表：按日/周/月/年三态粒度看分类环图 + 趋势 + 归/需/否（全部只统计生活流记账）。
+ *  ★v1.3.0：新增「按周」粒度 + 周期日均花费 + 在用物品日均摊销（用户反馈：
+ *  「支持按自定义周期（周/月/年）做分类支出统计……同时计算周期日均平均花费；
+ *  支持物品每日摊销成本计算」）。 */
 
-type Grain = 'day' | 'month' | 'year';
+type Grain = 'day' | 'week' | 'month' | 'year';
 
 const GRAIN_CHIPS: Array<[Grain, string]> = [
-  ['day', '按日'],
+  ['week', '按周'],
   ['month', '按月'],
   ['year', '按年'],
+  ['day', '按日'],
 ];
 
 const J_META = {
@@ -221,6 +226,7 @@ export default function ReportPage() {
   const nav = useNavigate();
   const records = useDataStore((s) => s.valueRecords);
   const categories = useDataStore((s) => s.categories);
+  const goods = useDataStore((s) => s.goods);
   const currency = useSettingsStore((s) => s.settings.currency);
   const settings = useSettingsStore((s) => s.settings);
   /* v1.0.24 · 生活流四集合（报表理智指数板块数据源）。 */
@@ -231,15 +237,20 @@ export default function ReportPage() {
 
   const [grain, setGrain] = useState<Grain>('month');
   const [day, setDay] = useState(() => today());
+  const [weekStart, setWeekStart] = useState(() => mondayOf(today()));
   const [ym, setYm] = useState(() => monthKey());
   const [year, setYear] = useState(() => Number(monthKey().slice(0, 4)));
 
-  /* —— 三种粒度的时间窗口（口径：只统计生活流 valueRecords，不含物品/订阅） —— */
+  /* —— 四种粒度的时间窗口（口径：只统计生活流 valueRecords，不含物品/订阅） —— */
   const windowRows = useMemo<ValueRecord[]>(() => {
     if (grain === 'day') return records.filter((r) => r.date === day);
+    if (grain === 'week') {
+      const end = addDays(weekStart, 6);
+      return records.filter((r) => r.date >= weekStart && r.date <= end);
+    }
     if (grain === 'month') return ofMonth(records, ym);
     return records.filter((r) => r.date.startsWith(String(year)));
-  }, [records, grain, day, ym, year]);
+  }, [records, grain, day, weekStart, ym, year]);
 
   const expense = useMemo(() => sumExpense(windowRows), [windowRows]);
   const income = useMemo(() => sumIncome(windowRows), [windowRows]);
@@ -247,12 +258,55 @@ export default function ReportPage() {
   const slices = useMemo(() => categoryShare(windowRows, categories, { type: 'expense' }), [windowRows, categories]);
   const stack = useMemo(() => judgementBreakdown(windowRows), [windowRows]);
 
-  /** 趋势柱：按日 → 近 7 天；按月 → 近 6 个月；按年 → 该年 12 个月。 */
+  /** ★v1.3.0 周期窗口的起止与自然天数（日均分母；当前月/当前年截断到今天）。 */
+  const win = useMemo<{ start: string; end: string; days: number }>(() => {
+    const t = today();
+    if (grain === 'day') return { start: day, end: day, days: 1 };
+    if (grain === 'week') {
+      const start = weekStart;
+      const end = addDays(weekStart, 6);
+      return { start, end, days: 7 };
+    }
+    if (grain === 'month') {
+      const { start, end } = monthRange(ym);
+      const clamped = ym === monthKey(t) ? t : end;
+      return { start, end: clamped, days: Math.max(1, daysBetween(start, clamped) + 1) };
+    }
+    const start = `${year}-01-01`;
+    const end = `${year}-12-31`;
+    const clamped = year === Number(monthKey(t).slice(0, 4)) ? t : end;
+    return { start, end: clamped, days: Math.max(1, daysBetween(start, clamped) + 1) };
+  }, [grain, day, weekStart, ym, year]);
+
+  /** ★v1.3.0 周期日均花费（支出 ÷ 周期天数）。 */
+  const dailyAvg = win.days > 0 ? round(expense / win.days, 2) : 0;
+
+  /** ★v1.3.0 在用物品日均摊销合计（口径 = domain/goods.dailyCost，与首页卡片一致）。 */
+  const amort = useMemo(() => {
+    const ref = win.end > today() ? today() : win.end;
+    const active = goods.filter((g) => g.status === 'active');
+    return { count: active.length, sum: round(active.reduce((s, g) => s + dailyCost(g, ref), 0), 2) };
+  }, [goods, win.end]);
+
+  /** 趋势柱：按日 → 近 7 天；按周 → 近 6 周；按月 → 近 6 个月；按年 → 该年 12 个月。 */
   const trend = useMemo(() => {
     if (grain === 'month') {
       return lastNMonths(6, `${ym}-01`).map((m) => {
         const list = ofMonth(records, m);
         return { key: m, label: monthLabel(m), expense: sumExpense(list), income: sumIncome(list) };
+      });
+    }
+    if (grain === 'week') {
+      return Array.from({ length: 6 }, (_, i) => {
+        const start = addDays(weekStart, (5 - i) * -7);
+        const end = addDays(start, 6);
+        const list = records.filter((r) => r.date >= start && r.date <= end);
+        return {
+          key: start,
+          label: fmtDate(start, 'M/D'),
+          expense: sumExpense(list),
+          income: sumIncome(list),
+        };
       });
     }
     if (grain === 'day') {
@@ -266,7 +320,7 @@ export default function ReportPage() {
       const list = records.filter((r) => r.date.startsWith(m));
       return { key: m, label: `${i + 1}月`, expense: sumExpense(list), income: sumIncome(list) };
     });
-  }, [grain, records, day, ym, year]);
+  }, [grain, records, day, weekStart, ym, year]);
 
   const maxBar = Math.max(...trend.map((b) => Math.max(b.expense, b.income)), 1);
 
@@ -281,11 +335,12 @@ export default function ReportPage() {
   const [netSel, setNetSel] = useState<string | null>(null);
   useEffect(() => {
     setNetSel(null);
-  }, [grain, day, ym, year]);
+  }, [grain, day, weekStart, ym, year]);
 
   /** 粒度切换器的 ‹ › 步进。 */
   const step = (dir: -1 | 1) => {
     if (grain === 'day') setDay(addDays(day, dir));
+    else if (grain === 'week') setWeekStart((w) => addDays(w, dir * 7));
     else if (grain === 'month') setYm(dir === -1 ? prevMonth(ym) : nextMonth(ym));
     else setYear((y) => y + dir);
   };
@@ -296,7 +351,10 @@ export default function ReportPage() {
     // 旧备份（v1.0.22 前）的 moods/times 没有 date 字段 → 兜底空串，绝不给 undefined 用
     const inWin = (d: string | undefined) => {
       const k = d ?? '';
-      return grain === 'day' ? k === day : grain === 'month' ? k.startsWith(ym) : k.startsWith(String(year));
+      if (grain === 'day') return k === day;
+      if (grain === 'week') return k >= weekStart && k <= addDays(weekStart, 6);
+      if (grain === 'month') return k.startsWith(ym);
+      return k.startsWith(String(year));
     };
     const ts = times.filter((t) => inWin(t.date));
     const ms = moods.filter((m) => inWin(m.date));
@@ -335,12 +393,12 @@ export default function ReportPage() {
   /** ★v1.0.33：柱状图点选——此前只画柱子不给数字，手机上看不出金额。 */
   const [barKey, setBarKey] = useState<string | null>(null);
   const shownBar = useMemo(() => trend.find((b) => b.key === barKey) ?? null, [trend, barKey]);
-  const currentKey = grain === 'day' ? day : grain === 'month' ? ym : '';
+  const currentKey = grain === 'day' ? day : grain === 'week' ? weekStart : grain === 'month' ? ym : '';
   /** ★v1.0.35：「结余」口径解释展开态。 */
   const [netOpen, setNetOpen] = useState(false);
   useEffect(() => {
     setNetOpen(false);
-  }, [grain, day, ym, year]);
+  }, [grain, day, weekStart, ym, year]);
   /** ★v1.0.35：净值趋势「怎么读」展开态。 */
   const [netHow, setNetHow] = useState(false);
 
@@ -349,7 +407,7 @@ export default function ReportPage() {
   const [analyzing, setAnalyzing] = useState(false);
   useEffect(() => {
     setAnalysis(null);
-  }, [grain, day, ym, year]);
+  }, [grain, day, weekStart, ym, year]);
 
   /** 组装分析 payload（与页面展示同源：同一份 windowRows / slices / stack / trend）。 */
   const analysisInput = (): AnalyzeInput => ({
@@ -386,12 +444,20 @@ export default function ReportPage() {
   const windowLabel =
     grain === 'day'
       ? `${relativeDayLabel(day)} · ${day}`
-      : grain === 'month'
-        ? monthLabel(ym, true)
-        : `${year} 年`;
+      : grain === 'week'
+        ? `${fmtDate(weekStart, 'M/D')}~${fmtDate(addDays(weekStart, 6), 'M/D')} 周`
+        : grain === 'month'
+          ? monthLabel(ym, true)
+          : `${year} 年`;
 
   const trendTitle =
-    grain === 'day' ? '近 7 天趋势' : grain === 'month' ? '近 6 个月趋势' : `${year} 年逐月趋势`;
+    grain === 'day'
+      ? '近 7 天趋势'
+      : grain === 'week'
+        ? '近 6 周趋势'
+        : grain === 'month'
+          ? '近 6 个月趋势'
+          : `${year} 年逐月趋势`;
 
   return (
     <div className="text-ink">
@@ -492,6 +558,19 @@ export default function ReportPage() {
                 : '绿字表示这个周期收进来的比花出去的多。'}
             </p>
           ) : null}
+          {/* ★v1.3.0：周期日均花费 + 在用物品日均摊销（用户反馈「周期日均平均花费 /
+              物品每日摊销成本计算」；摊销口径 = domain/goods.dailyCost，与首页卡片一致） */}
+          <p className="mt-2 rounded-btn bg-surface-2 px-3 py-2 text-[11px] leading-5 text-ink-3 dt:mt-0 dt:rounded-none dt:border-t dt:border-line-2 dt:px-7 dt:py-3 dt:text-xs">
+            日均支出 <b className="tnum text-ink-2">{formatMoney(dailyAvg, currency)}</b>
+            <span className="mx-1.5 text-line">·</span>
+            按 {win.days} 天计
+            {amort.count > 0 ? (
+              <>
+                <span className="mx-1.5 text-line">·</span>
+                物品日均摊销 <b className="tnum text-ink-2">{formatMoney(amort.sum, currency)}</b>/天（{amort.count} 件在用）
+              </>
+            ) : null}
+          </p>
         </div>
 
         {/* 分类环图 */}
@@ -500,7 +579,7 @@ export default function ReportPage() {
           <p className="mt-0.5 text-[11px] text-ink-3 dt:text-xs">这一期钱主要花在了哪些地方</p>
           {slices.length === 0 ? (
             <p className="py-10 text-center text-sm text-ink-3">
-              {grain === 'day' ? '今天' : grain === 'month' ? '本月' : '本年'}还没有支出记录
+              {grain === 'day' ? '今天' : grain === 'week' ? '这周' : grain === 'month' ? '本月' : '本年'}还没有支出记录
             </p>
           ) : (
             <div className="mt-3 flex items-center gap-4 dt:mt-6 dt:gap-6">
@@ -666,7 +745,7 @@ export default function ReportPage() {
           </ul>
           {expense === 0 ? (
             <p className="mt-2 text-[11px] text-ink-3">
-              {grain === 'day' ? '今天' : grain === 'month' ? '本月' : '本年'}暂无支出，先去记一笔吧
+              {grain === 'day' ? '今天' : grain === 'week' ? '这周' : grain === 'month' ? '本月' : '本年'}暂无支出，先去记一笔吧
             </p>
           ) : null}
         </div>

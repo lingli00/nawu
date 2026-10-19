@@ -62,10 +62,12 @@ export async function seedDemoIfEmpty(): Promise<void> {
     { type: 'income', amount: 280, categoryId: 'cl7', judgement: 'gui', date: day(-3), note: '旧键盘已出', currency: 'CNY' },
   ]);
 
-  /* —— 物品 3 件 —— */
+  /* —— 物品 4 件（★v1.3.0 加「相机」：供「我的相机卖了36000」演示完整
+     退役转卖链路——确认后自动扣减：净赚 31800 记入生活流、摊销定格退役日）—— */
   await s.addGoods({ name: 'MacBook Air M3', price: 8999, categoryId: 'cg0', buyDate: day(-120), status: 'active', note: '主力机' });
   await s.addGoods({ name: 'Sony WH-1000XM5', price: 1299, categoryId: 'cg0', buyDate: day(-62), status: 'active', note: '通勤降噪' });
   await s.addGoods({ name: '机械键盘 87 键', price: 699, categoryId: 'cg0', buyDate: day(-300), status: 'active', note: '已换新，旧的在转卖' });
+  await s.addGoods({ name: '索尼相机', price: 4200, categoryId: 'cg0', buyDate: day(-45), status: 'active', note: '演唱会神器' });
 
   /* —— 订阅 3 个 —— */
   await s.addSubscription({

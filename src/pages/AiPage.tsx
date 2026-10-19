@@ -3,8 +3,10 @@ import { Camera } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
 import { useDataStore, useSettingsStore, toastSuccess, toastError } from '../store';
-import { parse, parseImage } from '../ai/parseService';
+import { aiConfigOf, isAiConfigured, parse, parseImage } from '../ai/parseService';
 import { convertItem, switchableKindOf, SWITCH_KINDS } from '../ai/convert';
+import { loadLearnedRules, recordCorrection } from '../api/learnedRules';
+import type { LearnedRule } from '../ai/ruleBank';
 import { warmUpOcr } from '../lib/localOcr';
 import { today } from '../lib/date';
 import type { AiResultItem } from '../types/ai';
@@ -55,6 +57,17 @@ export default function AiPage({
   useEffect(() => {
     warmUpOcr();
   }, []);
+  /** ★v1.2.0 本地自学习规则（用户纠正样本，优先级高于静态规则；PRD 四）。 */
+  const [learnedRules, setLearnedRules] = useState<LearnedRule[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void loadLearnedRules().then((r) => {
+      if (alive) setLearnedRules(r);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [items, setItems] = useState<AiResultItem[] | null>(null);
   const [source, setSource] = useState<'ai' | 'local'>('local');
   const [reason, setReason] = useState('');
@@ -63,8 +76,13 @@ export default function AiPage({
   const ocrInputRef = useRef<HTMLInputElement | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
 
-  /** 压到长边 1024 的 JPEG dataURL（vision 上传体积可控）。 */
-  const compressForOcr = (file: File): Promise<string> =>
+  /**
+   * v1.2.2 压缩策略按解析链路分流（同 SmartRecordDock）：
+   * - 配了 AI（vision 上传）：长边 1024 JPEG 0.85，控体积；
+   * - 本地 OCR（Tesseract）：几乎不压，仅长边 >2200 缩放，0.92 保真——
+   *   订单截图小字号金额/商品名压糊后 OCR 错误率飙升。
+   */
+  const compressForOcr = (file: File, forAi: boolean): Promise<string> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onerror = () => reject(new Error('图片读取失败'));
@@ -72,7 +90,7 @@ export default function AiPage({
         const img = new Image();
         img.onerror = () => reject(new Error('图片解码失败'));
         img.onload = () => {
-          const max = 1024;
+          const max = forAi ? 1024 : 2200;
           const scale = Math.min(1, max / Math.max(img.width, img.height));
           const cv = document.createElement('canvas');
           cv.width = Math.round(img.width * scale);
@@ -80,7 +98,7 @@ export default function AiPage({
           const ctx2d = cv.getContext('2d');
           if (!ctx2d) return reject(new Error('画布不可用'));
           ctx2d.drawImage(img, 0, 0, cv.width, cv.height);
-          resolve(cv.toDataURL('image/jpeg', 0.85));
+          resolve(cv.toDataURL('image/jpeg', forAi ? 0.85 : 0.92));
         };
         img.src = String(reader.result);
       };
@@ -91,11 +109,12 @@ export default function AiPage({
     if (!file || ocrBusy || busy) return;
     setOcrBusy(true);
     try {
-      const dataUrl = await compressForOcr(file);
+      const dataUrl = await compressForOcr(file, isAiConfigured(aiConfigOf(settings as Settings)));
       const out = await parseImage(dataUrl, {
         categories,
         settings: settings as Settings,
         today: today(),
+        learned: learnedRules,
       });
       if (out.items.length === 0) {
         toastError(out.reason ?? '图中没有识别出可记账的内容');
@@ -126,6 +145,7 @@ export default function AiPage({
         categories,
         settings: settings as Settings,
         today: today(),
+        learned: learnedRules,
       });
       if (out.items.length === 0) {
         toastError('没有识别出可以记录的内容，试着说「花了多少钱」');
@@ -142,10 +162,31 @@ export default function AiPage({
     setBusy(false);
   };
 
-  /** ★v1.0.27 切换某条结果的类型（生活/物品/订阅），转换只搬运可复用信息。 */
+  /** ★v1.0.27 切换某条结果的类型（生活/物品/订阅），转换只搬运可复用信息。
+   *  ★v1.2.0 手动改分类 = 一次人工纠正 → 自动沉淀学习样本（PRD 3.2 模式B）。 */
   const switchKind = (i: number, target: ReturnType<typeof switchableKindOf>) => {
     if (!items || !target) return;
-    setItems(items.map((it, j) => (j === i ? convertItem(it, target, categories, today()) : it)));
+    const before = items[i] as AiResultItem;
+    const next = convertItem(before, target, categories, today());
+    setItems(items.map((it, j) => (j === i ? next : it)));
+    const cat = categories.find((c) => {
+      if (next.action === 'create_goods') return c.id === next.goodsDraft?.categoryId;
+      if (next.action === 'create_subscription') return c.id === next.subDraft?.categoryId;
+      return c.id === next.ledgerDraft?.categoryId;
+    });
+    const name =
+      next.action === 'create_goods'
+        ? next.goodsDraft?.name ?? ''
+        : next.action === 'create_subscription'
+          ? next.subDraft?.name ?? ''
+          : (next.ledgerDraft?.note ?? '').replace(/^[早午晚宵夜下上]{1,2}[饭餐茶]·/, '');
+    if (cat && name) {
+      void recordCorrection({ text: before.rawText ?? name, name, kind: target, categoryName: cat.name })
+        .then((out) => {
+          if (out) toastSuccess(`已学会：「${out.rule.keyword}」→ ${cat.name}`);
+        })
+        .catch(() => undefined);
+    }
   };
 
   const catOf = (id: string): Category | undefined => categories.find((c) => c.id === id);
@@ -248,7 +289,7 @@ export default function AiPage({
       case 'create_time':
         return `时间 ${it.timeDraft!.durationMin} 分钟`;
       case 'retire_sell':
-        return `退役转卖 ${it.retireDraft!.match} ¥${it.retireDraft!.sellPrice}`;
+        return `退役转卖 ${it.retireDraft!.match} ¥${it.retireDraft!.sellPrice}（确认后自动扣减：摊销定格退役日，净赚记入生活流）`;
       default:
         return it.explanation ?? '未知内容';
     }

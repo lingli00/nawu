@@ -1,4 +1,4 @@
-import { daysFromToday, isValidDate, today } from '../lib/date';
+import { isValidDate, today } from '../lib/date';
 import { round } from '../lib/money';
 import type { Goods } from '../types/entities';
 
@@ -41,16 +41,28 @@ export function sellProfit(g: Goods): number {
   return round(sold - totalInvest(g));
 }
 
-/** 持有天数（至少 1 天）。 */
+/** 持有天数（至少 1 天）。
+ * ★v1.3.0：已退役物品的摊销**定格在退役日**（updatedAt 的日期部分）——
+ * 用户反馈「卖掉/退役时自动扣减对应金额」：退役后成本不应再按天累计，
+ * 否则「卖了 3 个月」还能看到日均成本在涨，与「已经回血/离手」的直觉冲突。
+ * 没有 updatedAt（旧数据）时退回 refDate，行为与旧版一致。 */
 export function holdDays(g: Goods, refDate: string = today()): number {
   const buy = isValidDate(g?.buyDate) ? g.buyDate : refDate;
-  const diff = -daysFromToday(buy) + daysFromToday(refDate);
-  const days = Math.floor((Date.parse(refDate) - Date.parse(buy)) / 86400000);
-  const fallback = Number.isFinite(days) ? days : diff;
-  return Math.max(1, fallback + 1);
+  const until = amortRefDate(g, refDate);
+  const days = Math.floor((Date.parse(until) - Date.parse(buy)) / 86400000);
+  return Math.max(1, days + 1);
 }
 
-/** 日均成本（元/天）。 */
+/** 摊销截止日：在用 → refDate；已退役 → min(退役日, refDate)。 */
+export function amortRefDate(g: Goods, refDate: string = today()): string {
+  if (g?.status !== 'retired') return refDate;
+  const retiredDay = (g.updatedAt ?? '').slice(0, 10);
+  if (!isValidDate(retiredDay)) return refDate;
+  return retiredDay < refDate ? retiredDay : refDate;
+}
+
+/** 日均成本（元/天）。
+ * ★v1.3.0：退役物品的持有天数定格在退役日（见 holdDays），净投入仍扣转卖价。 */
 export function dailyCost(g: Goods, refDate: string = today()): number {
   return round(netInvest(g) / holdDays(g, refDate), 4);
 }

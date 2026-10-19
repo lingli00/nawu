@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { addDays } from '../src/lib/date';
-import { achieveRate, dailyCost, netInvest, perUseCost, sellProfit, totalInvest } from '../src/domain/goods';
+import { achieveRate, dailyCost, holdDays, netInvest, perUseCost, sellProfit, totalInvest } from '../src/domain/goods';
 import { monthlyAmount, monthlyAvg, nextRenewCountdown, yearlyAvg } from '../src/domain/subscription';
 import { categoryShare, judgementBreakdown, monthlyTrend } from '../src/domain/stats';
 import { groupByDay, monthCompare, sumByJudgement } from '../src/domain/ledger';
@@ -53,6 +53,22 @@ describe('domain/goods · 日均与单次成本', () => {
     expect(sellProfit(goods({ price: 1000 }))).toBe(0);
     // 亏损转卖 → 负值（syncSaleIncome 不记收入）
     expect(sellProfit(goods({ price: 1000, sellPrice: 800 }))).toBe(-200);
+  });
+
+  it('★v1.3.0 退役后摊销定格在退役日（卖掉/退役即停止累计）', () => {
+    const retiredDay = addDays(TODAY, -40);
+    const retired = goods({
+      price: 1000,
+      buyDate: addDays(TODAY, -100),
+      status: 'retired',
+      updatedAt: `${retiredDay}T12:00:00.000Z`,
+    });
+    // 持有 = 买入(-100)~退役(-40) = 61 天，之后每天成本不再涨
+    expect(holdDays(retired, TODAY)).toBe(61);
+    expect(dailyCost(retired, TODAY)).toBeCloseTo(1000 / 61, 3);
+    expect(dailyCost(retired, addDays(TODAY, 30))).toBeCloseTo(1000 / 61, 3);
+    // 在用物品照常按天累计
+    expect(dailyCost(goods({ price: 1000, buyDate: addDays(TODAY, -9) }), TODAY)).toBe(100);
   });
 });
 

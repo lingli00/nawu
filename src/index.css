@@ -715,8 +715,8 @@ html[data-skin='glass'][data-shell='pc'] body {
     radial-gradient(56% 48% at 62% 104%, rgba(185, 127, 34, 0.1), transparent 72%);
   background-attachment: fixed;
 }
-/* 侧栏：浮起的玻璃圆角卡 */
-html[data-skin='glass'][data-shell='pc'] aside {
+/* 侧栏：浮起的玻璃圆角卡（★v1.2.1：排除智能记录面板，否则 left:12px 会把右侧滑出的对话面板拽到左边） */
+html[data-skin='glass'][data-shell='pc'] aside:not(.nw-smart-panel) {
   top: 12px;
   bottom: 12px;
   left: 12px;
@@ -762,8 +762,8 @@ html[data-skin='night'][data-shell='pc'] {
   --shadow-lg: 0 18px 44px -24px rgba(0, 0, 0, 0.7);
   color-scheme: dark;
 }
-/* 侧栏：通栏扁平 + 选中项发光竖条与柔光底 */
-html[data-skin='night'][data-shell='pc'] aside {
+/* 侧栏：通栏扁平 + 选中项发光竖条与柔光底（★v1.2.1：排除智能记录面板） */
+html[data-skin='night'][data-shell='pc'] aside:not(.nw-smart-panel) {
   border-right: 1px solid #1d2621;
 }
 html[data-skin='night'][data-shell='pc'] aside a[aria-current='page'] {
@@ -851,7 +851,21 @@ html[data-shell='pc'][data-skin-preview='1'] .nw-skinbar {
 }
 @media (prefers-reduced-motion: reduce) {
   .nw-drawer-mask,
-  .nw-drawer-enter {
+  .nw-drawer-enter,
+  .nw-smart-enter {
     animation: none !important;
+  }
+}
+
+/* ★v1.2.0 智能记录对话面板：从右侧滑出（PRD 3.1「面板从右侧滑出，浮在主页面之上」） */
+.nw-smart-enter {
+  animation: nw-smart-in 280ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes nw-smart-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
   }
 }

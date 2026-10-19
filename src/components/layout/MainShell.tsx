@@ -8,6 +8,7 @@ import { getSkin, type Skin } from '../../lib/skin';
 import RecordMenu from '../RecordMenu';
 import SkinBar from '../SkinBar';
 import { BrandMark } from '../BrandMark';
+import SmartRecordDock from './SmartRecordDock';
 
 /**
  * 主壳（v1.0.6：三端一码，PC 网页重构完成）：
@@ -163,7 +164,13 @@ export default function MainShell({ children }: { children: ReactNode }): JSX.El
   if (pathname === '/flyme' || pathname.startsWith('/flyme/')) {
     return <div className="min-h-screen bg-paper text-ink">{children}</div>;
   }
-  return mode === 'desktop' ? <DesktopShell>{children}</DesktopShell> : <MobileShell>{children}</MobileShell>;
+  // ★v1.2.0 对话式智能记录入口：全局悬浮气泡（后台 /flyme 不带）
+  return (
+    <>
+      {mode === 'desktop' ? <DesktopShell>{children}</DesktopShell> : <MobileShell>{children}</MobileShell>}
+      <SmartRecordDock mode={mode} />
+    </>
+  );
 }
 
 /* ---------------- 桌面壳：深绿侧边栏 + 宽内容 ---------------- */

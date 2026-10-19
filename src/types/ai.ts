@@ -45,6 +45,8 @@ export interface LedgerDraft {
   judgement: Judgement;
   date: string;
   note: string;
+  /** ★v1.2.1 口头语/识图提取的干净名称（「在斤大米」→「大米」）；缺省时由 note 派生。 */
+  name?: string;
 }
 
 /** 情绪草稿。 */
@@ -79,6 +81,9 @@ export interface AiResultItem {
   retireDraft?: RetireDraft;
   explanation?: string;
   source: 'ai' | 'local';
+  /** ★v1.2.0 来源分句原文（本地解析必定带上；AI 路径在条数与分句数一致时补齐）。
+   *  供「用户手动纠正分类 → 沉淀学习样本」溯源，不参与落库。 */
+  rawText?: string;
 }
 
 /** AI 配置（App 内自填，直连第三方，不经 PHP 后端）。 */

@@ -12,8 +12,16 @@ export const KV_PREFIX = 'flyme.kv.';
 export const K_USER = 'flyme.user';
 /** 当前服务器（Web 版兼容镜像）。 */
 export const K_SELFHOST = 'flyme.selfhost';
-/** 自定义识别规则。 */
+/** 自定义识别规则（与网页版云端镜像互通，形状 {keyword,category,judgement}）。 */
 export const K_PARSE_RULES = 'flyme.parse.rules';
+/**
+ * ★v1.2.0 本地自学习规则（PRD：对话式智能记录入口改造）。
+ * 用户在确认卡片上手动纠正分类后，由样本提炼成的「关键词簇 + 上下文共现词」规则，
+ * **只存本机不上云**（避免破坏与网页版互通的 `flyme.parse.rules` payload 形状）。
+ */
+export const K_LEARNED_RULES = 'flyme.parse.learned';
+/** 学习样本（用户人工纠正的原始记录，供规则管理页查看/删除）。 */
+export const K_LEARN_SAMPLES = 'flyme.parse.samples';
 /** 汇率表。 */
 export const K_RATES = 'flyme.rates.v2';
 /** UI 偏好（offlineMode / homeTab / lastRoute）。 */
@@ -41,6 +49,8 @@ export const ALL_MANAGED_KEYS: string[] = [
   K_USER,
   K_SELFHOST,
   K_PARSE_RULES,
+  K_LEARNED_RULES,
+  K_LEARN_SAMPLES,
   K_RATES,
   K_UI,
   K_SEEDED,

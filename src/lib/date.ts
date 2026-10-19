@@ -65,6 +65,16 @@ export function daysBetween(a: string, b: string): number {
   return dayjs(b).startOf('day').diff(dayjs(a).startOf('day'), 'day');
 }
 
+/** 某日期所在周的周一（dayjs: 0=周日；周日归上周六尾，即「周一开头」口径）。
+ *  ★v1.3.0 导出：报表页「按周」粒度 + 查询侧「本周」共用，别再各写一份。 */
+export function mondayOf(date: string): string {
+  const d = dayjs(date);
+  const day = d.day();
+  return d
+    .add(day === 0 ? -6 : 1 - day, 'day')
+    .format('YYYY-MM-DD');
+}
+
 /** 距今天多少天（正数=未来，负数=过去）。 */
 export function daysFromToday(date: string): number {
   return daysBetween(today(), date);

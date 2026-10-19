@@ -5,6 +5,8 @@ import PageShell from '../components/layout/PageShell';
 import PageField from '../components/ui/PageField';
 import { useAuthStore, useDataStore, useUiStore, currentServer, toastSuccess, toastError } from '../store';
 import { getRules, saveRules } from '../api/user';
+import { loadLearnedRules, loadLearnSamples, removeLearnedRule } from '../api/learnedRules';
+import { KIND_LABEL, displayCoWords, type LearnSample, type LearnedRule } from '../ai/ruleBank';
 import { toJudgement } from '../lib/emoji';
 import type { Category, Judgement } from '../types/entities';
 
@@ -146,6 +148,88 @@ function RuleFormSheet({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * ★v1.2.0 本地自学习规则管理（PRD 六.3：学错了能回退）。
+ *
+ * 展示「智能记录 / AI 记一笔」里用户手动纠正分类后自动学到的规则，
+ * 数据只存本机（`flyme.parse.learned`），不登录也能查看/删除。
+ */
+function LearnedRuleSection() {
+  const [rules, setRules] = useState<LearnedRule[]>([]);
+  const [samples, setSamples] = useState<LearnSample[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const reload = (): void => {
+    void Promise.all([loadLearnedRules(), loadLearnSamples()]).then(([r, s]) => {
+      setRules(r);
+      setSamples(s);
+      setLoaded(true);
+    });
+  };
+
+  useEffect(reload, []);
+
+  const removeAt = async (rule: LearnedRule): Promise<void> => {
+    const ok = await useUiStore.getState().confirm({
+      title: '删除这条学会的规则？',
+      message: `「${rule.keyword} → ${KIND_LABEL[rule.kind]} · ${rule.categoryName}」删除后，类似输入会回落到默认规则。`,
+    });
+    if (!ok) return;
+    await removeLearnedRule(rule.id);
+    toastSuccess('已删除该规则');
+    reload();
+  };
+
+  return (
+    <section className="mt-6">
+      <h2 className="mb-1 px-1 text-sm font-semibold">本地自学习规则</h2>
+      <p className="mb-3 px-1 text-xs leading-5 text-ink-3">
+        你在确认卡片上改过的分类，会自动学成规则存在本机（不上云），以后相似说法直接按规则归类。学错了在这里删掉即可。
+      </p>
+      <ul className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface">
+        {!loaded ? (
+          <li className="px-3.5 py-8 text-center text-sm text-ink-3">正在加载…</li>
+        ) : rules.length === 0 ? (
+          <li className="px-3.5 py-8 text-center text-sm text-ink-3">
+            还没有学到的规则。在「智能记录」里把分类改对一次，这里就会出现对应规则
+          </li>
+        ) : (
+          rules.map((r) => {
+            const coWords = displayCoWords(r.coWords);
+            const sample = samples.find((s) => s.ruleId === r.id);
+            return (
+              <li key={r.id} className="flex items-start gap-3 px-3.5 py-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm">
+                    <span className="font-medium">「{r.keyword}」</span>
+                    {coWords.length > 0 ? <span className="text-ink-3"> + {coWords.join('、')}</span> : null}
+                    <span className="text-ink-3"> → </span>
+                    <span className="font-medium">
+                      {KIND_LABEL[r.kind]} · {r.categoryName}
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block truncate text-[11px] text-ink-3">
+                    命中 {r.hits} 次{r.from ? ` · 来自「${r.from}」` : ''}
+                    {sample ? ` · ${sample.createdAt.slice(0, 10)}` : ''}
+                  </span>
+                </span>
+                <button
+                  onClick={() => void removeAt(r)}
+                  aria-label={`删除规则 ${r.keyword}`}
+                  className="h-8 w-8 shrink-0 rounded-btn text-sm active:bg-surface-2"
+                  style={{ color: 'var(--fou)' }}
+                >
+                  ✕
+                </button>
+              </li>
+            );
+          })
+        )}
+      </ul>
+    </section>
   );
 }
 
@@ -302,6 +386,9 @@ export default function RulePage() {
           {dirty ? <p className="mt-2 text-center text-[11px] text-ink-3">有未保存的修改（标 * 号）</p> : null}
         </>
       )}
+
+      {/* 本地自学习规则（v1.2.0，本机存储，未登录也能管理） */}
+      <LearnedRuleSection />
 
       {sheet ? (
         <RuleFormSheet
