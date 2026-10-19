@@ -4,12 +4,15 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import MainShell from '../src/components/layout/MainShell';
+import { openSmartRecord } from '../src/lib/smartRecordBus';
 
 /**
- * ★v1.3.1 移动壳交互重构回归：
- * - 中央 FAB 手势：轻点/长按 → 动作菜单；按住右滑 → 对话面板（SmartRecordDock）；
- * - 主内容区左右横滑 → 四大 Tab 切页（边缘阻尼、纵向不抢、表单/横滑容器不参与）；
- * - 旧「AI 记一笔」独立页入口已移除（见 record-menu.test.ts）。
+ * ★v1.3.2 移动壳交互回归：
+ * - 中央 FAB 加号已移除（底栏回归纯净四页签）；
+ * - 右下角常驻对话气泡已移除（面板只能由菜单/空态 CTA 唤起）；
+ * - 新增「左右滑动切换页面」引导：新用户首次出现、6 秒自动收起、
+ *   滑页后立刻消失，且看过一次不再出现；
+ * - 主内容区左右横滑 → 四大 Tab 切页（边缘阻尼、纵向不抢、表单/横滑容器不参与）。
  */
 
 let container: HTMLDivElement;
@@ -27,6 +30,11 @@ beforeEach(() => {
     removeEventListener: () => {},
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
+  try {
+    localStorage.clear();
+  } catch {
+    /* jsdom 隐私模式兜底 */
+  }
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -37,11 +45,6 @@ afterEach(() => {
   container.remove();
   document.body.innerHTML = '';
 });
-
-/** jsdom 无指针捕获实现，补桩避免 handler 抛错。 */
-if (!Element.prototype.setPointerCapture) {
-  (Element.prototype as unknown as { setPointerCapture: () => void }).setPointerCapture = () => {};
-}
 
 /** 在元素上派发指针事件（jsdom 无 PointerEvent 构造器，用 MouseEvent 冒同等类型）。 */
 function firePtr(el: Element, type: string, x: number, y: number): void {
@@ -70,20 +73,20 @@ function pathNow(): string {
   return document.body.querySelector('[data-testid="path"]')?.textContent ?? '';
 }
 
-function fab(): HTMLButtonElement {
+/** 中央加号（v1.3.1 的 FAB）应当彻底消失。 */
+function fab(): HTMLButtonElement | null {
   const btn = [...document.body.querySelectorAll('button')].find(
-    (b) => b.getAttribute('aria-label') === '记一笔',
+    (b) => b.getAttribute('aria-label') === '记一笔' && (b.className ?? '').includes('h-14'),
   );
-  if (!btn) throw new Error('FAB 不存在');
-  return btn as HTMLButtonElement;
+  return (btn as HTMLButtonElement | undefined) ?? null;
 }
 
 function chatPanel(): Element | null {
-  return document.body.querySelector('aside[aria-label="智能记录"]');
+  return document.body.querySelector('aside[aria-label="对话记一笔"]');
 }
 
-function menuPanel(): boolean {
-  return (document.body.textContent ?? '').includes('记一笔，归一类');
+function swipeGuide(): Element | null {
+  return document.body.querySelector('.nw-swipe-hint');
 }
 
 /** 主内容区（滑页手势的载体）。 */
@@ -93,73 +96,92 @@ function mainEl(): HTMLElement {
   return el as HTMLElement;
 }
 
-describe('MainShell · v1.3.1 FAB 手势（移动壳）', () => {
-  it('轻点 FAB → 展开动作菜单', async () => {
+/** 等引导气泡浮现（组件内 800ms 延迟）。 */
+async function waitGuide(): Promise<void> {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 850));
+  });
+}
+
+describe('MainShell · v1.3.2 界面减法', () => {
+  it('中央加号 FAB 已移除', async () => {
     await renderShell();
-    await act(async () => {
-      fab().click();
-    });
-    expect(menuPanel()).toBe(true);
+    expect(fab()).toBeNull();
   });
 
-  it('按住右滑 FAB → 打开对话面板，且不弹菜单', async () => {
+  it('右下角常驻对话气泡已移除（无面板时页面上没有悬浮按钮）', async () => {
     await renderShell();
-    await act(async () => {
-      firePtr(fab(), 'pointerdown', 200, 500);
-      firePtr(fab(), 'pointermove', 260, 505); // 右滑 60px
-      firePtr(fab(), 'pointerup', 260, 505);
-    });
-    expect(chatPanel()).not.toBeNull();
-    expect(menuPanel()).toBe(false);
+    expect(document.body.querySelector('aside[aria-label="对话记一笔"]')).toBeNull();
+    // 唯一允许出现的浮层是「隐藏底栏」手柄与滑动引导，二者都不是对话入口
+    const floats = [...document.body.querySelectorAll('button.fixed, div.fixed button')];
+    expect(floats.some((b) => (b.getAttribute('aria-label') ?? '').includes('对话'))).toBe(false);
   });
 
-  it('右滑后合成的 click 被压制（不会又把菜单弹出来）', async () => {
+  it('底栏只剩四个页签（不含加号占位）', async () => {
     await renderShell();
-    await act(async () => {
-      firePtr(fab(), 'pointerdown', 200, 500);
-      firePtr(fab(), 'pointermove', 260, 505);
-      firePtr(fab(), 'pointerup', 260, 505);
-    });
-    await act(async () => {
-      fab().click(); // 真机上 pointerup 后会合成这个 click
-    });
-    expect(chatPanel()).not.toBeNull();
-    expect(menuPanel()).toBe(false);
+    const nav = document.body.querySelector('nav');
+    expect(nav).not.toBeNull();
+    expect(nav!.querySelectorAll('a')).toHaveLength(4);
+    expect(nav!.querySelector('button')).toBeNull();
+  });
+});
+
+describe('MainShell · v1.3.2 左右滑动引导', () => {
+  it('新用户首次进入会看到「左右滑动切换页面」引导', async () => {
+    await renderShell();
+    expect(swipeGuide()).toBeNull(); // 首帧不闪
+    await waitGuide();
+    expect(swipeGuide()).not.toBeNull();
+    expect(swipeGuide()!.textContent).toContain('左右滑动切换页面');
   });
 
-  it('按住上滑 FAB → 展开动作菜单', async () => {
+  it('引导 6 秒后自动收起，并记住「已看过」', async () => {
     await renderShell();
+    await waitGuide();
+    expect(swipeGuide()).not.toBeNull();
     await act(async () => {
-      firePtr(fab(), 'pointerdown', 200, 500);
-      firePtr(fab(), 'pointermove', 205, 440); // 上滑 60px
-      firePtr(fab(), 'pointerup', 205, 440);
+      await new Promise((r) => setTimeout(r, 6200));
     });
-    expect(menuPanel()).toBe(true);
-    expect(chatPanel()).toBeNull();
+    expect(swipeGuide()).toBeNull();
+    expect(localStorage.getItem('gf.swipeGuide.seen')).toBe('1');
+  }, 15000);
+
+  it('已经看过的用户不再出现引导', async () => {
+    localStorage.setItem('gf.swipeGuide.seen', '1');
+    await renderShell();
+    await waitGuide();
+    expect(swipeGuide()).toBeNull();
   });
 
-  it('按住所动（无划动）→ 长按也展开菜单（未发现滑动用户的兜底）', async () => {
+  it('成功滑页后引导立即消失', async () => {
     await renderShell();
+    await waitGuide();
+    expect(swipeGuide()).not.toBeNull();
     await act(async () => {
-      firePtr(fab(), 'pointerdown', 200, 500);
-      firePtr(fab(), 'pointerup', 202, 503); // 位移 < 阈值
+      firePtr(mainEl(), 'pointerdown', 300, 300);
+      firePtr(mainEl(), 'pointermove', 200, 305);
+      firePtr(mainEl(), 'pointerup', 200, 305);
     });
-    expect(menuPanel()).toBe(true);
+    expect(pathNow()).toBe('/ledger');
+    expect(swipeGuide()).toBeNull();
   });
 
-  it('对话面板打开后，点「对话记一笔」卡（菜单内）先关菜单再开面板', async () => {
+  it('引导不拦截触摸（pointer-events-none）', async () => {
+    await renderShell();
+    await waitGuide();
+    expect(swipeGuide()!.className).toContain('pointer-events-none');
+  });
+});
+
+describe('MainShell · v1.3.2 对话面板入口', () => {
+  it('全局信号唤起面板：标题与入口文字一致（对话记一笔）', async () => {
     await renderShell();
     await act(async () => {
-      fab().click();
+      openSmartRecord();
     });
-    await act(async () => {
-      const card = [...document.body.querySelectorAll('button')].find((b) =>
-        (b.textContent ?? '').includes('对话记一笔'),
-      );
-      card?.click();
-    });
-    expect(menuPanel()).toBe(false);
-    expect(chatPanel()).not.toBeNull();
+    const panel = chatPanel();
+    expect(panel).not.toBeNull();
+    expect(panel!.textContent ?? '').toContain('对话记一笔');
   });
 });
 
@@ -220,12 +242,14 @@ describe('MainShell · v1.3.1 主内容区滑页（移动壳）', () => {
     expect(pathNow()).toBe('/home');
   });
 
-  it('从按钮上发起的手势不参与滑页', async () => {
+  it('从链接/按钮上发起的手势不参与滑页', async () => {
     await renderShell();
+    const tabLink = document.body.querySelector('nav a');
+    expect(tabLink).not.toBeNull();
     await act(async () => {
-      firePtr(fab(), 'pointerdown', 200, 500);
-      firePtr(fab(), 'pointermove', 100, 505); // 左滑 100px 但从 FAB 发起
-      firePtr(fab(), 'pointerup', 100, 505);
+      firePtr(tabLink!, 'pointerdown', 200, 500);
+      firePtr(tabLink!, 'pointermove', 100, 505);
+      firePtr(tabLink!, 'pointerup', 100, 505);
     });
     expect(pathNow()).toBe('/home');
   });

@@ -115,7 +115,7 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
               defaultValue={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="例如：B 站大会员"
-              className="h-11 w-full nw-input"
+              className="h-11 w-full nw-input rounded-xl"
             />
           </PageField>
           <div className="grid grid-cols-2 gap-3">
@@ -125,7 +125,7 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
                 onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
                 inputMode="decimal"
                 placeholder="0.00"
-                className="h-11 w-full nw-input"
+                className="h-11 w-full nw-input rounded-xl"
               />
             </PageField>
             <PageField label="周期">
@@ -134,7 +134,7 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
                   <button
                     key={p}
                     onClick={() => setPeriod(p)}
-                    className={`h-11 flex-1 rounded-btn border text-sm ${
+                    className={`h-11 flex-1 rounded-xl border text-sm ${
                       period === p ? 'border-accent bg-accent-soft text-accent' : 'border-line text-ink-2'
                     }`}
                   >
@@ -149,13 +149,13 @@ export function SubAddSheet({ onClose }: { onClose: () => void }): React.ReactNo
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="h-11 w-full nw-input"
+              className="h-11 w-full nw-input rounded-xl"
             />
           </PageField>
           <button
             onClick={() => void submitAdd()}
             disabled={!name.trim() || !Number(amount)}
-            className="mt-1 h-12 w-full rounded-btn bg-accent text-base font-semibold text-white disabled:opacity-40"
+            className="mt-1 h-12 w-full rounded-xl bg-accent text-base font-semibold text-white disabled:opacity-40"
           >
             添加
           </button>
@@ -359,7 +359,7 @@ export default function SubListPage({
                 const b = pendingBills.find((x) => x.subId === s.id)!;
                 void markBillPaid(b.id).then(() => toastSuccess('已标记支付'));
               }}
-              className="h-7 rounded-btn bg-accent-soft px-2.5 text-[11px] font-medium text-accent"
+              className="h-7 rounded-xl bg-accent-soft px-2.5 text-[11px] font-medium text-accent"
             >
               标记已付 {formatMoney(pendingAmount(pendingBills, s.id), currency)}
             </button>
@@ -382,7 +382,7 @@ export default function SubListPage({
           <span>本月已付 <b className="text-ink-2">{formatMoney(paidThisMonth, currency)}</b></span>
           <span>本月待续费 <b className="text-ink-2">{formatMoney(dueThisMonth, currency)}</b></span>
         </div>
-        <div className="mt-2.5 flex items-center justify-between rounded-btn bg-surface-2 px-3 py-2 text-xs">
+        <div className="mt-2.5 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2 text-xs">
           <span className="text-ink-3">
             预计月均 <b className="text-sm text-ink">{formatMoney(monthlyAvg(active), currency)}</b>
           </span>
@@ -393,7 +393,7 @@ export default function SubListPage({
         {/* v1.0.21 · M3.1：账单流水入口（待确认 / 失败 需人工处理） */}
         <button
           onClick={() => setBillOpen(true)}
-          className="mt-2.5 flex w-full items-center justify-between rounded-btn border border-line px-3 py-2 text-xs active:scale-[0.99]"
+          className="mt-2.5 flex w-full items-center justify-between rounded-xl border border-line px-3 py-2 text-xs active:scale-[0.99]"
         >
           <span className="flex items-center gap-1.5 text-ink-2">
             <Receipt size={13} />
@@ -495,7 +495,7 @@ export default function SubListPage({
     <PageShell
       title="订阅管理"
       right={
-        <button onClick={() => setAdding(true)} className="h-9 rounded-btn bg-accent px-3 text-sm font-medium text-white">
+        <button onClick={() => setAdding(true)} className="h-9 rounded-xl bg-accent px-3 text-sm font-medium text-white">
           ＋ 订阅
         </button>
       }
@@ -660,7 +660,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
               defaultValue={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="例如：B 站大会员"
-              className="h-11 w-full nw-input"
+              className="h-11 w-full nw-input rounded-xl"
             />
           </PageField>
           <div className="grid grid-cols-2 gap-3">
@@ -670,7 +670,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
                 onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
                 inputMode="decimal"
                 placeholder="0.00"
-                className="h-11 w-full nw-input"
+                className="h-11 w-full nw-input rounded-xl"
               />
             </PageField>
             <PageField label="周期">
@@ -679,7 +679,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
                   <button
                     key={p}
                     onClick={() => setPeriod(p)}
-                    className={`h-11 flex-1 rounded-btn border text-sm transition-all active:scale-95 ${
+                    className={`h-11 flex-1 rounded-xl border text-sm transition-all active:scale-95 ${
                       period === p ? 'border-accent bg-accent-soft text-accent' : 'border-line text-ink-2'
                     }`}
                   >
@@ -696,7 +696,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
                 onChange={(e) => setEvery(e.target.value.replace(/[^\d]/g, ''))}
                 inputMode="numeric"
                 placeholder="1"
-                className="h-11 w-full nw-input"
+                className="h-11 w-full nw-input rounded-xl"
               />
             </PageField>
             <PageField label="下次续费日期">
@@ -704,7 +704,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
                 type="date"
                 value={nextRenewDate}
                 onChange={(e) => setNextRenewDate(e.target.value)}
-                className="h-11 w-full nw-input"
+                className="h-11 w-full nw-input rounded-xl"
               />
             </PageField>
           </div>
@@ -712,7 +712,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
             <input
               defaultValue={note}
               onChange={(e) => setNote(e.target.value)}
-              className="h-10 w-full nw-input"
+              className="h-10 w-full nw-input rounded-xl"
             />
           </PageField>
 
@@ -720,13 +720,13 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
           <div className="flex gap-2">
             <button
               onClick={() => void toggleArchive()}
-              className="h-10 flex-1 rounded-btn border border-line text-xs text-ink-2 active:scale-95 transition-transform"
+              className="h-10 flex-1 rounded-xl border border-line text-xs text-ink-2 active:scale-95 transition-transform"
             >
               {archived ? '恢复在用' : '停用（不计月均）'}
             </button>
             <button
               onClick={() => void del()}
-              className="h-10 flex-1 rounded-btn border border-line text-xs active:scale-95 transition-transform"
+              className="h-10 flex-1 rounded-xl border border-line text-xs active:scale-95 transition-transform"
               style={{ color: 'var(--fou)' }}
             >
               删除
@@ -736,7 +736,7 @@ function SubEditSheet({ initial, onClose }: { initial: Subscription; onClose: ()
           <button
             onClick={() => void submit()}
             disabled={!name.trim() || !Number(amount)}
-            className="h-12 w-full rounded-btn bg-accent text-base font-semibold text-white active:scale-[0.98] transition-transform disabled:opacity-40"
+            className="h-12 w-full rounded-xl bg-accent text-base font-semibold text-white active:scale-[0.98] transition-transform disabled:opacity-40"
           >
             保存
           </button>

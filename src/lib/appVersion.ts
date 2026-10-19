@@ -12,7 +12,7 @@
  *   （`versionName` 与 `versionCode`）+ `package.json` 的 `version`
  *   + 服务端 `storage/app-release/manifest.json`。
  */
-export const APP_VERSION = '1.3.1';
+export const APP_VERSION = '1.3.2';
 
 /**
  * 官方更新频道（v1.0.36 起）。

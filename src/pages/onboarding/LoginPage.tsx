@@ -88,7 +88,7 @@ function EmailInput({
       spellCheck={false}
       enterKeyHint="done"
       placeholder="you@example.com"
-      className="h-11 w-full nw-input"
+      className="h-11 w-full nw-input rounded-xl"
     />
   );
 }
@@ -109,7 +109,7 @@ function PasswordInput({
       onInput={(e) => onFilledChange?.(e.currentTarget.value.length > 0)}
       type="password"
       placeholder={placeholder}
-      className="h-11 w-full nw-input"
+      className="h-11 w-full nw-input rounded-xl"
     />
   );
 }
@@ -139,7 +139,7 @@ function CodeField({
           autoComplete="one-time-code"
           maxLength={8}
           placeholder="6 位数字"
-          className="h-11 flex-1 nw-input tracking-[0.3em]"
+          className="h-11 flex-1 nw-input rounded-xl tracking-[0.3em]"
         />
         <SendCodeButton
           emailRef={emailRef}
@@ -209,7 +209,7 @@ function SendCodeButton({
     <button
       onClick={() => void send()}
       disabled={sending || countdown > 0 || !emailFilled}
-      className="h-11 w-28 shrink-0 rounded-btn bg-accent-soft text-xs font-medium text-accent disabled:opacity-40"
+      className="h-11 w-28 shrink-0 rounded-xl bg-accent-soft text-xs font-medium text-accent disabled:opacity-40"
     >
       {sending ? '发送中…' : countdown > 0 ? `${countdown}s 后重发` : '发送验证码'}
     </button>
@@ -263,7 +263,7 @@ function LoginForm({ emailRef, emailSeed }: SubFormProps) {
       <button
         onClick={() => void submit()}
         disabled={busy || !emailFilled || !passwordFilled}
-        className="mt-1 h-12 w-full rounded-btn bg-accent text-base font-semibold text-white active:opacity-90 disabled:opacity-40"
+        className="mt-1 h-12 w-full rounded-xl bg-accent text-base font-semibold text-white active:opacity-90 disabled:opacity-40"
       >
         {busy ? '请稍候…' : '登录'}
       </button>
@@ -328,7 +328,7 @@ function RegisterForm({ emailRef, emailSeed }: SubFormProps) {
       <button
         onClick={() => void submit()}
         disabled={busy || !emailFilled || !passwordFilled}
-        className="mt-1 h-12 w-full rounded-btn bg-accent text-base font-semibold text-white active:opacity-90 disabled:opacity-40"
+        className="mt-1 h-12 w-full rounded-xl bg-accent text-base font-semibold text-white active:opacity-90 disabled:opacity-40"
       >
         {busy ? '请稍候…' : '注册并登录'}
       </button>
@@ -385,7 +385,7 @@ function ResetForm({
       <button
         onClick={() => void submit()}
         disabled={busy || !emailFilled || !passwordFilled}
-        className="mt-1 h-12 w-full rounded-btn bg-accent text-base font-semibold text-white active:opacity-90 disabled:opacity-40"
+        className="mt-1 h-12 w-full rounded-xl bg-accent text-base font-semibold text-white active:opacity-90 disabled:opacity-40"
       >
         {busy ? '请稍候…' : '重置密码'}
       </button>
@@ -418,13 +418,14 @@ export default function LoginPage({ initialMode = 'login' }: { initialMode?: Mod
     <PageShell
       title={mode === 'login' ? '登录' : mode === 'register' ? '注册' : '找回密码'}
       onBack={() => nav(HOME_ROUTE, { replace: true })}
+      flushOnDesktop
     >
-      <div className="mb-4 flex gap-1 rounded-btn bg-surface-2 p-1">
+      <div className="mb-4 flex gap-1 rounded-xl bg-surface-2 p-1">
         {tabs.map(([m, label]) => (
           <button
             key={m}
             onClick={() => switchMode(m)}
-            className={`h-9 flex-1 rounded-btn text-sm ${
+            className={`h-9 flex-1 rounded-[10px] text-sm ${
               mode === m ? 'bg-surface font-semibold text-ink shadow-sm' : 'text-ink-3'
             }`}
           >

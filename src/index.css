@@ -887,3 +887,65 @@ html[data-shell='pc'][data-skin-preview='1'] .nw-skinbar {
     animation: none !important;
   }
 }
+
+/* ============================================================
+   ★v1.3.2 左右滑动引导气泡（替代原中央加号）
+   轻量、只出现一次：淡入 + 两只箭头左右轻推，暗示「可以横滑」。
+   ============================================================ */
+.nw-swipe-hint {
+  animation: nw-swipe-in 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.nw-swipe-hint .nw-swipe-l {
+  animation: nw-swipe-push-l 1.8s ease-in-out infinite;
+}
+.nw-swipe-hint .nw-swipe-r {
+  animation: nw-swipe-push-r 1.8s ease-in-out infinite;
+}
+@keyframes nw-swipe-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes nw-swipe-push-l {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-3px);
+  }
+}
+@keyframes nw-swipe-push-r {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nw-swipe-hint,
+  .nw-swipe-hint .nw-swipe-l,
+  .nw-swipe-hint .nw-swipe-r {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   ★v1.3.2 独立整页（登录 / 账号编辑）在电脑网页端的头部
+   页面底色已经不铺了，顶栏若仍带半透明底色 + 下边框，会变成一条
+   **方角白条**浮在纸色背景上（用户反馈「卡片没有圆角」的观感来源）。
+   这里让头部与页面同底：去掉底色/毛玻璃/下边框，只留标题与返回。
+   ============================================================ */
+html[data-shell='pc'] .nw-page-flush > header {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom-color: transparent !important;
+}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ImagePlus, Keyboard, MessageCircle, Mic, Send, X } from 'lucide-react';
+import { ImagePlus, Keyboard, Mic, Send, X } from 'lucide-react';
 import { useBackGuard } from '../../lib/backGuard';
 import { today as todayStr } from '../../lib/date';
 import { emojiForName } from '../../lib/emoji';
@@ -24,8 +24,14 @@ import type { Category, Goods } from '../../types/entities';
 /**
  * ★v1.2.0 对话式智能记录入口（PRD：对话式智能记录入口改造 V1.0）。
  *
- * - 悬浮气泡按钮：桌面端固定在视窗右下角；移动端固定在底部导航上方一点（右侧）。
- * - 面板从右侧滑出：顶部「智能记录」标题 + 会话区 + 底部微信式输入区
+ * ★v1.3.2 两处调整：
+ * - 移除右下角的常驻对话气泡（用户反馈：界面上浮钮太多）。面板改由
+ *   加号菜单「对话记一笔」/ 生活流空态 CTA 唤起，不再有常驻按钮；
+ * - 面板标题/无障碍名统一为「对话记一笔」——入口按钮写的是「对话记一笔」，
+ *   打开后却叫「智能记录」，用户会以为跳错了页面（文字与跳转目标必须一致）。
+ *
+ * - 面板形态：移动端底部抽屉 / 桌面端右侧面板。
+ * - 顶部「对话记一笔」标题 + 会话区 + 底部微信式输入区
  *   （语音/文字切换 · 按住说话 · 识图 · 发送）。
  * - 发送一句话 →
  *   ① 查询意图（「昨天买了什么 / 心情怎么样」）→ 基于本地数据回答，不弹卡；
@@ -34,6 +40,9 @@ import type { Category, Goods } from '../../types/entities';
  * - 连发多条：每条都会依次识别出卡；发新消息时上一条未确认的卡片按放弃处理
  *   （不保存、不学习），不需要用户先点取消。
  */
+
+/** 面板统一名称（标题、无障碍名、测试选择器都读这一处）。 */
+const SMART_RECORD_TITLE = '对话记一笔';
 
 /* ---------------- 工具 ---------------- */
 
@@ -99,18 +108,6 @@ export default function SmartRecordDock({ mode }: { mode: 'desktop' | 'mobile' }
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label="智能记录"
-        title="智能记录"
-        className={`fixed z-30 flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface/85 text-accent shadow-lg backdrop-blur transition-transform active:scale-95 ${
-          mode === 'desktop' ? 'bottom-6 right-6' : 'right-3'
-        }`}
-        style={mode === 'desktop' ? undefined : { bottom: 'calc(env(safe-area-inset-bottom) + 104px)' }}
-      >
-        <MessageCircle size={22} strokeWidth={1.8} aria-hidden />
-      </button>
       {open ? (
         <SmartRecordPanel
           mode={mode}
@@ -325,7 +322,7 @@ function SmartRecordPanel({
     const p = buildPending(head, head.rawText ?? lastTextRef.current);
     setItems(rest);
     if (!p) {
-      pushMsg('sys', '这条内容暂不支持在智能记录里直接保存，请到「AI 记一笔」处理');
+      pushMsg('sys', '这条内容暂不支持直接保存，换个说法再试（例如：买了个键盘 花了 399）');
       return;
     }
     applyPending(p);
@@ -670,7 +667,7 @@ function SmartRecordPanel({
             ? { paddingBottom: 'env(safe-area-inset-bottom)' }
             : { top: 0, bottom: 0, right: 0, left: 'auto', paddingTop: 'env(safe-area-inset-top)' }
         }
-        aria-label="智能记录"
+        aria-label={SMART_RECORD_TITLE}
       >
         {/* ★v1.3.1 移动端抽屉把手（视觉提示：可下滑关闭的底部抽屉） */}
         {mode === 'mobile' ? (
@@ -681,7 +678,7 @@ function SmartRecordPanel({
 
         {/* 顶部标题栏 */}
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
-          <span className="text-sm font-semibold">智能记录</span>
+          <span className="text-sm font-semibold">{SMART_RECORD_TITLE}</span>
           <button
             type="button"
             onClick={onClose}

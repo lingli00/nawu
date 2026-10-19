@@ -65,7 +65,7 @@ export default function SmartIconRow({
     <div>
       <div className="flex items-center gap-2">
         {value ? (
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-btn border border-line bg-surface-2">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-surface-2">
             <IconPreview icon={value} size={24} />
           </span>
         ) : null}

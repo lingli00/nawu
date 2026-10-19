@@ -11,11 +11,13 @@ import { K_LEARNED_RULES, K_LEARN_SAMPLES } from '../src/storage/keys';
 import { useDataStore, useUiStore } from '../src/store';
 import { SEED_CATEGORIES } from '../src/storage/seed';
 import { addDays, today } from '../src/lib/date';
+import { openSmartRecord } from '../src/lib/smartRecordBus';
 
 /**
- * ★v1.2.0 智能记录入口端到端（PRD 五、交互流程文字版时序）：
- *   点气泡 → 输入「刚买了个N95准系统笔记本 花了899」→ 弹确认卡片 →
+ * ★v1.2.0 对话式记录入口端到端（PRD 五、交互流程文字版时序）：
+ *   唤起面板 → 输入「刚买了个N95准系统笔记本 花了899」→ 弹确认卡片 →
  *   用户把大类改成「生活流」→ 确认保存 → 记录入库 + 自动学习该关键词簇。
+ * ★v1.3.2：常驻气泡与中央加号已移除，面板由 lib/smartRecordBus 的全局信号唤起。
  */
 
 let container: HTMLDivElement;
@@ -73,6 +75,13 @@ async function renderDock(): Promise<void> {
   });
 }
 
+/** ★v1.3.2：常驻气泡已移除，面板统一由全局总线唤起（加号菜单「对话记一笔」同一条链路）。 */
+async function openPanel(): Promise<void> {
+  await act(async () => {
+    openSmartRecord();
+  });
+}
+
 /** 冲刷异步链路（落库有 300ms 防抖 + 串行写链，act 一次只 flush 一层微任务）。 */
 async function flush(): Promise<void> {
   await act(async () => {
@@ -81,14 +90,12 @@ async function flush(): Promise<void> {
 }
 
 describe('SmartRecordDock · PRD 交互全流程', () => {
-  it('气泡 → 输入 → 确认卡片 → 改大类 → 保存并自动学习', async () => {
+  it('唤起面板 → 输入 → 确认卡片 → 改大类 → 保存并自动学习', async () => {
     await renderDock();
 
-    // 1) 点悬浮气泡 → 面板弹出
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
-    expect(document.body.querySelector('aside[aria-label="智能记录"]')).not.toBeNull();
+    // 1) 全局信号唤起面板（等价于菜单里点「对话记一笔」）
+    await openPanel();
+    expect(document.body.querySelector('aside[aria-label="对话记一笔"]')).not.toBeNull();
 
     // 2) 输入一句话 → 发送（本地规则解析，未配置 AI）
     const input = inputByPlaceholder('一句话描述消费/心情');
@@ -120,7 +127,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
     expect(records[0]?.amount).toBe(899);
 
     // 会话里给出「已学会」反馈
-    const chat = document.body.querySelector('aside[aria-label="智能记录"]');
+    const chat = document.body.querySelector('aside[aria-label="对话记一笔"]');
     expect(chat?.textContent).toContain('已学会');
 
     // 6) 自动学习：本地规则库多了一条「n95 → 生活流」规则 + 一条样本
@@ -135,9 +142,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
 
   it('直接确认（不改分类）→ 保存但不学习', async () => {
     await renderDock();
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
+    await openPanel();
     const input = inputByPlaceholder('一句话描述消费/心情');
     await act(async () => {
       input.value = '刚买了个N95准系统笔记本 花了899';
@@ -154,9 +159,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
 
   it('取消 → 不保存不学习', async () => {
     await renderDock();
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
+    await openPanel();
     const input = inputByPlaceholder('一句话描述消费/心情');
     await act(async () => {
       input.value = '刚买了个N95准系统笔记本 花了899';
@@ -174,9 +177,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
 
   it('查询「昨天吃了什么」→ 本地数据回答，不弹记录卡', async () => {
     await renderDock();
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
+    await openPanel();
     // 种子：昨天一笔餐饮 + 一条心情
     useDataStore.setState({
       valueRecords: [
@@ -201,7 +202,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
     await flush();
     // 不弹卡，会话里给出基于本地数据的回答
     expect(document.body.querySelector('section[aria-label="识别记录预览"]')).toBeNull();
-    const chat = document.body.querySelector('aside[aria-label="智能记录"]');
+    const chat = document.body.querySelector('aside[aria-label="对话记一笔"]');
     expect(chat?.textContent).toContain('昨天共 1 笔');
     expect(chat?.textContent).toContain('支出 ¥25');
     // 心情查询同样走回答
@@ -218,9 +219,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
 
   it('连发两条：旧卡片被顶掉（不保存不学习），新消息照样识别出卡', async () => {
     await renderDock();
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
+    await openPanel();
     const input = inputByPlaceholder('一句话描述消费/心情');
     // 第一条：出卡但不确认
     await act(async () => {
@@ -237,7 +236,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
       btnByText('发送').click();
     });
     await flush();
-    const chat = document.body.querySelector('aside[aria-label="智能记录"]');
+    const chat = document.body.querySelector('aside[aria-label="对话记一笔"]');
     expect(chat?.textContent).toContain('已放弃上一条未保存的识别');
     const card = document.body.querySelector('section[aria-label="识别记录预览"]');
     expect(card).not.toBeNull();
@@ -256,9 +255,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
 
   it('双击发送防重：400ms 内同一文本只发一次', async () => {
     await renderDock();
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
+    await openPanel();
     const input = inputByPlaceholder('一句话描述消费/心情');
     await act(async () => {
       input.value = '刚买了个N95准系统笔记本 花了899';
@@ -274,9 +271,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
 
   it('多任务一起：一条消息问多个问题逐个回答（用户反馈 4）', async () => {
     await renderDock();
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
+    await openPanel();
     // 种子：今天两笔物品（2026-10-19 是周一，「这周」只有今天）
     useDataStore.setState({
       goods: [
@@ -316,7 +311,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
       btnByText('发送').click();
     });
     await flush();
-    const chat = document.body.querySelector('aside[aria-label="智能记录"]');
+    const chat = document.body.querySelector('aside[aria-label="对话记一笔"]');
     // 两个问题都回答了（视频里只回第一句的缺陷）
     expect(chat?.textContent).toContain('机械键盘');
     expect(chat?.textContent).toContain('599');
@@ -328,9 +323,7 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
 
   it('微信式底栏：语音/文字形态切换（按住说话）', async () => {
     await renderDock();
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
+    await openPanel();
     expect(inputByPlaceholder('一句话描述消费/心情')).not.toBeNull();
     // 切到语音形态 → 出现「按住 说话」
     await act(async () => {
@@ -407,9 +400,7 @@ describe('SmartRecordDock · v1.3.1 按住说话', () => {
   /** 开面板并切到语音形态，返回「按住 说话」按钮。 */
   async function openVoiceMode(): Promise<HTMLButtonElement> {
     await renderDock();
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
+    await openPanel();
     await act(async () => {
       btnByText('切换到语音输入').click();
     });
@@ -459,7 +450,7 @@ describe('SmartRecordDock · v1.3.1 按住说话', () => {
       firePtr(hold, 'pointerup', 300);
     });
     await flush();
-    const chat = document.body.querySelector('aside[aria-label="智能记录"]');
+    const chat = document.body.querySelector('aside[aria-label="对话记一笔"]');
     expect(chat?.textContent).toContain('午饭花了25');
   });
 
@@ -478,7 +469,7 @@ describe('SmartRecordDock · v1.3.1 按住说话', () => {
     });
     expect(sr?.aborted).toBe(true);
     await flush();
-    const chat = document.body.querySelector('aside[aria-label="智能记录"]');
+    const chat = document.body.querySelector('aside[aria-label="对话记一笔"]');
     expect(chat?.textContent).not.toContain('午饭花了25');
   });
 
@@ -526,10 +517,8 @@ describe('SmartRecordDock · v1.3.1 按住说话', () => {
 describe('SmartRecordDock · v1.3.1 面板形态', () => {
   it('移动端：底部抽屉（上滑动画 + 圆角把手 + 贴底）', async () => {
     await renderDock(); // mode="mobile"
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
-    const aside = document.body.querySelector('aside[aria-label="智能记录"]');
+    await openPanel();
+    const aside = document.body.querySelector('aside[aria-label="对话记一笔"]');
     expect(aside).not.toBeNull();
     const cls = aside?.className ?? '';
     expect(cls).toContain('nw-smart-sheet'); // 上滑动画（覆盖右侧滑入）
@@ -550,10 +539,8 @@ describe('SmartRecordDock · v1.3.1 面板形态', () => {
         createElement(MemoryRouter, null, createElement(SmartRecordDock, { mode: 'desktop' })),
       );
     });
-    await act(async () => {
-      btnByText('智能记录').click();
-    });
-    const aside = document.body.querySelector('aside[aria-label="智能记录"]');
+    await openPanel();
+    const aside = document.body.querySelector('aside[aria-label="对话记一笔"]');
     const cls = aside?.className ?? '';
     expect(cls).toContain('inset-y-0');
     expect(cls).toContain('right-0');

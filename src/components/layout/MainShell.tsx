@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, ChevronDown, ChevronUp, Home, Plus, ScrollText, Smartphone, User } from 'lucide-react';
+import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Home, Plus, ScrollText, Smartphone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { APP_VERSION } from '../../lib/appVersion';
 import { haptic } from '../../lib/haptics';
 import { getSkin, type Skin } from '../../lib/skin';
-import { openSmartRecord } from '../../lib/smartRecordBus';
 import RecordMenu from '../RecordMenu';
 import SkinBar from '../SkinBar';
 import { BrandMark } from '../BrandMark';
@@ -13,20 +12,20 @@ import SmartRecordDock from './SmartRecordDock';
 
 /**
  * 主壳（v1.0.6：三端一码，PC 网页重构完成）：
- * - 移动壳（<1024px 或偏好 mobile）：悬浮玻璃底栏（4 Tab + 中央 FAB）——手感与 App 一致。
+ * - 移动壳（<1024px 或偏好 mobile）：悬浮玻璃底栏（4 Tab）——手感与 App 一致。
  * - 桌面壳（≥1024px 或偏好 pc）：深绿侧边栏（原 PC 网页同款配色）+ 宽内容区。
  *   页面与 App 完全同一套源码，功能天然同步。
  * - 手动切换：setShellPref 写 localStorage（gf.shellPref），?ui=pc / ?ui=mobile 可强制；
  *   服务器端 ?ui=legacy 仍可回到旧 PC 页（仅逃生用）。
  * 图标统一 lucide 单色线性（禁彩色 emoji）。
  *
- * ★v1.3.1 移动壳交互重构：
- * - 四大 Tab 支持左右横滑切换（主内容区手势，边缘橡皮筋阻尼，
- *   纵向滚动/表单/横向滚动容器不参与）；
- * - 中央 FAB 手势化：轻点/长按 → 加号动作菜单；按住上滑 → 菜单；
- *   按住右滑 → 对话记一笔面板（SmartRecordDock）；
- * - 原「AI 记一笔」独立页（AiPage）全链路移除，对话式记录统一走
- *   SmartRecordDock（lib/smartRecordBus 全局唤起）。
+ * ★v1.3.2 移动壳再做减法（用户反馈：界面上的浮钮太多）：
+ * - 移除中央 FAB 加号（连同「上滑开菜单 / 右滑进对话」手势）——底栏回归纯净四页签；
+ * - 移除右下角常驻的对话气泡（SmartRecordDock 的悬浮入口）——对话面板改由
+ *   加号菜单「对话记一笔」/ 生活流空态 CTA 唤起；
+ * - 新增「左右滑动切换页面」引导气泡：只对没滑过的新用户出现一次，
+ *   6 秒自动消失、首次成功滑页即消失（localStorage 记忆，不再打扰）。
+ * - 四大 Tab 仍支持左右横滑（边缘橡皮筋阻尼，纵向滚动/表单/横向滚动容器不参与）。
  */
 
 const TABS: Array<{ to: string; label: string; Icon: LucideIcon }> = [
@@ -348,20 +347,20 @@ function SideAction({ Icon, label, narrow, onClick }: { Icon: LucideIcon; label:
   );
 }
 
-/* ---------------- 移动壳：悬浮玻璃底栏（v1.0.4 原样保留） ---------------- */
+/* ---------------- 移动壳：悬浮玻璃底栏（四页签，v1.3.2 去掉中央 FAB） ---------------- */
 
 /** ★v1.3.1 滑页触发距离（px）：横向位移过半才切页，避免误触。 */
 const SWIPE_TRIGGER = 64;
 /** ★v1.3.1 滑页方向判定阈值：横向位移需大于纵向的 1.2 倍才认定为横滑。 */
 const SWIPE_DOMINATE = 1.2;
-/** ★v1.3.1 FAB 手势阈值（px）：位移超过即进入对应预激活态。 */
-const FAB_TRIGGER = 16;
+/** ★v1.3.2 左右滑动引导的「已看过」标记（看过一次后不再打扰）。 */
+const SWIPE_GUIDE_KEY = 'gf.swipeGuide.seen';
+/** ★v1.3.2 引导气泡自动消失时长（ms）。 */
+const SWIPE_GUIDE_MS = 6000;
 
 function MobileShell({ children }: { children: ReactNode }): JSX.Element {
   const { pathname } = useLocation();
   const nav = useNavigate();
-  /** v1.0.22：中央 FAB 改开「加号动作菜单」（对标竞品），不再直跳 AI 页。 */
-  const [menuOpen, setMenuOpen] = useState(false);
   /** v1.1.4：底部导航可收起（阅读/看长列表时腾出空间），状态记忆到 localStorage。 */
   const [barHidden, setBarHidden] = useState<boolean>(() => {
     try {
@@ -383,40 +382,41 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
     });
   };
 
-  /* ---------- ★v1.3.1 中央 FAB 手势：轻点/长按/按住上滑 → 菜单；按住右滑 → 对话 ---------- */
+  /* ---------- ★v1.3.2 左右滑动引导：新用户首次进入四大页时出现一次 ---------- */
 
-  const fabRef = useRef<HTMLButtonElement | null>(null);
-  const fabStartRef = useRef({ x: 0, y: 0, t: 0 });
-  const fabMovedRef = useRef(false);
-  /** pointerup 跑过就压制紧随其后的合成 click（否则右滑进对话后又会弹菜单）。 */
-  const fabSuppressClickRef = useRef(false);
-  const fabGuideTimerRef = useRef<number | null>(null);
-  /** 手势提示气泡：'' 无 / menu 上滑预激活 / chat 右滑预激活 / guide 长按引导。 */
-  const [fabHint, setFabHint] = useState<'' | 'menu' | 'chat' | 'guide'>('');
+  /** 引导气泡是否可见（null = 还没判定：首帧不渲染，避免老用户闪一下）。 */
+  const [guideOpen, setGuideOpen] = useState(false);
   /** 当前 Tab 索引（滑页方向与边缘阻尼用）。 */
   const tabIdx = TABS.findIndex((t) => t.to === pathname);
 
-  /** FAB 跟手位移：直接写 DOM style，避免每帧 re-render 整个页面。 */
-  const applyFabShift = (x: number, y: number): void => {
-    const el = fabRef.current;
-    if (el) el.style.transform = `translate(calc(-50% + ${x}px), ${y}px)`;
-  };
-  const resetFabVisual = (): void => {
-    if (fabGuideTimerRef.current) {
-      window.clearTimeout(fabGuideTimerRef.current);
-      fabGuideTimerRef.current = null;
+  const dismissGuide = (): void => {
+    setGuideOpen(false);
+    try {
+      localStorage.setItem(SWIPE_GUIDE_KEY, '1');
+    } catch {
+      /* 隐私模式忽略 */
     }
-    const el = fabRef.current;
-    if (el) el.style.transform = '';
-    setFabHint('');
   };
 
-  useEffect(
-    () => () => {
-      if (fabGuideTimerRef.current) window.clearTimeout(fabGuideTimerRef.current);
-    },
-    [],
-  );
+  useEffect(() => {
+    let seen = false;
+    try {
+      seen = localStorage.getItem(SWIPE_GUIDE_KEY) === '1';
+    } catch {
+      seen = false;
+    }
+    if (seen) return;
+    // 延迟一拍：等页面进入动画结束再浮现，避免和新页面一起「炸」出来
+    const t = window.setTimeout(() => setGuideOpen(true), 800);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  // 出现后 6 秒自动收起（用户已经在看别的了，别一直挂着）
+  useEffect(() => {
+    if (!guideOpen) return;
+    const t = window.setTimeout(() => dismissGuide(), SWIPE_GUIDE_MS);
+    return () => window.clearTimeout(t);
+  }, [guideOpen]);
 
   /* ---------- ★v1.3.1 主内容区左右滑页（四大 Tab 手势切换） ---------- */
 
@@ -465,6 +465,8 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
     }
     const dx = e.clientX - s.x;
     if (!s.decided || Math.abs(dx) < SWIPE_TRIGGER) return;
+    // ★v1.3.2：用户已经会用横滑了，引导气泡立刻退场
+    dismissGuide();
     // 左滑（dx<0）→ 下一个 Tab；右滑 → 上一个
     const next = dx < 0 ? tabIdx + 1 : tabIdx - 1;
     if (tabIdx < 0 || next < 0 || next >= TABS.length) return;
@@ -483,7 +485,7 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
     >
       <main
         ref={mainRef}
-        className={`mx-auto w-full max-w-xl flex-1 px-4 pt-2 ${barHidden ? 'pb-16' : 'pb-36'}`}
+        className={`mx-auto w-full max-w-xl flex-1 px-4 pt-2 ${barHidden ? 'pb-16' : 'pb-28'}`}
         style={{ touchAction: 'pan-y' }}
         onPointerDown={onMainDown}
         onPointerMove={onMainMove}
@@ -508,6 +510,28 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
         {barHidden ? <ChevronUp size={15} strokeWidth={2} /> : <ChevronDown size={15} strokeWidth={2} />}
       </button>
 
+      {/* ★v1.3.2 左右滑动引导：替代原中央加号——用一枚轻量气泡告知「可以左右滑」，
+          只对没滑过的新用户出现一次；不拦截触摸（pointer-events-none）。 */}
+      {guideOpen && !barHidden ? (
+        <div
+          className="nw-swipe-hint pointer-events-none fixed inset-x-0 z-20 flex justify-center"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom) + 88px)' }}
+          role="status"
+        >
+          <span
+            className="flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold text-accent shadow-lg backdrop-blur"
+            style={{
+              borderColor: 'color-mix(in srgb, var(--accent) 32%, transparent)',
+              background: 'color-mix(in srgb, var(--accent-soft) 88%, var(--surface))',
+            }}
+          >
+            <ChevronLeft size={13} strokeWidth={2.4} className="nw-swipe-l" aria-hidden />
+            左右滑动切换页面
+            <ChevronRight size={13} strokeWidth={2.4} className="nw-swipe-r" aria-hidden />
+          </span>
+        </div>
+      ) : null}
+
       {/* 悬浮玻璃底栏：安全区放进定位而非内边距——手势导航机型（bottom inset 可达 30-40px）
           不再把框内撑出空洞，整体抬升悬浮避开手势条 */}
       <nav
@@ -521,97 +545,10 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
           pointerEvents: barHidden ? 'none' : 'auto',
         }}
       >
-        {TABS.slice(0, 2).map((t) => (
-          <Tab key={t.to} {...t} />
-        ))}
-
-        {/* 中央 FAB：★v1.3.1 手势化——轻点/长按/按住上滑开动作菜单，按住右滑进对话面板 */}
-        <div className="relative w-16 shrink-0">
-          {fabHint ? (
-            <span
-              className="pointer-events-none absolute -top-14 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-ink/90 px-2.5 py-1 text-[11px] font-medium text-white shadow-md"
-              style={{ transition: 'opacity .12s ease' }}
-            >
-              {fabHint === 'chat'
-                ? '松开 → 对话记一笔'
-                : fabHint === 'menu'
-                  ? '松开 → 记一笔菜单'
-                  : '上滑开菜单 · 右滑记一笔'}
-            </span>
-          ) : null}
-          <button
-            ref={fabRef}
-            aria-label="记一笔"
-            className="absolute -top-7 left-1/2 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full bg-accent text-3xl font-light text-white shadow-lg shadow-accent/40 active:scale-95"
-            style={{ boxShadow: '0 10px 24px color-mix(in srgb, var(--accent) 40%, transparent)', touchAction: 'none' }}
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture?.(e.pointerId);
-              fabStartRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
-              fabMovedRef.current = false;
-              fabSuppressClickRef.current = false;
-              // 按住不动 400ms → 引导气泡（告知上滑/右滑手势）
-              fabGuideTimerRef.current = window.setTimeout(() => {
-                if (!fabMovedRef.current) setFabHint('guide');
-              }, 400);
-            }}
-            onPointerMove={(e) => {
-              const { x, y } = fabStartRef.current;
-              const dx = e.clientX - x;
-              const dy = e.clientY - y;
-              if (!fabMovedRef.current && Math.hypot(dx, dy) < 10) return;
-              if (fabGuideTimerRef.current) {
-                window.clearTimeout(fabGuideTimerRef.current);
-                fabGuideTimerRef.current = null;
-              }
-              fabMovedRef.current = true;
-              if (dx > FAB_TRIGGER && dx > Math.abs(dy)) {
-                setFabHint('chat');
-                applyFabShift(Math.min(dx * 0.25, 12), 0);
-              } else if (dy < -FAB_TRIGGER && Math.abs(dy) > Math.abs(dx)) {
-                setFabHint('menu');
-                applyFabShift(0, Math.max(dy * 0.2, -8));
-              } else {
-                setFabHint('');
-                applyFabShift(0, 0);
-              }
-            }}
-            onPointerUp={(e) => {
-              const { x, y, t } = fabStartRef.current;
-              const dx = e.clientX - x;
-              const dy = e.clientY - y;
-              resetFabVisual();
-              fabSuppressClickRef.current = true;
-              if (dx > FAB_TRIGGER && dx > Math.abs(dy)) {
-                void haptic('medium');
-                openSmartRecord();
-              } else if (dy < -FAB_TRIGGER && Math.abs(dy) > Math.abs(dx)) {
-                void haptic('medium');
-                setMenuOpen(true);
-              } else if (!fabMovedRef.current || Date.now() - t < 500) {
-                // 轻点 / 长按（未划动）→ 动作菜单，与旧行为一致
-                setMenuOpen(true);
-              }
-            }}
-            onPointerCancel={resetFabVisual}
-            onClick={() => {
-              // 纯键盘触发（Enter/Space）没有 pointer 事件先行，正常开菜单
-              if (fabSuppressClickRef.current) {
-                fabSuppressClickRef.current = false;
-                return;
-              }
-              setMenuOpen(true);
-            }}
-          >
-            ＋
-          </button>
-        </div>
-
-        {TABS.slice(2).map((t) => (
+        {TABS.map((t) => (
           <Tab key={t.to} {...t} />
         ))}
       </nav>
-
-      {menuOpen ? <RecordMenu onClose={() => setMenuOpen(false)} /> : null}
     </div>
   );
 }

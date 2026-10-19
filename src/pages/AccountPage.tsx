@@ -151,11 +151,11 @@ export default function AccountPage() {
     setSavingPwd(false);
   };
 
-  const inputCls =
-    'h-11 w-full nw-input';
+  /** ★v1.3.2：输入框圆角补齐到 12px（与卡片 16px 的语言衔接，旧 10px 偏尖锐）。 */
+  const inputCls = 'h-11 w-full nw-input rounded-xl';
 
   return (
-    <PageShell title="账号编辑" onBack={() => nav('/me')}>
+    <PageShell title="账号编辑" onBack={() => nav('/me')} flushOnDesktop>
       {!loggedIn ? (
         <LoginRequired />
       ) : (
@@ -185,7 +185,7 @@ export default function AccountPage() {
               <button
                 onClick={() => void persistName()}
                 disabled={savingName || loading}
-                className="h-11 w-full rounded-btn bg-accent text-sm font-semibold text-white disabled:opacity-40"
+                className="h-11 w-full rounded-xl bg-accent text-sm font-semibold text-white disabled:opacity-40"
               >
                 {savingName ? '保存中…' : '保存昵称'}
               </button>
@@ -211,7 +211,7 @@ export default function AccountPage() {
               <button
                 onClick={() => void submitPassword()}
                 disabled={savingPwd}
-                className="h-11 w-full rounded-btn bg-accent text-sm font-semibold text-white disabled:opacity-40"
+                className="h-11 w-full rounded-xl bg-accent text-sm font-semibold text-white disabled:opacity-40"
               >
                 {savingPwd ? '提交中…' : '修改密码'}
               </button>
