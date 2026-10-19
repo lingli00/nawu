@@ -142,7 +142,7 @@ export default function App(): JSX.Element {
 
   const shell = hydrated ? (
     <RouteGuard>
-      <MainShell>
+      <MainShell tabPane={(path) => AppRoutes.find((r) => r.path === path)?.element ?? null}>
         <Routes>
           <Route path="/" element={<Navigate to="/home" replace />} />
           {AppRoutes.map((r) => (

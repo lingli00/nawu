@@ -5,13 +5,20 @@ import PageShell from '../components/layout/PageShell';
 import PageField from '../components/ui/PageField';
 import { useAuthStore, useDataStore, useUiStore, currentServer, toastSuccess, toastError } from '../store';
 import { getRules, saveRules } from '../api/user';
-import { loadLearnedRules, loadLearnSamples, removeLearnedRule } from '../api/learnedRules';
-import { KIND_LABEL, displayCoWords, type LearnSample, type LearnedRule } from '../ai/ruleBank';
+import { parseEnvelope, pullLearnedRulesFromCloud } from '../api/ruleSync';
 import { toJudgement } from '../lib/emoji';
 import type { Category, Judgement } from '../types/entities';
 
 /**
  * P25 识别规则编辑：教 AI 识记账——命中关键词的记录自动归类。
+ *
+ * ★v1.3.3（规则归属核查结论）：本页的「教 AI 识账」服务的是**当前对话记一笔**
+ * （SmartRecordDock 的解析链），旧版独立 AI 记一笔页面早已随 v1.3.1 一并删除，
+ * 不存在第二套规则体系。因此按需求做两件事：
+ * 1. **删除「本地学习规则」这一独立选项/分区**——规则不再以「本机 / 云端」两套并存示人，
+ *    统一成「这个账号的识别规则」一件事；
+ * 2. 对话里改分类学到的规则**自动同步云端**（见 api/ruleSync.ts），
+ *    换机/换端登录即拉回本机生效；手动新增照旧（右上角 ＋ 新增）。
  *
  * ★规则结构结论（本页采用 `{ keyword, category, judgement }` 数组的依据）：
  * - 后端 Api.php：`/api/user/rules` 的 rules 只校验「非 null 时必须是数组、JSON ≤200KB」，
@@ -91,7 +98,7 @@ function RuleFormSheet({
   return createPortal(
     <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={onClose}>
       <div
-        className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-surface p-4"
+        className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4"
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
       >
@@ -151,88 +158,6 @@ function RuleFormSheet({
   );
 }
 
-/**
- * ★v1.2.0 本地自学习规则管理（PRD 六.3：学错了能回退）。
- *
- * 展示「智能记录 / AI 记一笔」里用户手动纠正分类后自动学到的规则，
- * 数据只存本机（`flyme.parse.learned`），不登录也能查看/删除。
- */
-function LearnedRuleSection() {
-  const [rules, setRules] = useState<LearnedRule[]>([]);
-  const [samples, setSamples] = useState<LearnSample[]>([]);
-  const [loaded, setLoaded] = useState(false);
-
-  const reload = (): void => {
-    void Promise.all([loadLearnedRules(), loadLearnSamples()]).then(([r, s]) => {
-      setRules(r);
-      setSamples(s);
-      setLoaded(true);
-    });
-  };
-
-  useEffect(reload, []);
-
-  const removeAt = async (rule: LearnedRule): Promise<void> => {
-    const ok = await useUiStore.getState().confirm({
-      title: '删除这条学会的规则？',
-      message: `「${rule.keyword} → ${KIND_LABEL[rule.kind]} · ${rule.categoryName}」删除后，类似输入会回落到默认规则。`,
-    });
-    if (!ok) return;
-    await removeLearnedRule(rule.id);
-    toastSuccess('已删除该规则');
-    reload();
-  };
-
-  return (
-    <section className="mt-6">
-      <h2 className="mb-1 px-1 text-sm font-semibold">本地自学习规则</h2>
-      <p className="mb-3 px-1 text-xs leading-5 text-ink-3">
-        你在确认卡片上改过的分类，会自动学成规则存在本机（不上云），以后相似说法直接按规则归类。学错了在这里删掉即可。
-      </p>
-      <ul className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface">
-        {!loaded ? (
-          <li className="px-3.5 py-8 text-center text-sm text-ink-3">正在加载…</li>
-        ) : rules.length === 0 ? (
-          <li className="px-3.5 py-8 text-center text-sm text-ink-3">
-            还没有学到的规则。在「智能记录」里把分类改对一次，这里就会出现对应规则
-          </li>
-        ) : (
-          rules.map((r) => {
-            const coWords = displayCoWords(r.coWords);
-            const sample = samples.find((s) => s.ruleId === r.id);
-            return (
-              <li key={r.id} className="flex items-start gap-3 px-3.5 py-3">
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm">
-                    <span className="font-medium">「{r.keyword}」</span>
-                    {coWords.length > 0 ? <span className="text-ink-3"> + {coWords.join('、')}</span> : null}
-                    <span className="text-ink-3"> → </span>
-                    <span className="font-medium">
-                      {KIND_LABEL[r.kind]} · {r.categoryName}
-                    </span>
-                  </span>
-                  <span className="mt-0.5 block truncate text-[11px] text-ink-3">
-                    命中 {r.hits} 次{r.from ? ` · 来自「${r.from}」` : ''}
-                    {sample ? ` · ${sample.createdAt.slice(0, 10)}` : ''}
-                  </span>
-                </span>
-                <button
-                  onClick={() => void removeAt(r)}
-                  aria-label={`删除规则 ${r.keyword}`}
-                  className="h-8 w-8 shrink-0 rounded-btn text-sm active:bg-surface-2"
-                  style={{ color: 'var(--fou)' }}
-                >
-                  ✕
-                </button>
-              </li>
-            );
-          })
-        )}
-      </ul>
-    </section>
-  );
-}
-
 export default function RulePage() {
   const sessionState = useAuthStore((s) => s.sessionState);
   const session = useAuthStore((s) => s.session);
@@ -243,6 +168,8 @@ export default function RulePage() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [sheet, setSheet] = useState<{ editing?: ParseRule; index?: number } | null>(null);
+  /** 本机已学到的规则条数（只用于底部说明，不再单独成区）。 */
+  const [learnedCount, setLearnedCount] = useState(0);
 
   const loggedIn = sessionState === 'valid' && Boolean(session?.token);
   const server = currentServer();
@@ -255,14 +182,18 @@ export default function RulePage() {
     [categories],
   );
 
-  /** 进入页面拉取云端规则。 */
+  /**
+   * 进入页面：拉云端规则（信封兼容旧数组）+ 把「对话里学到的规则」同步回本机。
+   * v1.3.3：学到的规则也走同一个账号 payload，本页只展示手动规则那一段，
+   * 但登录后必须把学习段拉回来，否则换机后解析用不上之前学的。
+   */
   useEffect(() => {
     if (!editable) return;
     let alive = true;
     setLoading(true);
     getRules(server)
       .then((raw) => {
-        if (alive) setRules(normalizeRules(raw));
+        if (alive) setRules(normalizeRules(parseEnvelope(raw).manual));
       })
       .catch((e) => {
         if (alive) toastError((e as Error).message || '规则获取失败');
@@ -270,6 +201,9 @@ export default function RulePage() {
       .finally(() => {
         if (alive) setLoading(false);
       });
+    void pullLearnedRulesFromCloud().then((n) => {
+      if (alive) setLearnedCount(n);
+    });
     return () => {
       alive = false;
     };
@@ -304,7 +238,9 @@ export default function RulePage() {
     if (saving || !editable) return;
     setSaving(true);
     try {
-      await saveRules(server, rules);
+      // 读一次云端信封，保留「对话里学到的规则」那一段（否则保存手动规则会把它冲掉）
+      const env = parseEnvelope(await getRules(server));
+      await saveRules(server, { v: 2, manual: rules, learned: env.learned });
       toastSuccess('识别规则已保存，云同步生效');
       setDirty(false);
     } catch (e) {
@@ -384,11 +320,15 @@ export default function RulePage() {
             {saving ? '保存中…' : dirty ? '保存到服务器 *' : '保存到服务器'}
           </button>
           {dirty ? <p className="mt-2 text-center text-[11px] text-ink-3">有未保存的修改（标 * 号）</p> : null}
+
+          {/* ★v1.3.3：本地/云端两套规则的表述合并成一句话，不再给「本地学习规则」入口 */}
+          <p className="mt-3 px-1 text-[11px] leading-5 text-ink-3">
+            在「对话记一笔」里改过分类的说法会自动学成规则并同步到本账号
+            {learnedCount > 0 ? `（已学会 ${learnedCount} 条）` : ''}，换手机登录同一账号即可继续命中；
+            没学准的可以在这里手动新增或编辑覆盖。
+          </p>
         </>
       )}
-
-      {/* 本地自学习规则（v1.2.0，本机存储，未登录也能管理） */}
-      <LearnedRuleSection />
 
       {sheet ? (
         <RuleFormSheet

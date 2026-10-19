@@ -646,7 +646,10 @@ textarea {
     max-width: 30rem;
     margin-right: 0;
     margin-left: auto;
-    border-radius: 1rem 0 0 0;
+    /* ★v1.3.3：原来只圆左上角（1rem 0 0 0），右侧抽屉在网页端看起来像一块
+       方板，与 Sheet.tsx 的 `rounded-l-3xl` 抽屉（左侧上下角都圆）明显不一致。
+       这里改用同一套 1.5rem 左侧双角，旧弹层零改动即可对齐。 */
+    border-radius: 1.5rem 0 0 1.5rem;
     padding-bottom: 2rem;
   }
   /* 抽屉滑入方向：从右（覆盖 sheet-enter 的自下而上） */
@@ -943,6 +946,13 @@ html[data-shell='pc'][data-skin-preview='1'] .nw-skinbar {
    **方角白条**浮在纸色背景上（用户反馈「卡片没有圆角」的观感来源）。
    这里让头部与页面同底：去掉底色/毛玻璃/下边框，只留标题与返回。
    ============================================================ */
+/* ★v1.3.3 移动壳分页器：整壳固定视口高度，每页各自滚动（微信式）。
+   100dvh 让键盘/地址栏收起时高度正确；老内核回落到 100vh。 */
+.nw-pager-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
 html[data-shell='pc'] .nw-page-flush > header {
   background: transparent !important;
   backdrop-filter: none !important;

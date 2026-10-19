@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { Check } from 'lucide-react';
 import type { SwitchableKind } from '../../ai/convert';
 import { defaultCategoryId } from '../../ai/localParser';
 import { IconPreview, iconBaseOf } from '../IconPicker';
@@ -39,12 +40,26 @@ export default function SmartRecordCard({
   categories,
   onConfirm,
   onCancel,
+  done,
+  remaining = 0,
+  onNext,
 }: {
   initial: RecordCardState;
   categories: Category[];
   onConfirm: (state: RecordCardState) => void;
   onCancel: () => void;
+  /**
+   * ★v1.3.3：保存成功后的「已完成」文案（非空即进入完成态）。
+   * 用户反馈：保存后卡片立刻消失，只靠顶部一闪而过的「已保存」提示，
+   * 很容易以为没存上。现在卡片留在原地、字段只读，顶部亮出【已完成】。
+   */
+  done?: string;
+  /** 队列里还剩几条（完成态下显示「下一条」按钮）。 */
+  remaining?: number;
+  /** 完成态点「下一条」（队列为空时由调用方关闭卡片）。 */
+  onNext?: () => void;
 }) {
+  const locked = Boolean(done);
   const [kind, setKind] = useState<SwitchableKind>(initial.kind);
   const [categoryId, setCategoryId] = useState(initial.categoryId);
   // 非受控字段：提交时读 DOM 真值
@@ -97,10 +112,28 @@ export default function SmartRecordCard({
 
   return (
     <section
-      className="rounded-2xl border border-line bg-surface p-3.5"
+      className={`rounded-2xl border p-3.5 transition-colors ${
+        locked ? 'border-[color-mix(in_srgb,var(--gui)_45%,transparent)] bg-[color-mix(in_srgb,var(--gui)_6%,var(--surface))]' : 'border-line bg-surface'
+      }`}
       aria-label="识别记录预览"
+      data-done={locked ? '1' : '0'}
     >
-      <h3 className="mb-2.5 text-sm font-semibold">识别记录预览</h3>
+      <div className="mb-2.5 flex items-center justify-between gap-2">
+        <h3 className={`text-sm font-semibold ${locked ? 'text-ink-2' : ''}`}>识别记录预览</h3>
+        {locked ? (
+          <span
+            className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white"
+            style={{ background: 'var(--gui)' }}
+            role="status"
+          >
+            <Check size={12} strokeWidth={3} aria-hidden />
+            已完成
+          </span>
+        ) : null}
+      </div>
+      {locked && done ? (
+        <p className="mb-2.5 rounded-btn bg-surface px-2.5 py-1.5 text-[11px] leading-4 text-ink-2">{done}</p>
+      ) : null}
 
       {/* 大类选择器（可点击切换） */}
       <div className="mb-2.5 flex items-center gap-1.5">
@@ -110,7 +143,8 @@ export default function SmartRecordCard({
             key={k}
             type="button"
             onClick={() => switchKind(k)}
-            className={`rounded-full border px-2.5 py-0.5 text-[11px] leading-5 transition-colors ${
+            disabled={locked}
+            className={`rounded-full border px-2.5 py-0.5 text-[11px] leading-5 transition-colors disabled:opacity-60 ${
               kind === k ? 'border-accent bg-accent text-white' : 'border-line-2 text-ink-2 active:bg-surface-2'
             }`}
           >
@@ -126,6 +160,7 @@ export default function SmartRecordCard({
           <select
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
+            disabled={locked}
             className="h-9 min-w-0 flex-1 rounded-btn border border-line bg-surface-2 px-2 text-sm outline-none focus:border-accent"
           >
             {cats.map((c) => (
@@ -141,6 +176,7 @@ export default function SmartRecordCard({
           <span className="w-12 shrink-0 text-[11px] text-ink-3">名称</span>
           <input
             ref={nameRef}
+            disabled={locked}
             defaultValue={initial.name}
             onInput={(e) => setNameText(e.currentTarget.value)}
             placeholder="名称"
@@ -163,6 +199,7 @@ export default function SmartRecordCard({
           <span className="text-sm text-ink-3">¥</span>
           <input
             ref={amountRef}
+            disabled={locked}
             defaultValue={initial.amount ? String(initial.amount) : ''}
             placeholder="0"
             inputMode="decimal"
@@ -176,6 +213,7 @@ export default function SmartRecordCard({
           <span className="w-12 shrink-0 text-[11px] text-ink-3">时间</span>
           <input
             ref={dateRef}
+            disabled={locked}
             type="date"
             defaultValue={initial.date}
             className="h-9 min-w-0 flex-1 rounded-btn border border-line bg-surface-2 px-2 text-sm outline-none focus:border-accent"
@@ -187,6 +225,7 @@ export default function SmartRecordCard({
           <span className="w-12 shrink-0 text-[11px] text-ink-3">备注</span>
           <input
             ref={noteRef}
+            disabled={locked}
             defaultValue={initial.note}
             placeholder="原文摘要"
             className="h-9 min-w-0 flex-1 rounded-btn border border-line bg-surface-2 px-2 text-sm outline-none focus:border-accent"
@@ -194,26 +233,40 @@ export default function SmartRecordCard({
         </label>
       </div>
 
-      <p className="mt-2 text-[11px] leading-4 text-ink-3">
-        改动大类或小类后确认，系统会自动学会这条归类规则（存在本机）。
-      </p>
+      {locked ? null : (
+        <p className="mt-2 text-[11px] leading-4 text-ink-3">
+          改动大类或小类后确认，系统会自动学会这条归类规则并同步到云端。
+        </p>
+      )}
 
-      <div className="mt-2.5 flex gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="h-10 flex-1 rounded-btn border border-line bg-surface-2 text-sm font-medium text-ink-2 active:scale-[0.99]"
-        >
-          取消
-        </button>
-        <button
-          type="button"
-          onClick={submit}
-          className="h-10 flex-[2] rounded-btn bg-accent text-sm font-semibold text-white active:opacity-90"
-        >
-          确认保存
-        </button>
-      </div>
+      {locked ? (
+        <div className="mt-2.5 flex gap-2">
+          <button
+            type="button"
+            onClick={onNext ?? onCancel}
+            className="h-10 flex-1 rounded-btn border border-line bg-surface-2 text-sm font-medium text-ink-2 active:scale-[0.99]"
+          >
+            {remaining > 0 ? `下一条（剩 ${remaining} 条）` : '完成'}
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2.5 flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-10 flex-1 rounded-btn border border-line bg-surface-2 text-sm font-medium text-ink-2 active:scale-[0.99]"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            className="h-10 flex-[2] rounded-btn bg-accent text-sm font-semibold text-white active:opacity-90"
+          >
+            确认保存
+          </button>
+        </div>
+      )}
     </section>
   );
 }

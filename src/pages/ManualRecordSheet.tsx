@@ -238,7 +238,7 @@ export default function ManualRecordSheet({
   if (embedded) return body;
 
   return (
-    <PageShell title={editing ? '编辑记录' : '记一笔'} onBack={() => nav('/ledger', { replace: true })}>
+    <PageShell title={editing ? '编辑记录' : '记一笔'} onBack={() => nav('/ledger', { replace: true })} flushOnDesktop>
       {body}
     </PageShell>
   );

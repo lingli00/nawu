@@ -66,7 +66,7 @@ function CategoryFormMini({
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
       <div
-        className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-surface p-4"
+        className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4"
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
       >
@@ -186,7 +186,7 @@ export default function CategoryManageSheet({
       {createPortal(
         <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={onClose}>
           <div
-            className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-surface p-4"
+            className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4"
             onClick={(e) => e.stopPropagation()}
             style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
           >

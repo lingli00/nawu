@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Home, Plus, ScrollText, Smartphone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -26,6 +26,9 @@ import SmartRecordDock from './SmartRecordDock';
  * - 新增「左右滑动切换页面」引导气泡：只对没滑过的新用户出现一次，
  *   6 秒自动消失、首次成功滑页即消失（localStorage 记忆，不再打扰）。
  * - 四大 Tab 仍支持左右横滑（边缘橡皮筋阻尼，纵向滚动/表单/横向滚动容器不参与）。
+ *
+ * ★v1.3.3：横滑改成**微信式分页器**（见文件下半部说明）——手指 1:1 跟手、
+ * 邻页同屏可见、松手才吸附，中途可以停在半过渡状态；每页各自滚动并记住位置。
  */
 
 const TABS: Array<{ to: string; label: string; Icon: LucideIcon }> = [
@@ -47,6 +50,14 @@ const SHELL_PATHS = new Set(['/home', '/ledger', '/report', '/me']);
  * 用前缀匹配，/servers/new、/servers/:id 这类二级页也留在抽屉里。
  */
 const DRAWER_PATHS = ['/wall', '/backup', '/categories', '/rules', '/servers', '/settings'];
+
+/**
+ * ★v1.3.3：电脑网页版的「记一笔 / 记录详情」不再整页铺开成方角白板，
+ * 改成居中圆角卡片（16px），与站内其他卡片同一套圆角语言。
+ */
+function isRecordPath(p: string): boolean {
+  return p === '/record' || p.startsWith('/record/');
+}
 
 function isDrawerPath(p: string): boolean {
   return DRAWER_PATHS.some((d) => p === d || p.startsWith(`${d}/`));
@@ -156,7 +167,17 @@ export const GLASS_STYLE: CSSProperties = {
 
 /* ---------------- 主壳入口 ---------------- */
 
-export default function MainShell({ children }: { children: ReactNode }): JSX.Element {
+export default function MainShell({
+  children,
+  tabPane,
+}: {
+  children: ReactNode;
+  /**
+   * ★v1.3.3：给分页器注入「按路径渲染整页」的能力（App 传 AppRoutes 里的元素）。
+   * 这样主壳自己不需要 import 四个页面，避免 MainShell ↔ 页面 的循环依赖。
+   */
+  tabPane?: (path: string) => ReactNode;
+}): JSX.Element {
   const { pathname } = useLocation();
   const mode = useShellMode();
   // ★v1.0.29：把壳层状态写到 <html data-shell>，供 `dt:` 桌面变体判断
@@ -175,7 +196,11 @@ export default function MainShell({ children }: { children: ReactNode }): JSX.El
   // ★v1.2.0 对话式智能记录入口：全局悬浮气泡（后台 /flyme 不带）
   return (
     <>
-      {mode === 'desktop' ? <DesktopShell>{children}</DesktopShell> : <MobileShell>{children}</MobileShell>}
+      {mode === 'desktop' ? (
+        <DesktopShell>{children}</DesktopShell>
+      ) : (
+        <MobileShell tabPane={tabPane}>{children}</MobileShell>
+      )}
       <SmartRecordDock mode={mode} />
     </>
   );
@@ -299,6 +324,12 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
               {children}
             </div>
           </div>
+        ) : isRecordPath(pathname) ? (
+          <div className="mx-auto w-full max-w-3xl px-6 pb-20 pt-8">
+            <div className="nw-pop-card overflow-hidden rounded-card border border-line bg-surface shadow-sm">
+              {children}
+            </div>
+          </div>
         ) : (
           <div className="mx-auto w-full max-w-3xl px-6 pb-20 pt-8">{children}</div>
         )}
@@ -347,18 +378,49 @@ function SideAction({ Icon, label, narrow, onClick }: { Icon: LucideIcon; label:
   );
 }
 
-/* ---------------- 移动壳：悬浮玻璃底栏（四页签，v1.3.2 去掉中央 FAB） ---------------- */
+/* ---------------- 移动壳：微信式横向分页器（四页签，v1.3.3） ---------------- */
 
-/** ★v1.3.1 滑页触发距离（px）：横向位移过半才切页，避免误触。 */
-const SWIPE_TRIGGER = 64;
-/** ★v1.3.1 滑页方向判定阈值：横向位移需大于纵向的 1.2 倍才认定为横滑。 */
+/**
+ * ★v1.3.3 滑页重做（用户反馈：切换不连贯，要「微信那种」手感）。
+ *
+ * 旧实现的问题：手指拖动时只把**当前页**平移 40%（没有下一页跟在后面），
+ * 松手先弹回原位、再整页跳转——中间是断的，所以「不连贯」。
+ *
+ * 新实现是一个真正的横向分页器：
+ * - 四页并排成一条 track，手指横移多少，track 就跟着走多少（1:1，无缩放）；
+ * - 相邻页在**决定横滑的那一刻**才挂载（不预渲染，省流量），所以拖到一半
+ *   左右都能看到邻页真实内容，可以停在任意半过渡位置（无极悬停）；
+ * - 松手按「位移 > 22% 屏宽」或「甩动速度 > 0.45 px/ms」判定翻页，
+ *   否则回弹；翻页用 280ms 的同一条缓动曲线，和微信的跟手感对齐；
+ * - 首尾页继续给阻尼（0.32），拖不出去。
+ *
+ * 每页各自滚动（`overflow-y-auto`），切回来时滚动位置还在——这也是微信的行为。
+ */
+
+/** 翻页判定：位移阈值占屏宽比例。 */
+const PAGE_RATIO = 0.22;
+/** 翻页判定：甩动速度阈值（px/ms）。 */
+const PAGE_VELOCITY = 0.45;
+/** 横向/纵向判定比（纵向占主导就交还给滚动）。 */
 const SWIPE_DOMINATE = 1.2;
+/** 手指位移小于该值视为「没想滑」。 */
+const SWIPE_SLOP = 8;
+/** 翻页动画时长与曲线（与微信接近的减速曲线）。 */
+const PAGE_TRANSITION = 'transform 280ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+
 /** ★v1.3.2 左右滑动引导的「已看过」标记（看过一次后不再打扰）。 */
 const SWIPE_GUIDE_KEY = 'gf.swipeGuide.seen';
 /** ★v1.3.2 引导气泡自动消失时长（ms）。 */
 const SWIPE_GUIDE_MS = 6000;
 
-function MobileShell({ children }: { children: ReactNode }): JSX.Element {
+function MobileShell({
+  children,
+  tabPane,
+}: {
+  children: ReactNode;
+  /** 由 App 注入：按路由路径取页面元素（避免主壳反向 import 页面造成循环依赖）。 */
+  tabPane?: (path: string) => ReactNode;
+}): JSX.Element {
   const { pathname } = useLocation();
   const nav = useNavigate();
   /** v1.1.4：底部导航可收起（阅读/看长列表时腾出空间），状态记忆到 localStorage。 */
@@ -382,12 +444,13 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
     });
   };
 
-  /* ---------- ★v1.3.2 左右滑动引导：新用户首次进入四大页时出现一次 ---------- */
+  /** 当前 Tab 索引（不在四大页时为 -1）。 */
+  const rawIdx = TABS.findIndex((t) => t.to === pathname);
+  const idx = rawIdx < 0 ? 0 : rawIdx;
 
-  /** 引导气泡是否可见（null = 还没判定：首帧不渲染，避免老用户闪一下）。 */
+  /* ---------- 滑动引导（v1.3.2）：新用户首次进入四大页时出现一次 ---------- */
+
   const [guideOpen, setGuideOpen] = useState(false);
-  /** 当前 Tab 索引（滑页方向与边缘阻尼用）。 */
-  const tabIdx = TABS.findIndex((t) => t.to === pathname);
 
   const dismissGuide = (): void => {
     setGuideOpen(false);
@@ -418,58 +481,115 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
     return () => window.clearTimeout(t);
   }, [guideOpen]);
 
-  /* ---------- ★v1.3.1 主内容区左右滑页（四大 Tab 手势切换） ---------- */
+  /* ---------- 分页器：track 平移 + 邻页按需挂载 ---------- */
 
   const mainRef = useRef<HTMLElement | null>(null);
-  const swipeRef = useRef({ x: 0, y: 0, active: false, decided: false });
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  /** 已挂载过的邻页索引（挂上就不再卸载，来回滑不用重新请求数据）。 */
+  const [mounted, setMounted] = useState<Set<number>>(() => new Set());
+  const drag = useRef({ active: false, decided: false, x: 0, y: 0, dx: 0, t: 0, w: 0 });
+
+  const widthOf = (): number => mainRef.current?.clientWidth ?? 0;
+
+  /**
+   * 路由变化 → track 无动画归位到目标页。
+   * 用 layout effect：必须在浏览器绘制前完成，否则会看到上一页闪一帧。
+   */
+  useLayoutEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    el.style.transition = 'none';
+    el.style.transform = `translate3d(${-idx * widthOf()}px, 0, 0)`;
+  }, [idx]);
+
+  /** 屏幕尺寸变化（旋转 / 键盘）后重新对齐，避免错位半屏。 */
+  useEffect(() => {
+    const onResize = (): void => {
+      const el = trackRef.current;
+      if (!el) return;
+      el.style.transition = 'none';
+      el.style.transform = `translate3d(${-idx * widthOf()}px, 0, 0)`;
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [idx]);
+
+  const mountNeighbors = (): void => {
+    setMounted((prev) => {
+      const next = new Set(prev);
+      for (const i of [idx - 1, idx + 1]) if (i >= 0 && i < TABS.length) next.add(i);
+      return next.size === prev.size ? prev : next;
+    });
+  };
 
   const onMainDown = (e: React.PointerEvent<HTMLElement>): void => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const t = e.target as HTMLElement | null;
     // 表单 / 可点击元素 / 横向滚动容器不参与滑页（避免与内部手势打架）
     if (t?.closest('input, textarea, select, button, a, [data-no-swipe]')) {
-      swipeRef.current.active = false;
+      drag.current.active = false;
       return;
     }
-    swipeRef.current = { x: e.clientX, y: e.clientY, active: true, decided: false };
-    if (mainRef.current) mainRef.current.style.transition = 'none';
+    drag.current = { active: true, decided: false, x: e.clientX, y: e.clientY, dx: 0, t: Date.now(), w: widthOf() };
+    if (trackRef.current) trackRef.current.style.transition = 'none';
   };
 
   const onMainMove = (e: React.PointerEvent<HTMLElement>): void => {
-    const s = swipeRef.current;
+    const s = drag.current;
     if (!s.active) return;
     const dx = e.clientX - s.x;
     const dy = e.clientY - s.y;
     if (!s.decided) {
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      // 横向不占主导 → 放弃滑页，交还纵向滚动
+      if (Math.abs(dx) < SWIPE_SLOP && Math.abs(dy) < SWIPE_SLOP) return;
+      // 纵向不占主导 → 放弃滑页，交还纵向滚动
       if (Math.abs(dx) < Math.abs(dy) * SWIPE_DOMINATE) {
         s.active = false;
         return;
       }
       s.decided = true;
+      s.w = widthOf();
+      // 决定横滑的这一帧才挂邻页：页面数据不会因为「可能滑动」而被提前请求
+      mountNeighbors();
     }
-    // 边缘橡皮筋阻尼（首页再右滑 / 末页再左滑只给 18% 位移）
-    const atEdge = (dx > 0 && tabIdx <= 0) || (dx < 0 && (tabIdx < 0 || tabIdx >= TABS.length - 1));
-    if (mainRef.current) mainRef.current.style.transform = `translateX(${dx * (atEdge ? 0.18 : 0.4)}px)`;
+    s.dx = dx;
+    // 首尾页阻尼：拖不出去，但仍有跟随反馈
+    const atEdge = (dx > 0 && idx === 0) || (dx < 0 && idx === TABS.length - 1);
+    const offset = dx * (atEdge ? 0.32 : 1);
+    if (trackRef.current) {
+      trackRef.current.style.transform = `translate3d(${-idx * (s.w || 0) + offset}px, 0, 0)`;
+    }
   };
 
-  const onMainUp = (e: React.PointerEvent<HTMLElement>): void => {
-    const s = swipeRef.current;
+  const onMainUp = (): void => {
+    const s = drag.current;
     if (!s.active) return;
     s.active = false;
-    const el = mainRef.current;
-    if (el) {
-      el.style.transition = 'transform .26s cubic-bezier(.32,.72,0,1)';
-      el.style.transform = 'translateX(0)';
+    const el = trackRef.current;
+    const w = s.w || widthOf() || 360;
+    const elapsed = Math.max(1, Date.now() - s.t);
+    const velocity = s.dx / elapsed;
+
+    let next = idx;
+    if (s.decided) {
+      const moved = Math.abs(s.dx);
+      // 位移够远（>22% 屏宽）**或**甩得够快；但再快也要过 56px 底线，
+      // 否则手抖一下（几十毫秒内 20~40px）就会整页翻走，比微信敏感到误触
+      const farEnough = moved > Math.max(56, w * PAGE_RATIO);
+      const fastEnough = moved > 56 && Math.abs(velocity) > PAGE_VELOCITY;
+      if (farEnough || fastEnough) next = s.dx < 0 ? idx + 1 : idx - 1;
     }
-    const dx = e.clientX - s.x;
-    if (!s.decided || Math.abs(dx) < SWIPE_TRIGGER) return;
+    next = Math.min(TABS.length - 1, Math.max(0, next));
+
+    if (el) {
+      el.style.transition = PAGE_TRANSITION;
+      el.style.transform = `translate3d(${-next * w}px, 0, 0)`;
+    }
+
+    const dx = s.dx;
+    s.dx = 0;
+    if (next === idx) return;
     // ★v1.3.2：用户已经会用横滑了，引导气泡立刻退场
-    dismissGuide();
-    // 左滑（dx<0）→ 下一个 Tab；右滑 → 上一个
-    const next = dx < 0 ? tabIdx + 1 : tabIdx - 1;
-    if (tabIdx < 0 || next < 0 || next >= TABS.length) return;
+    if (Math.abs(dx) > 0) dismissGuide();
     void haptic('select');
     nav(TABS[next]!.to);
   };
@@ -478,21 +598,36 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
     return <>{children}</>;
   }
 
+  const panePad = barHidden ? 'pb-16' : 'pb-28';
+
   return (
     <div
-      className="flex min-h-full flex-col bg-surface-2 text-ink"
+      className="nw-pager-shell flex flex-col overflow-hidden bg-surface-2 text-ink"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
+      {/* 分页器本体：手指拖到哪停到哪，松手才吸附 */}
       <main
         ref={mainRef}
-        className={`mx-auto w-full max-w-xl flex-1 px-4 pt-2 ${barHidden ? 'pb-16' : 'pb-28'}`}
+        className="relative min-h-0 flex-1 overflow-hidden"
         style={{ touchAction: 'pan-y' }}
         onPointerDown={onMainDown}
         onPointerMove={onMainMove}
         onPointerUp={onMainUp}
         onPointerCancel={onMainUp}
       >
-        {children}
+        <div ref={trackRef} className="flex h-full w-full will-change-transform">
+          {TABS.map((t, i) => (
+            <section
+              key={t.to}
+              className={`h-full w-full shrink-0 overflow-y-auto overscroll-contain px-4 pt-2 ${panePad}`}
+              aria-hidden={i !== idx}
+              // 非当前页不参与无障碍树与点击（视觉上仍在，滑动时看得到）
+              style={i === idx ? undefined : { pointerEvents: 'none' }}
+            >
+              {i === idx ? children : mounted.has(i) && tabPane ? tabPane(t.to) : null}
+            </section>
+          ))}
+        </div>
       </main>
 
       {/* 收起/展开手柄：一枚小圆钮贴右侧，视觉重量低于底栏本身 */}
@@ -510,7 +645,7 @@ function MobileShell({ children }: { children: ReactNode }): JSX.Element {
         {barHidden ? <ChevronUp size={15} strokeWidth={2} /> : <ChevronDown size={15} strokeWidth={2} />}
       </button>
 
-      {/* ★v1.3.2 左右滑动引导：替代原中央加号——用一枚轻量气泡告知「可以左右滑」，
+      {/* ★v1.3.2 左右滑动引导：用一枚轻量气泡告知「可以左右滑」，
           只对没滑过的新用户出现一次；不拦截触摸（pointer-events-none）。 */}
       {guideOpen && !barHidden ? (
         <div

@@ -431,7 +431,7 @@ function ExportPasswordDialog(props: {
   return createPortal(
     <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={props.onClose}>
       <div
-        className="sheet-enter mx-auto w-full max-w-xl rounded-t-2xl bg-surface p-4"
+        className="sheet-enter mx-auto w-full max-w-xl rounded-t-3xl bg-surface p-4"
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
       >
@@ -501,7 +501,7 @@ function ImportPasswordDialog(props: {
   return createPortal(
     <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={props.onClose}>
       <div
-        className="sheet-enter mx-auto w-full max-w-xl rounded-t-2xl bg-surface p-4"
+        className="sheet-enter mx-auto w-full max-w-xl rounded-t-3xl bg-surface p-4"
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
       >
@@ -569,7 +569,7 @@ function ImportConfirmDialog(props: {
   return createPortal(
     <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={props.onClose}>
       <div
-        className="sheet-enter mx-auto w-full max-w-xl rounded-t-2xl bg-surface p-4"
+        className="sheet-enter mx-auto w-full max-w-xl rounded-t-3xl bg-surface p-4"
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
       >

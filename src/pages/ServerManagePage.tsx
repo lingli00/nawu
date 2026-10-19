@@ -3,11 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { Wifi } from 'lucide-react';
 import PageShell from '../components/layout/PageShell';
 import { useServerStore, useUiStore, toastSuccess, toastInfo } from '../store';
+import { readServerSessions } from '../store/useAuthStore';
+import { MAX_SERVERS } from '../store/useServerStore';
 import { displayUrl, normalizeServerUrl } from '../lib/url';
 import { haptic } from '../lib/haptics';
 import { isLanScanRecommended, scanLanServers, type LanScanHit } from '../net/lanScan';
 
-/** P05 服务器管理：多服务器列表，点选切换当前服务器。 */
+/**
+ * P05 服务器管理：多服务器列表，点选切换当前服务器。
+ *
+ * ★v1.3.3 多服务器独立登录态：每台服务器各自记住自己的账号，
+ * 列表里直接标出「已登录 xxx」；切过去直接是那个账号，不用重输密码。
+ * 上限 3 台（再多容易记混，也超出产品承诺的 2~3 台）。
+ */
 
 /** 局域网扫描状态机。 */
 type ScanState =
@@ -27,6 +35,13 @@ export default function ServerManagePage() {
   const [scan, setScan] = useState<ScanState>({ phase: 'idle' });
   const [pending, setPending] = useState<PendingServer | null>(null);
   const [saving, setSaving] = useState(false);
+  /** 各服务器已保存的登录账号（serverId → 邮箱）。 */
+  const [sessions, setSessions] = useState<Record<string, { email: string }>>({});
+
+  const refreshSessions = (): void => {
+    void readServerSessions().then(setSessions);
+  };
+  useEffect(refreshSessions, [currentId, servers.length]);
 
   /** 扫描取消标记：点「停止」或组件卸载时置位。 */
   const scanCancelRef = useRef(false);
@@ -40,8 +55,9 @@ export default function ServerManagePage() {
 
   const pick = async (id: string) => {
     if (id === currentId) return;
+    const has = Boolean(sessions[id]);
     await setCurrent(id);
-    toastSuccess('已切换服务器');
+    toastSuccess(has ? `已切到「${servers.find((x) => x.id === id)?.alias ?? '服务器'}」，账号已恢复` : '已切换服务器');
   };
 
   const del = async (id: string) => {
@@ -113,11 +129,19 @@ export default function ServerManagePage() {
     <PageShell
       title="服务器管理"
       right={
-        <button onClick={() => nav('/servers/new')} className="h-9 rounded-btn bg-accent px-3 text-sm font-medium text-white">
+        <button
+          onClick={() => nav('/servers/new')}
+          disabled={servers.length >= MAX_SERVERS}
+          className="h-9 rounded-btn bg-accent px-3 text-sm font-medium text-white disabled:opacity-40"
+        >
           新增
         </button>
       }
     >
+      <p className="mb-3 px-1 text-[11px] leading-5 text-ink-3">
+        最多可配置 {MAX_SERVERS} 台服务器；每台的登录状态各自保存——切换服务器会直接恢复该服务器的账号，不用重新登录。
+      </p>
+
       {/* 局域网扫描 */}
       <button
         onClick={startScan}
@@ -226,6 +250,13 @@ export default function ServerManagePage() {
                     ) : null}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-ink-3">{displayUrl(s.url)}</p>
+                  {sessions[s.id] ? (
+                    <p className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--gui)' }}>
+                      已登录 {sessions[s.id]?.email || '账号'}
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 truncate text-[11px] text-ink-3">未登录（切换后可直接登录）</p>
+                  )}
                 </button>
                 <button
                   onClick={() => nav(`/servers/${s.id}`)}

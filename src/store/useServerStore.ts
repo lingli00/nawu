@@ -14,7 +14,10 @@ import type { ProbeState, ServerConfig } from '../types/entities';
  * 持久化：`flyme.kv.servers`（列表）+ `flyme.selfhost`（当前，与 Web 版兼容）。
  */
 
-/** 切换服务器时的回调（由 `useAppStore` 注册为「清空登录态」）。 */
+/** ★v1.3.3：同一台设备最多配置 3 个服务端（各自独立登录态）。 */
+export const MAX_SERVERS = 3;
+
+/** 切换服务器时的回调（由 `useAppStore` 注册为「换出该服务器的登录态」）。 */
 type ServerChangedHandler = (nextId: string | null) => void;
 let serverChangedHandler: ServerChangedHandler | null = null;
 
@@ -70,6 +73,10 @@ export const useServerStore = create<ServerStoreState>()((set, get) => ({
   },
 
   add: async (input) => {
+    // ★v1.3.3：一台设备最多记 3 个服务端（每台各自保存登录态，再多会记混）
+    if (get().servers.length >= MAX_SERVERS) {
+      throw new ApiError('invalid_url', `最多只能添加 ${MAX_SERVERS} 个服务器，请先删除一个`);
+    }
     const norm = normalizeServerUrl(input.url);
     if (!norm.ok) throw new ApiError('invalid_url', norm.reason ?? '地址格式不正确');
     const server: ServerConfig = {

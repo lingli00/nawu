@@ -89,6 +89,14 @@ export async function saveLearnedRules(rules: LearnedRule[]): Promise<void> {
   ruleCache = rules;
 }
 
+/**
+ * ★v1.3.3 整库替换（云端拉回来的规则合并后写回本机）。
+ * 与 saveLearnedRules 的区别只在语义：这里用于「合并同步」，不做增量融合。
+ */
+export async function replaceLearnedRules(rules: LearnedRule[]): Promise<void> {
+  await saveLearnedRules(rules);
+}
+
 /** 覆盖写样本库。 */
 export async function saveLearnSamples(samples: LearnSample[]): Promise<void> {
   await enqueueWrite(() => setKV(K_LEARN_SAMPLES, samples));

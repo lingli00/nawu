@@ -72,9 +72,9 @@ export const useAppStore = create<AppStoreState>()((set) => ({
       // 5. 服务器列表
       await useServerStore.getState().initServers();
 
-      // 6. 切换服务器 → 清空登录态
-      setServerChangedHandler(() => {
-        void useAuthStore.getState().clearLocalSession();
+      // 6. 切换服务器 → 换出该服务器自己的登录态（★v1.3.3 不再清空）
+      setServerChangedHandler((nextId) => {
+        void useAuthStore.getState().switchServer(nextId);
       });
 
       // 7. 登录态校验（后台进行，不阻塞进入首页）

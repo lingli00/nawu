@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ImagePlus, Keyboard, Mic, Send, X } from 'lucide-react';
+import { Check, ImagePlus, Keyboard, Mic, Send, X } from 'lucide-react';
 import { useBackGuard } from '../../lib/backGuard';
 import { today as todayStr } from '../../lib/date';
 import { emojiForName } from '../../lib/emoji';
@@ -15,9 +15,10 @@ import {
   type LearnedRule,
 } from '../../ai/ruleBank';
 import { bumpRuleHits, loadLearnedRules, recordCorrection } from '../../api/learnedRules';
+import { pushLearnedRulesToCloud } from '../../api/ruleSync';
 import { onOpenSmartRecord } from '../../lib/smartRecordBus';
 import SmartRecordCard, { type RecordCardState } from './SmartRecordCard';
-import { toastError, toastSuccess, useDataStore, useSettingsStore } from '../../store';
+import { toastError, useDataStore, useSettingsStore } from '../../store';
 import type { AiResultItem } from '../../types/ai';
 import type { Category, Goods } from '../../types/entities';
 
@@ -54,10 +55,15 @@ interface ChatMsg {
 }
 
 /** 待确认项：记录卡（三大类）/ 心情卡 / 其它（时间、退役转卖，只确认不学习）。seq 由 applyPending 填充。 */
-type Pending =
+/**
+ * ★v1.3.3：`done` 非空即「已完成态」——卡片不消失、字段只读、顶部亮出【已完成】。
+ * 用户反馈原来保存后卡片立刻被下一条顶掉，只靠一闪而过的 toast，总以为没存上。
+ */
+type Pending = (
   | { mode: 'record'; text: string; item: AiResultItem; init: RecordCardState; seq?: number }
   | { mode: 'mood'; text: string; item: AiResultItem; seq?: number }
-  | { mode: 'plain'; text: string; item: AiResultItem; seq?: number };
+  | { mode: 'plain'; text: string; item: AiResultItem; seq?: number }
+) & { done?: string };
 
 /** 生活流 note 可能带「早饭·」前缀，卡片名称里去掉。 */
 function nameOfLedger(note: string): string {
@@ -177,6 +183,14 @@ function SmartRecordPanel({
     }
     pendingRef.current = p;
     setPendingState(p);
+  };
+  /** 保存成功 → 原地切到完成态（不换 seq，卡片不重挂载、不清空用户刚改的内容）。 */
+  const markDone = (label: string): void => {
+    const cur = pendingRef.current;
+    if (!cur) return;
+    const next = { ...cur, done: label } as Pending;
+    pendingRef.current = next;
+    setPendingState(next);
   };
   /** 发送串行链：连发消息依次处理，绝不被 busy 吞掉、也不会乱序。 */
   const chainRef = useRef<Promise<void>>(Promise.resolve());
@@ -441,6 +455,8 @@ function SmartRecordPanel({
           categoryName: cat.name,
         });
         onRulesChange();
+        // ★v1.3.3：学到的规则自动同步到云端账号（未登录/离线时静默跳过）
+        void pushLearnedRulesToCloud();
         pushMsg(
           'sys',
           learned
@@ -448,12 +464,11 @@ function SmartRecordPanel({
             : `已按 ${KIND_LABEL[state.kind]} · ${cat.name} 保存`,
         );
       }
-      toastSuccess('已保存');
+      // ★v1.3.3：卡片留在原地显示【已完成】，不再 toast 一闪就消失
+      markDone(`已记入${KIND_LABEL[state.kind]} · ${cat?.name ?? '未分类'}${state.amount ? ` · ¥${state.amount}` : ''}`);
     } catch (e) {
       toastError((e as Error).message || '保存失败');
-      return;
     }
-    showNext(items);
   };
 
   /** 确认保存（心情 / 时间 / 退役转卖：只保存，不学习）。 */
@@ -478,20 +493,23 @@ function SmartRecordPanel({
         }
         await updateGoods(target.id, { status: 'retired', sellPrice: item.retireDraft.sellPrice });
         const res = await syncSaleIncome(target.id);
-        toastSuccess(
+        markDone(
           res.action === 'created' || res.action === 'updated'
             ? `已退役，转卖净赚 ¥${(res.amount ?? 0).toFixed(2)} 已记入生活流`
             : '已标记退役',
         );
-        showNext(items);
         return;
       }
-      toastSuccess('已保存');
+      markDone(
+        pendingRef.current.mode === 'mood'
+          ? '已记入情绪'
+          : item.action === 'create_time'
+            ? '已记入时间'
+            : '已保存',
+      );
     } catch (e) {
       toastError((e as Error).message || '保存失败');
-      return;
     }
-    showNext(items);
   };
 
   /* ---------------- 语音：微信式「按住 说话」 ---------------- */
@@ -714,6 +732,9 @@ function SmartRecordPanel({
                 categories={categories}
                 onConfirm={(s) => void confirmRecord(s)}
                 onCancel={() => showNext(items)}
+                done={pending.done}
+                remaining={items.length}
+                onNext={() => showNext(items)}
               />
             ) : pending.mode === 'mood' ? (
               <SimpleCard
@@ -721,6 +742,9 @@ function SmartRecordPanel({
                 lines={[`${pending.item.moodDraft?.feeling ?? '🙂'} ${pending.item.moodDraft?.text ?? ''}`]}
                 onConfirm={() => void confirmPlain()}
                 onCancel={() => showNext(items)}
+                done={pending.done}
+                remaining={items.length}
+                onNext={() => showNext(items)}
               />
             ) : (
               <SimpleCard
@@ -732,6 +756,9 @@ function SmartRecordPanel({
                 }
                 onConfirm={() => void confirmPlain()}
                 onCancel={() => showNext(items)}
+                done={pending.done}
+                remaining={items.length}
+                onNext={() => showNext(items)}
               />
             )}
           </div>
@@ -890,35 +917,76 @@ function SimpleCard({
   lines,
   onConfirm,
   onCancel,
+  done,
+  remaining = 0,
+  onNext,
 }: {
   title: string;
   lines: string[];
   onConfirm: () => void;
   onCancel: () => void;
+  /** ★v1.3.3：非空即完成态（卡片不消失，亮出【已完成】）。 */
+  done?: string;
+  remaining?: number;
+  onNext?: () => void;
 }) {
+  const locked = Boolean(done);
   return (
-    <section className="rounded-card border border-line bg-surface p-3.5" aria-label={title}>
-      <h3 className="mb-1.5 text-sm font-semibold">{title}</h3>
+    <section
+      className={`rounded-card border p-3.5 ${
+        locked ? 'border-[color-mix(in_srgb,var(--gui)_45%,transparent)] bg-[color-mix(in_srgb,var(--gui)_6%,var(--surface))]' : 'border-line bg-surface'
+      }`}
+      aria-label={title}
+      data-done={locked ? '1' : '0'}
+    >
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {locked ? (
+          <span
+            className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white"
+            style={{ background: 'var(--gui)' }}
+            role="status"
+          >
+            <Check size={12} strokeWidth={3} aria-hidden />
+            已完成
+          </span>
+        ) : null}
+      </div>
       {lines.map((l, i) => (
         <p key={i} className="text-sm leading-5 text-ink-2">
           {l}
         </p>
       ))}
+      {locked && done ? (
+        <p className="mt-2 rounded-btn bg-surface px-2.5 py-1.5 text-[11px] leading-4 text-ink-2">{done}</p>
+      ) : null}
       <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="h-10 flex-1 rounded-btn border border-line bg-surface-2 text-sm font-medium text-ink-2 active:scale-[0.99]"
-        >
-          取消
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="h-10 flex-[2] rounded-btn bg-accent text-sm font-semibold text-white active:opacity-90"
-        >
-          确认保存
-        </button>
+        {locked ? (
+          <button
+            type="button"
+            onClick={onNext ?? onCancel}
+            className="h-10 flex-1 rounded-btn border border-line bg-surface-2 text-sm font-medium text-ink-2 active:scale-[0.99]"
+          >
+            {remaining > 0 ? `下一条（剩 ${remaining} 条）` : '完成'}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="h-10 flex-1 rounded-btn border border-line bg-surface-2 text-sm font-medium text-ink-2 active:scale-[0.99]"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              className="h-10 flex-[2] rounded-btn bg-accent text-sm font-semibold text-white active:opacity-90"
+            >
+              确认保存
+            </button>
+          </>
+        )}
       </div>
     </section>
   );

@@ -10,6 +10,13 @@ export const KV_PREFIX = 'flyme.kv.';
 
 /** 会话（token + user）。 */
 export const K_USER = 'flyme.user';
+/**
+ * ★v1.3.3 多服务器各自独立的登录态：`{ [serverId]: Session }`。
+ * 切换服务器时不再清空登录态，而是从这张表里换一份——同一台设备可同时
+ * 记住 2~3 个服务端（如公司自建 + 家里 NAS）的账号，切过去免重新登录。
+ * `K_USER` 仍保留为「当前服务器」的镜像（Web 版与旧数据兼容）。
+ */
+export const K_SESSIONS = 'flyme.sessions';
 /** 当前服务器（Web 版兼容镜像）。 */
 export const K_SELFHOST = 'flyme.selfhost';
 /** 自定义识别规则（与网页版云端镜像互通，形状 {keyword,category,judgement}）。 */
@@ -47,6 +54,7 @@ export const COLLECTION_KEYS: string[] = COLLECTIONS.map((c) => collectionKey(c)
 /** 全部 KV 键（供「清空本地数据」与调试）。 */
 export const ALL_MANAGED_KEYS: string[] = [
   K_USER,
+  K_SESSIONS,
   K_SELFHOST,
   K_PARSE_RULES,
   K_LEARNED_RULES,

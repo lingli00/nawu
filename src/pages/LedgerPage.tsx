@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarClock, Heart, Leaf, PenLine, ReceiptText, ShoppingBag, Timer } from 'lucide-react';
+import { CalendarClock, Heart, Leaf, PenLine, ReceiptText, Search, ShoppingBag, Timer } from 'lucide-react';
 import { CooldownSheet, MoodSheet, TimeSheet, WishSheet, cooldownExpired } from '../components/LifeSheets';
 import CategoryGlyph from '../components/CategoryGlyph';
 import { IconPreview, iconBaseOf } from '../components/IconPicker';
@@ -70,6 +70,10 @@ export default function LedgerPage() {
   const currency = useSettingsStore((s) => s.settings.currency);
 
   const [grain, setGrain] = useState<Grain>('month');
+  /* ★v1.3.3：搜索入口放右上角（与首页同一套「图标 → 整行搜索框」交互）。
+     支持关键词 / 备注 / 标题（分类名）/ 金额 四路匹配。 */
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [keyword, setKeyword] = useState('');
   const [day, setDay] = useState(today());
   const [ym, setYm] = useState(monthKey());
   const [year, setYear] = useState(() => Number(monthKey().slice(0, 4)));
@@ -91,10 +95,30 @@ export default function LedgerPage() {
   const inMonth = useMemo(() => records.filter((r) => r.date.startsWith(ym)), [records, ym]);
   const inYear = useMemo(() => records.filter((r) => r.date.startsWith(String(year))), [records, year]);
 
-  /** 按年视图：该年出现过的月份（升序），渲染时倒序展示。 */
-  const yearMonths = useMemo(() => monthKeysOf(inYear), [inYear]);
+  const baseRows = grain === 'day' ? inDay : grain === 'week' ? inWeek : grain === 'month' ? inMonth : inYear;
 
-  const activeRows = grain === 'day' ? inDay : grain === 'week' ? inWeek : grain === 'month' ? inMonth : inYear;
+  /** 关键词匹配：分类名（标题）、备注、金额（原值与格式化值都试一遍）。 */
+  const kw = keyword.trim().toLowerCase();
+  const activeRows = useMemo(() => {
+    if (!kw) return baseRows;
+    const amountOf = (n: number): string[] => [String(n), n.toFixed(2), formatMoney(n, currency).replace(/[^\d.]/g, '')];
+    return baseRows.filter((r) => {
+      const cat = categories.find((c) => c.id === r.categoryId);
+      const hay = [
+        cat?.name ?? '',
+        r.note ?? '',
+        r.type === 'income' ? '收入' : '支出',
+        r.judgement === 'gui' ? '归 值得' : r.judgement === 'xu' ? '需 必要' : '否 本可避免',
+        ...amountOf(Number(r.amount) || 0),
+      ]
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(kw);
+    });
+  }, [baseRows, kw, categories, currency]);
+
+  /** 按年视图：窗口内出现过的月份（升序），渲染时倒序展示（搜索时按过滤后的算）。 */
+  const yearMonths = useMemo(() => monthKeysOf(activeRows), [activeRows]);
   const expense = useMemo(() => sumExpense(activeRows), [activeRows]);
   const income = useMemo(
     () => activeRows.filter((r) => r.type === 'income').reduce((acc, r) => acc + (r.amount || 0), 0),
@@ -242,7 +266,9 @@ export default function LedgerPage() {
         <EmptyState
           className="dt:col-span-2"
           icon={Leaf}
-          title={`这个${grain === 'day' ? '天' : '月'}还没有记录`}
+          title={
+            kw ? `没有匹配「${keyword.trim()}」的记录` : `这个${grain === 'day' ? '天' : '月'}还没有记录`
+          }
           actionLabel="说一句，记一笔"
           onAction={openSmartRecord}
         />
@@ -321,7 +347,7 @@ export default function LedgerPage() {
       );
     }
     return [...yearMonths].reverse().map((m) => {
-      const rows = inYear.filter((r) => r.date.startsWith(m));
+      const rows = activeRows.filter((r) => r.date.startsWith(m));
       return (
         <section key={m}>
           <div className="flex items-baseline justify-between px-1 py-1.5">
@@ -341,11 +367,62 @@ export default function LedgerPage() {
       {/* 大字标题 + 手动记一笔（与首页/报表页顶栏同风格） */}
       <header className="flex items-center justify-between pb-3 pt-2">
         <h1 className="text-3xl font-bold leading-9">生活流</h1>
-        <button onClick={() => nav('/record')} className="h-9 rounded-full bg-accent-soft px-3.5 text-xs font-medium text-accent">
-          <PenLine size={14} className="mr-1 inline-block align-[-2px]" />
-          手动记一笔
-        </button>
+        <div className="flex items-center gap-1">
+          {/* ★v1.3.3：搜索入口放右上角，与首页顶栏同位置同交互 */}
+          <button
+            onClick={() => {
+              setSearchOpen((v) => !v);
+              if (searchOpen) setKeyword('');
+            }}
+            aria-label="搜索"
+            className={`flex h-9 w-9 items-center justify-center rounded-full transition-transform active:scale-95 active:bg-surface ${
+              searchOpen ? 'bg-surface text-accent' : 'text-ink-2'
+            }`}
+          >
+            <Search size={19} />
+          </button>
+          {/* ★v1.3.3：圆角对齐全局按钮令牌（12px），不再用 full 药丸 */}
+          <button
+            onClick={() => nav('/record')}
+            className="h-9 rounded-xl bg-accent-soft px-3.5 text-xs font-medium text-accent active:scale-95"
+          >
+            <PenLine size={14} className="mr-1 inline-block align-[-2px]" />
+            手动记一笔
+          </button>
+        </div>
       </header>
+
+      {/* 搜索行（与首页一致的整行输入框 + 取消；非受控，关闭即卸载） */}
+      {searchOpen ? (
+        <div className="mb-3 flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden />
+            <input
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+              defaultValue={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchOpen(false);
+                  setKeyword('');
+                }
+              }}
+              placeholder="搜索标题 / 备注 / 金额"
+              className="h-10 w-full nw-input rounded-xl pl-9 pr-3"
+            />
+          </div>
+          <button
+            onClick={() => {
+              setSearchOpen(false);
+              setKeyword('');
+            }}
+            className="h-10 shrink-0 px-2 text-sm text-ink-2 active:opacity-70"
+          >
+            取消
+          </button>
+        </div>
+      ) : null}
 
       {/* v1.0 价值账本大卡（今日：支出 / 健康度 / 归需否三色条 / 同期收入） */}
       <div className="rounded-card border border-line bg-surface p-4">
