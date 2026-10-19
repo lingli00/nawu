@@ -4,10 +4,11 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import SmartRecordDock from '../src/components/layout/SmartRecordDock';
+import SmartRecordCard, { type RecordCardState } from '../src/components/layout/SmartRecordCard';
 import { loadLearnedRules, loadLearnSamples, resetLearnedCache } from '../src/api/learnedRules';
 import { setKV } from '../src/storage/kv';
 import { K_LEARNED_RULES, K_LEARN_SAMPLES } from '../src/storage/keys';
-import { useDataStore } from '../src/store';
+import { useDataStore, useUiStore } from '../src/store';
 import { SEED_CATEGORIES } from '../src/storage/seed';
 import { addDays, today } from '../src/lib/date';
 
@@ -344,5 +345,263 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
       btnByText('切换到文字输入').click();
     });
     expect(inputByPlaceholder('一句话描述消费/心情')).not.toBeNull();
+  });
+});
+
+/* ---------- ★v1.3.1 语音识别修复（用户反馈：APP/网页长按语音无响应） ---------- */
+
+/** 假 Web Speech 识别器：记录 start/stop/abort，onresult/onend/onerror 可手动触发。 */
+class FakeSR {
+  static last: FakeSR | null = null;
+  lang = '';
+  interimResults = false;
+  maxResults = 1;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null = null;
+  onerror: ((e: unknown) => void) | null = null;
+  onend: (() => void) | null = null;
+  started = false;
+  stopped = false;
+  aborted = false;
+  constructor() {
+    FakeSR.last = this;
+  }
+  start(): void {
+    this.started = true;
+  }
+  stop(): void {
+    this.stopped = true;
+    this.onend?.();
+  }
+  abort(): void {
+    this.aborted = true;
+    this.onend?.();
+  }
+}
+
+/** jsdom 无指针捕获实现，补桩避免 handler 抛错。 */
+if (!Element.prototype.setPointerCapture) {
+  (Element.prototype as unknown as { setPointerCapture: () => void }).setPointerCapture = () => {};
+}
+
+/** 在元素上派发指针事件（jsdom 无 PointerEvent 构造器，用 MouseEvent 冒同等类型）。 */
+function firePtr(el: Element, type: string, clientY = 0): void {
+  el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY }));
+}
+
+/** 最近一条错误 toast 的文案。 */
+function lastErrorToast(): string {
+  const errs = useUiStore.getState().toasts.filter((t) => t.kind === 'error');
+  return errs.length > 0 ? errs[errs.length - 1]!.message : '';
+}
+
+describe('SmartRecordDock · v1.3.1 按住说话', () => {
+  beforeEach(() => {
+    FakeSR.last = null;
+    (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition = FakeSR;
+  });
+
+  afterEach(() => {
+    delete (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
+  });
+
+  /** 开面板并切到语音形态，返回「按住 说话」按钮。 */
+  async function openVoiceMode(): Promise<HTMLButtonElement> {
+    await renderDock();
+    await act(async () => {
+      btnByText('智能记录').click();
+    });
+    await act(async () => {
+      btnByText('切换到语音输入').click();
+    });
+    return btnByText('按住 说话');
+  }
+
+  it('快速点按不漏收尾：pointerup 读 ref 不读 state（旧实现快速点按会挂住识别）', async () => {
+    const hold = await openVoiceMode();
+    await act(async () => {
+      // 同一帧内按下+松手：setRecording 尚未渲染，闭包里 recording 还是 false
+      firePtr(hold, 'pointerdown', 300);
+      firePtr(hold, 'pointerup', 300);
+    });
+    expect(FakeSR.last?.started).toBe(true);
+    expect(FakeSR.last?.stopped).toBe(true);
+  });
+
+  it('按住即时视觉反馈：0:00 计时 + 脉冲点 + 进度条（治「长按无响应」）', async () => {
+    const hold = await openVoiceMode();
+    await act(async () => {
+      firePtr(hold, 'pointerdown', 300);
+    });
+    expect(hold.textContent).toContain('0:00');
+    expect(hold.textContent).toContain('松开手指 发送');
+    const bar = document.body.querySelector('[role="progressbar"][aria-label="录音时长"]');
+    expect(bar).not.toBeNull();
+    // 松手收尾：进度条与计时撤掉
+    await act(async () => {
+      firePtr(hold, 'pointerup', 300);
+    });
+    expect(document.body.querySelector('[role="progressbar"][aria-label="录音时长"]')).toBeNull();
+  });
+
+  it('实时转写 → 松手自动发送并出确认卡', async () => {
+    const hold = await openVoiceMode();
+    await act(async () => {
+      firePtr(hold, 'pointerdown', 300);
+    });
+    const sr = FakeSR.last;
+    expect(sr).not.toBeNull();
+    await act(async () => {
+      sr?.onresult?.({ results: [[{ transcript: '午饭花了25' }]] });
+    });
+    // 转写过程实时显示在按钮上
+    expect(hold.textContent).toContain('午饭花了25');
+    await act(async () => {
+      firePtr(hold, 'pointerup', 300);
+    });
+    await flush();
+    const chat = document.body.querySelector('aside[aria-label="智能记录"]');
+    expect(chat?.textContent).toContain('午饭花了25');
+  });
+
+  it('上滑取消：abort 且不发送', async () => {
+    const hold = await openVoiceMode();
+    await act(async () => {
+      firePtr(hold, 'pointerdown', 300);
+    });
+    const sr = FakeSR.last;
+    await act(async () => {
+      sr?.onresult?.({ results: [[{ transcript: '午饭花了25' }]] });
+    });
+    await act(async () => {
+      firePtr(hold, 'pointermove', 100); // 上滑 200px > 60px 阈值
+      firePtr(hold, 'pointerup', 100);
+    });
+    expect(sr?.aborted).toBe(true);
+    await flush();
+    const chat = document.body.querySelector('aside[aria-label="智能记录"]');
+    expect(chat?.textContent).not.toContain('午饭花了25');
+  });
+
+  it('权限拒绝文案分场景：浏览器引导地址栏，APP 内引导系统设置', async () => {
+    const hold = await openVoiceMode();
+    await act(async () => {
+      firePtr(hold, 'pointerdown', 300);
+    });
+    await act(async () => {
+      FakeSR.last?.onerror?.({ error: 'not-allowed' });
+    });
+    expect(lastErrorToast()).toContain('浏览器地址栏');
+
+    // 模拟 Capacitor 原生容器（同一面板再次按住，报错文案应换成系统设置引导）
+    (window as unknown as { Capacitor?: unknown }).Capacitor = { isNativePlatform: () => true };
+    await act(async () => {
+      firePtr(hold, 'pointerdown', 300);
+    });
+    await act(async () => {
+      FakeSR.last?.onerror?.({ error: 'not-allowed' });
+    });
+    expect(lastErrorToast()).toContain('系统设置');
+    delete (window as unknown as { Capacitor?: unknown }).Capacitor;
+  });
+
+  it('关闭面板时中止识别，回调不打到已卸载组件', async () => {
+    const hold = await openVoiceMode();
+    await act(async () => {
+      firePtr(hold, 'pointerdown', 300);
+    });
+    const sr = FakeSR.last;
+    await act(async () => {
+      btnByText('关闭').click();
+    });
+    expect(sr?.aborted).toBe(true);
+    // 卸载后 onresult 不再引发状态更新报错
+    await act(async () => {
+      sr?.onresult?.({ results: [[{ transcript: '午饭花了25' }]] });
+    });
+  });
+});
+
+/* ---------- ★v1.3.1 移动端抽屉化（原右侧滑出面板改底部抽屉） ---------- */
+
+describe('SmartRecordDock · v1.3.1 面板形态', () => {
+  it('移动端：底部抽屉（上滑动画 + 圆角把手 + 贴底）', async () => {
+    await renderDock(); // mode="mobile"
+    await act(async () => {
+      btnByText('智能记录').click();
+    });
+    const aside = document.body.querySelector('aside[aria-label="智能记录"]');
+    expect(aside).not.toBeNull();
+    const cls = aside?.className ?? '';
+    expect(cls).toContain('nw-smart-sheet'); // 上滑动画（覆盖右侧滑入）
+    expect(cls).toContain('rounded-t-3xl');
+    expect(cls).toContain('bottom-0');
+    expect(cls).toContain('max-h-[86vh]');
+    // 抽屉把手（贴顶小横条）
+    expect(aside?.querySelector('span.h-1.w-9')).not.toBeNull();
+  });
+
+  it('桌面端：仍是右侧滑出面板（max-w-md 全高）', async () => {
+    // 桌面形态单独挂一个 root（默认 renderDock 是 mobile）
+    const c2 = document.createElement('div');
+    document.body.appendChild(c2);
+    const r2 = createRoot(c2);
+    await act(async () => {
+      r2.render(
+        createElement(MemoryRouter, null, createElement(SmartRecordDock, { mode: 'desktop' })),
+      );
+    });
+    await act(async () => {
+      btnByText('智能记录').click();
+    });
+    const aside = document.body.querySelector('aside[aria-label="智能记录"]');
+    const cls = aside?.className ?? '';
+    expect(cls).toContain('inset-y-0');
+    expect(cls).toContain('right-0');
+    expect(cls).toContain('max-w-md');
+    expect(cls).not.toContain('nw-smart-sheet');
+    // 桌面无把手
+    expect(aside?.querySelector('span.h-1.w-9')).toBeNull();
+    await act(async () => {
+      r2.unmount();
+    });
+    c2.remove();
+  });
+
+  it('生活流条目卡不显示品牌图标预览（物品卡仍显示）', async () => {
+    const base: RecordCardState = {
+      kind: 'ledger',
+      categoryId: 'cl0',
+      name: '瑞幸咖啡',
+      amount: 19.9,
+      date: '2026-10-19',
+      note: '',
+    };
+    const c3 = document.createElement('div');
+    document.body.appendChild(c3);
+    const r3 = createRoot(c3);
+    await act(async () => {
+      r3.render(
+        createElement(SmartRecordCard, {
+          initial: base,
+          categories: SEED_CATEGORIES,
+          onConfirm: () => {},
+          onCancel: () => {},
+        }),
+      );
+    });
+    // 生活流（ledger）：无智能匹配图标
+    expect(document.body.querySelector('[title^="智能匹配"]')).toBeNull();
+    // 切到物品：品牌命中（瑞幸在随包品牌库）→ 图标预览出现
+    await act(async () => {
+      const goodsChip = [...document.body.querySelectorAll('button')].find(
+        (b) => (b.textContent ?? '').trim() === '物品',
+      );
+      goodsChip?.click();
+    });
+    expect(document.body.querySelector('[title^="智能匹配"]')).not.toBeNull();
+    await act(async () => {
+      r3.unmount();
+    });
+    c3.remove();
   });
 });

@@ -5,32 +5,37 @@ import {
   CreditCard,
   Heart,
   Hourglass,
+  MessageCircle,
   NotebookPen,
   PenLine,
   Snowflake,
-  Sparkles,
   Sprout,
 } from 'lucide-react';
 import { useBackGuard } from '../lib/backGuard';
 import { haptic } from '../lib/haptics';
 import { useMediaQuery } from '../lib/useMediaQuery';
+import { openSmartRecord } from '../lib/smartRecordBus';
 import type { SheetKey } from '../lib/sheetBus';
 import QuickSheetHost from './QuickSheets';
 
 /**
  * 加号动作菜单（v1.0.22 起 · 文案与视觉全部自有语言）。
  *
- * 结构：2×2 记录卡（AI 记一笔 / 价值记账 / 手动录入 / 新增订阅）
- *      + 2×2 生活流入口（购物冷静 / 心动清单 / 时间切片 / 情绪速写）+ 取消。
+ * 结构：3 张记录卡（对话记一笔 / 价值记账 / 手动录入）
+ *      + 新增订阅 + 2×2 生活流入口（购物冷静 / 心动清单 / 时间切片 / 情绪速写）+ 取消。
  *
- * ★ v1.0.28 就地弹层：六类弹层不再跨路由跳转——在哪个页面点加号，
+ * ★ v1.3.1：原「AI 记一笔」卡整体移除（独立 AiPage 全链路删除），
+ * 换成「对话记一笔」——直接唤起全局对话面板（SmartRecordDock）：
+ * 说一句话 / 贴图自动归档，逐条弹确认卡。移动端加号也可「按住右滑」直达。
+ *
+ * ★ v1.0.28 就地弹层：其余弹层不再跨路由跳转——在哪个页面点加号，
  * 弹层就地出现在哪个页面（QuickSheetHost），关闭后仍停留在原页面。
  * 实现：组件保持挂载，点卡片后切到「弹层模式」（菜单面板换成 QuickSheetHost），
  * 弹层关闭时先撤弹层占位历史，再延迟一拍关闭菜单（见 closeAll 注释）。
  *
- * ★ v1.1.7：四个记录卡（AI 记一笔 / 价值记账 / 手动录入 / 新增订阅）统一成
- * 就地抽屉 —— 不再有两个走整页、两个走弹层的不一致。整页路由 /ai、/record
- * 仍保留（页面内其它入口与深链会用到），只是加号菜单不再跳过去。
+ * ★ v1.1.7：三个记录卡（价值记账 / 手动录入 / 新增订阅）统一成
+ * 就地抽屉。整页路由 /record 仍保留（页面内其它入口与深链会用到），
+ * 只是加号菜单不再跳过去。
  *
  * PC 适配：≥1024px 居中对话框（pop-enter），移动端底部 sheet（sheet-enter）。
  */
@@ -40,7 +45,7 @@ import QuickSheetHost from './QuickSheets';
  * 不再写死十六进制 —— 原 8 张卡 8 种色相稀释品牌的问题由此修复，深色模式自动适配。
  */
 const TINT = {
-  ai: 'var(--accent)', // 墨绿（品牌主色）
+  chat: 'var(--accent)', // 墨绿（品牌主色，对话记一笔）
   ledger: 'var(--xu)', // 需蓝（归需否价值语言）
   manual: 'var(--tint-violet)', // 紫（手动录入）
   sub: 'var(--tint-warm)', // 琥珀（订阅提醒）
@@ -52,7 +57,6 @@ const TINT = {
 
 /** 旧跨路由方案的 sessionStorage 标志名（v1.0.28 起只做清理，不再写入）。 */
 const SHEET_FLAG: Record<SheetKey, string> = {
-  ai: 'gf.open.ai',
   record: 'gf.open.record',
   goods: 'gf.open.goods',
   sub: 'gf.open.sub',
@@ -102,8 +106,18 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
     fn();
   };
 
-  const cards: Array<{ label: string; sub: string; Icon: typeof Sparkles; tint: string; run: () => void }> = [
-    { label: 'AI 记一笔', sub: '说一句话 / 贴图自动归档', Icon: Sparkles, tint: TINT.ai, run: () => openSheet('ai') },
+  const cards: Array<{ label: string; sub: string; Icon: typeof MessageCircle; tint: string; run: () => void }> = [
+    {
+      label: '对话记一笔',
+      sub: '说一句话 / 贴图自动归档',
+      Icon: MessageCircle,
+      tint: TINT.chat,
+      // ★v1.3.1：先关菜单再开对话面板（避免菜单遮罩盖在面板上）
+      run: () => {
+        onClose();
+        openSmartRecord();
+      },
+    },
     { label: '价值记账', sub: '消费 / 归需否判断', Icon: NotebookPen, tint: TINT.ledger, run: () => openSheet('record') },
     {
       label: '手动录入',
@@ -146,7 +160,7 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
           <button
             key={label}
             onClick={() => pick(run)}
-            className="rounded-card border border-line p-3.5 text-left transition-all active:scale-[0.98]"
+            className="rounded-2xl border border-line p-3.5 text-left transition-all active:scale-[0.98]"
             style={{ background: `color-mix(in srgb, ${tint} 8%, var(--surface))` }}
           >
             <span
@@ -169,7 +183,7 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
           <button
             key={label}
             onClick={() => pick(() => openSheet(key))}
-            className="flex items-center gap-2.5 rounded-card border px-3 py-2.5 text-left transition-all active:scale-[0.98]"
+            className="flex items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-left transition-all active:scale-[0.98]"
             style={{
               borderColor: `color-mix(in srgb, ${tint} 28%, transparent)`,
               background: `color-mix(in srgb, ${tint} 10%, var(--surface))`,
@@ -210,8 +224,8 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
       <div
         className={
           wide
-            ? 'pop-enter mx-auto max-h-[86vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-surface p-5'
-            : 'sheet-enter mx-auto max-h-[86vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]'
+            ? 'pop-enter mx-auto max-h-[86vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-surface p-5 shadow-2xl'
+            : 'sheet-enter mx-auto max-h-[86vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)] shadow-2xl'
         }
         onClick={(e) => e.stopPropagation()}
       >

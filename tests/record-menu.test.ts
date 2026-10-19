@@ -10,9 +10,10 @@ import RecordMenu from '../src/components/RecordMenu';
  * ①报表页点心情/时间后跳去生活流页；②在对应页面添加东西不停留在对应界面）。
  *
  * 行为约定：
- * - 加号菜单的六类弹层（手动录入/新增订阅/购物冷静/心动清单/时间切片/情绪速写）
+ * - 加号菜单的六类弹层（价值记账/手动录入/新增订阅/购物冷静/心动清单/时间切片/情绪速写）
  *   一律就地打开（QuickSheetHost），不再跨路由导航，不写 sessionStorage 标志；
- * - 「AI 记一笔 / 价值记账」是页面导航，仍关菜单跳路由；
+ * - 「对话记一笔」卡唤起全局对话面板（SmartRecordDock），不是弹层也不是路由
+ *   （★v1.3.1：原「AI 记一笔」独立页全链路移除）；
  * - 弹层关闭（保存/遮罩/返回键）→ 菜单一并关闭。
  */
 
@@ -58,10 +59,12 @@ async function renderMenu(route: string, onClosed?: () => void): Promise<void> {
 }
 
 describe('RecordMenu · 结构（v1.0.24）', () => {
-  it('AI 记一笔并入 2×2 记录卡（原 hero 已去掉，全菜单只有一个入口）', async () => {
+  it('对话记一笔替代原 AI 记一笔卡（独立 AiPage 全链路移除）', async () => {
     await renderMenu('/home');
-    const hits = [...document.body.querySelectorAll('button')].filter((b) => (b.textContent ?? '').includes('AI 记一笔'));
+    const hits = [...document.body.querySelectorAll('button')].filter((b) => (b.textContent ?? '').includes('对话记一笔'));
     expect(hits.length).toBe(1);
+    // AI 记一笔（旧独立页入口）已彻底移除
+    expect((document.body.textContent ?? '').includes('AI 记一笔')).toBe(false);
     expect((document.body.textContent ?? '').includes('价值记账')).toBe(true);
     expect((document.body.textContent ?? '').includes('手动录入')).toBe(true);
     expect((document.body.textContent ?? '').includes('新增订阅')).toBe(true);
@@ -96,7 +99,7 @@ describe('RecordMenu · 就地弹层（v1.0.28 / v1.1.6 整页化）', () => {
       findButton('新增订阅').click();
     });
     expect((document.body.textContent ?? '').includes('新增订阅')).toBe(true);
-    // v1.1.7：新增订阅与 AI 记一笔/价值记账/手动录入统一为抽屉形态，右上角关闭
+    // v1.3.1：三个记录卡统一为抽屉形态，右上角关闭
     const close = document.body.querySelector('button[aria-label="关闭"]') as HTMLButtonElement | null;
     expect(close).not.toBeNull();
     await act(async () => {
@@ -112,11 +115,11 @@ describe('RecordMenu · 就地弹层（v1.0.28 / v1.1.6 整页化）', () => {
 
 /**
  * v1.1.7 桌面皮肤重构守护：桌面端只换材质，入口与表单字段必须与手机端一字不差。
- * 这条测试锁住「加号菜单 = 4 记录卡 + 4 生活流入口 + 取消」，
+ * 这条测试锁住「加号菜单 = 3 记录卡 + 新增订阅 + 4 生活流入口 + 取消」，
  * 以及四个记录抽屉里的关键字段 —— 防止以后为了「桌面优化」把东西做丢。
  */
 describe('RecordMenu · 入口与字段完整性（桌面/手机同一套）', () => {
-  const CARDS = ['AI 记一笔', '价值记账', '手动录入', '新增订阅'];
+  const CARDS = ['对话记一笔', '价值记账', '手动录入', '新增订阅'];
   const LIFE = ['购物冷静', '心动清单', '时间切片', '情绪速写'];
 
   it('加号菜单：4 张记录卡 + 4 个生活流入口 + 取消，一个不少', async () => {
@@ -153,11 +156,11 @@ describe('RecordMenu · 入口与字段完整性（桌面/手机同一套）', (
 
 /**
  * v1.1.7 桌面皮肤重构守护：桌面端只换材质，入口与表单字段必须与手机端一字不差。
- * 这条测试锁住「加号菜单 = 4 记录卡 + 4 生活流入口 + 取消」，
+ * 这条测试锁住「加号菜单 = 3 记录卡 + 新增订阅 + 4 生活流入口 + 取消」，
  * 以及四个记录抽屉里的关键字段 —— 防止以后为了「桌面优化」把东西做丢。
  */
 describe('RecordMenu · 入口与字段完整性（桌面/手机同一套）', () => {
-  const CARDS = ['AI 记一笔', '价值记账', '手动录入', '新增订阅'];
+  const CARDS = ['对话记一笔', '价值记账', '手动录入', '新增订阅'];
   const LIFE = ['购物冷静', '心动清单', '时间切片', '情绪速写'];
 
   it('加号菜单：4 张记录卡 + 4 个生活流入口 + 取消，一个不少', async () => {

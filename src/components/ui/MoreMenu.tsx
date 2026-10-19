@@ -44,11 +44,17 @@ export function MoreMenu({ items, onClose }: { items: MoreMenuItem[]; onClose: (
       <div
         className={
           wide
-            ? 'pop-enter mx-auto w-full max-w-xs rounded-2xl bg-surface p-2'
-            : 'sheet-enter mx-auto w-full max-w-xl rounded-t-3xl bg-surface p-2 pb-[max(env(safe-area-inset-bottom),1rem)]'
+            ? 'pop-enter mx-auto w-full max-w-xs rounded-2xl bg-surface p-2 shadow-2xl'
+            : 'sheet-enter mx-auto w-full max-w-xl rounded-t-3xl bg-surface p-2 pb-[max(env(safe-area-inset-bottom),1rem)] shadow-2xl'
         }
         onClick={(e) => e.stopPropagation()}
       >
+        {/* 小把手：底部弹层统一语言（v1.3.1） */}
+        {!wide ? (
+          <div className="flex justify-center pt-1.5 pb-1">
+            <span className="h-1 w-9 rounded-full bg-line-2" aria-hidden />
+          </div>
+        ) : null}
         {items.map((it) => (
           <button
             key={it.key}

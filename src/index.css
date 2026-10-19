@@ -869,3 +869,21 @@ html[data-shell='pc'][data-skin-preview='1'] .nw-skinbar {
     transform: translateX(0);
   }
 }
+
+/* ★v1.3.1 移动端抽屉化：底部上滑（覆盖 nw-smart-enter 的右侧滑入） */
+.nw-smart-sheet {
+  animation: nw-smart-up 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes nw-smart-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nw-smart-sheet {
+    animation: none !important;
+  }
+}

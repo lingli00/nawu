@@ -7,6 +7,7 @@ import { IconPreview, iconBaseOf } from '../components/IconPicker';
 import { MoreMenuButton } from '../components/ui/MoreMenu';
 import { EmptyState } from '../components/ui/EmptyState';
 import { onSheetOpen } from '../lib/sheetBus';
+import { openSmartRecord } from '../lib/smartRecordBus';
 import {
   useDataStore,
   useSettingsStore,
@@ -242,8 +243,8 @@ export default function LedgerPage() {
           className="dt:col-span-2"
           icon={Leaf}
           title={`这个${grain === 'day' ? '天' : '月'}还没有记录`}
-          actionLabel="试试 AI 记一笔"
-          onAction={() => nav('/ai')}
+          actionLabel="说一句，记一笔"
+          onAction={openSmartRecord}
         />
       );
     }
@@ -314,8 +315,8 @@ export default function LedgerPage() {
           className="dt:col-span-2"
           icon={Leaf}
           title={`${year} 年还没有记录`}
-          actionLabel="试试 AI 记一笔"
-          onAction={() => nav('/ai')}
+          actionLabel="说一句，记一笔"
+          onAction={openSmartRecord}
         />
       );
     }

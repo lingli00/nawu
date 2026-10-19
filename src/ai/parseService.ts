@@ -279,7 +279,7 @@ export async function parse(text: string, ctx: ParseContext): Promise<ParseOutco
  *   AI 调用失败自动回落本地 OCR；
  * - 未配置 AI：本地算力识别（Tesseract.js OCR 出文字 → 本地规则解析），
  *   **离线可用**，不再直接报错；
- * - 返回与 parse 一致的 ParseOutcome，AiPage 复用同一套确认落库 UI。
+ * - 返回与 parse 一致的 ParseOutcome，对话记录面板复用同一套确认落库 UI。
  */
 export async function parseImage(dataUrl: string, ctx: ParseContext): Promise<ParseOutcome> {
   const cfg = aiConfigOf(ctx.settings);

@@ -55,8 +55,13 @@ export default function SmartRecordCard({
   /** ★v1.3.0 名称的镜像 state（只驱动智能图标预览，提交仍读 DOM 真值）。 */
   const [nameText, setNameText] = useState(initial.name);
   const iconBase = useMemo(iconBaseOf, []);
-  /** 智能匹配预览（本地品牌资产 → 内置 glyph → 代理 → 分类默认）。 */
+  /**
+   * 智能匹配预览（本地品牌资产 → 内置 glyph → 代理 → 分类默认）。
+   * ★v1.3.1：仅物品/订阅需要图标——生活流（消费流水）条目卡去掉品牌图标，
+   * 一行「午饭花了25」旁边挂品牌 logo 只会分散注意力。
+   */
   const iconTop = useMemo(() => {
+    if (kind === 'ledger') return null;
     const kw = nameText.trim();
     if (kw.length < 2) return null;
     const cat = categories.find((c) => c.id === categoryId);
@@ -92,13 +97,13 @@ export default function SmartRecordCard({
 
   return (
     <section
-      className="rounded-card border border-line bg-surface p-4"
+      className="rounded-2xl border border-line bg-surface p-3.5"
       aria-label="识别记录预览"
     >
-      <h3 className="mb-3 text-sm font-semibold">识别记录预览</h3>
+      <h3 className="mb-2.5 text-sm font-semibold">识别记录预览</h3>
 
       {/* 大类选择器（可点击切换） */}
-      <div className="mb-3 flex items-center gap-1.5">
+      <div className="mb-2.5 flex items-center gap-1.5">
         <span className="text-[11px] text-ink-3">大类</span>
         {KIND_CHIPS.map(({ kind: k, label }) => (
           <button
@@ -114,7 +119,7 @@ export default function SmartRecordCard({
         ))}
       </div>
 
-      <div className="space-y-2.5">
+      <div className="space-y-2">
         {/* 小类下拉 */}
         <label className="flex items-center gap-2">
           <span className="w-12 shrink-0 text-[11px] text-ink-3">小类</span>
@@ -189,11 +194,11 @@ export default function SmartRecordCard({
         </label>
       </div>
 
-      <p className="mt-2.5 text-[11px] leading-4 text-ink-3">
+      <p className="mt-2 text-[11px] leading-4 text-ink-3">
         改动大类或小类后确认，系统会自动学会这条归类规则（存在本机）。
       </p>
 
-      <div className="mt-3 flex gap-2">
+      <div className="mt-2.5 flex gap-2">
         <button
           type="button"
           onClick={onCancel}

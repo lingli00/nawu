@@ -202,9 +202,13 @@ function ImagePickOverlay({
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-end bg-black/40" onClick={onClose}>
       <div
-        className="sheet-enter mx-auto max-h-[86vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]"
+        className="sheet-enter mx-auto max-h-[86vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* 小把手：与全局 Sheet / 对话抽屉一致的底部弹层语言（v1.3.1） */}
+        <div className="-mt-1 mb-2 flex justify-center">
+          <span className="h-1 w-9 rounded-full bg-line-2" aria-hidden />
+        </div>
         <div className="mb-3 flex items-center justify-between">
           <p className="text-sm font-semibold">商品图</p>
           <button

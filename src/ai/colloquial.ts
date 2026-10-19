@@ -100,6 +100,9 @@ export function cleanNameText(text: string, amountRaw?: string): string {
   s = s.replace(PLACE_GENERIC_RE, ' ');
   // 「花了 29 块钱」金额片段
   s = s.replace(SPEND_RE, ' ');
+  // ★v1.3.1 行尾裸「0元」（订单截图 0 元券后订单的合成句「买了X 0元」：
+  // amountRaw 只剥数字，「0元」两字会残留在名称里——「库迪咖啡 0元」→「库迪咖啡」）
+  s = s.replace(/\s*(?:券后\s*)?0\s*元\s*$/, ' ');
   // 数量短语（细节已抽进备注）
   QTY_RE.lastIndex = 0;
   s = s.replace(QTY_RE, ' ');

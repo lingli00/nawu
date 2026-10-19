@@ -241,7 +241,7 @@ export const useDataStore = create<DataState>()((set, get) => {
      * - 未退役 / 无净赚 / 物品已删除 → 移除该物品关联的记录（恢复在用=撤回收益）。
      *
      * 为什么放 store 而不是页面：标记退役（详情弹窗）、改出售价（编辑表单）、
-     * AI 退役转卖（AiPage）、删除物品（HomePage.del）四处都会触发，
+     * AI 退役转卖（对话记录面板）、删除物品（HomePage.del）四处都会触发，
      * 口径必须只有一份。生活流记录带 src/refId，恢复备份时按集合原样透传。
      */
     syncSaleIncome: async (goodsId) => {

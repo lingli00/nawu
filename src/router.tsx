@@ -8,7 +8,6 @@ import ServerEditPage from './pages/ServerEditPage';
 import HomePage from './pages/HomePage';
 import ReportPage from './pages/ReportPage';
 import LedgerPage from './pages/LedgerPage';
-import AiPage from './pages/AiPage';
 import ManualRecordSheet from './pages/ManualRecordSheet';
 import MePage from './pages/MePage';
 import WallPage from './pages/WallPage';
@@ -53,9 +52,10 @@ export const AppRoutes: AppRoute[] = [
   { path: '/overview', element: <Navigate to="/home" replace /> },
   { path: '/report', element: <ReportPage /> },
   { path: '/ledger', element: <LedgerPage /> },
-  { path: '/ai', element: <AiPage /> },
-  // P11 结果确认已并入 AiPage（解析结果就地勾选确认）
-  { path: '/ai/confirm', element: <Navigate to="/ai" replace /> },
+  // ★v1.3.1：独立「AI 记一笔」页全链路移除，旧链重定向回首页
+  //（对话式记录在任意页经加号「对话记一笔」/右滑手势唤起 SmartRecordDock）
+  { path: '/ai', element: <Navigate to="/home" replace /> },
+  { path: '/ai/confirm', element: <Navigate to="/home" replace /> },
   { path: '/record', element: <ManualRecordSheet /> },
   { path: '/record/:id', element: <ManualRecordSheet /> },
 

@@ -55,7 +55,7 @@ function ToastView({
         : 'bg-surface text-ink';
   return (
     <div
-      className={`toast-enter mx-4 mt-2 w-[min(92vw,420px)] rounded-btn px-4 py-3 shadow-lg ${tone}`}
+      className={`toast-enter mx-4 mt-2 w-[min(92vw,420px)] rounded-2xl border border-line/60 px-4 py-3 shadow-lg ${tone}`}
       onClick={() => onDismiss(toast.id)}
     >
       <div className="flex items-center justify-between gap-3">
@@ -86,16 +86,16 @@ function DialogView({
   onResolve: (ok: boolean) => void;
 }): JSX.Element {
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 px-6">
-      <div className="w-full max-w-[320px] rounded-card bg-surface p-4 shadow-lg">
-        <div className="t-h3">{request.title}</div>
+    <div className="fade-enter fixed inset-0 z-[90] flex items-center justify-center bg-black/40 px-6">
+      <div className="pop-enter w-full max-w-[320px] rounded-2xl bg-surface p-5 shadow-2xl">
+        <div className="t-h3 text-ink">{request.title}</div>
         {request.message ? (
           <div className="mt-2 t-body text-ink-2">{request.message}</div>
         ) : null}
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
-            className="min-h-[44px] px-4 rounded-btn t-body text-ink-2"
+            className="min-h-[44px] px-4 rounded-btn t-body text-ink-2 active:bg-surface-2"
             onClick={() => {
               void haptic('select');
               onResolve(false);
@@ -105,7 +105,7 @@ function DialogView({
           </button>
           <button
             type="button"
-            className="min-h-[44px] px-4 rounded-btn t-body text-accent font-medium"
+            className="min-h-[44px] px-4 rounded-btn t-body font-medium text-accent active:bg-accent-soft"
             onClick={() => {
               void haptic('medium');
               onResolve(true);

@@ -64,6 +64,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- P1：物品图片（相册读取，Android 13+） -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- v1.3.1：对话页「按住说话」语音识别（用户反馈：APP 端长按语音无响应）。
+         Capacitor 7 的 BridgeWebChromeClient 在 WebView 请求 AUDIO_CAPTURE 时，
+         会同时校验 manifest 里的 MODIFY_AUDIO_SETTINGS + RECORD_AUDIO，
+         再经 permissionLauncher 弹系统运行时授权；缺声明 → 系统直接拒 → 识别静默失败。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- v1.1.7：天气改为纯 IP 定位（服务端本地纯真库解到区县），
          不再请求任何定位权限——App 里没有位置授权弹窗，也不需要后台定位。 -->
 </manifest>

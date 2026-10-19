@@ -1343,7 +1343,8 @@ export default function HomePage() {
           </div>
 
           {/* ============ 筛选 chips + 排序 chips（P1-9：统一 Chip 组件） ============ */}
-          <div className="no-scrollbar -mx-4 mb-2 flex gap-2 overflow-x-auto px-4">
+          {/* data-no-swipe：横向滚动容器不参与主壳滑页手势（v1.3.1） */}
+          <div data-no-swipe className="no-scrollbar -mx-4 mb-2 flex gap-2 overflow-x-auto px-4">
             {STATUS_CHIPS.map((c) => (
               <Chip key={c.key} selected={status === c.key} onClick={() => setStatus(c.key)}>
                 {c.label}

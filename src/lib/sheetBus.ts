@@ -9,9 +9,12 @@
  * 现在：同路由（菜单与目标页在同一路径）走本总线直接发信号，页面立即弹层；
  * 跨路由才用 sessionStorage 标志 + navigate（目标页挂载时消费）。
  * 两条路径互斥，不会重复弹。
+ *
+ * ★v1.3.1：'ai' 移除——对话式记录改走全局 SmartRecordDock
+ * （lib/smartRecordBus.ts），不再经弹层总线。
  */
 
-export type SheetKey = 'ai' | 'record' | 'goods' | 'sub' | 'wish' | 'cooldown' | 'mood' | 'time';
+export type SheetKey = 'record' | 'goods' | 'sub' | 'wish' | 'cooldown' | 'mood' | 'time';
 
 const listeners = new Map<SheetKey, Set<() => void>>();
 

@@ -80,7 +80,9 @@ export function extractAmount(text: string): AmountHit | null {
     let m: RegExpExecArray | null = re.exec(text);
     while (m) {
       const v = toNumber(m[1] as string);
-      if (isAmountLike(v)) return { value: v, raw: m[0], index: m.index };
+      // ★v1.3.1 显式「0元/0块」是真实金额（京东秒送券后 0 元订单的合成句
+      // 「买了X 0元」）——不放行会被兜底规则抓走名称里的规格数字（「1人份」→ ¥1）
+      if (isAmountLike(v) || (v === 0 && re === RE_UNIT)) return { value: v, raw: m[0], index: m.index };
       m = re.exec(text);
     }
   }

@@ -15,6 +15,7 @@ import {
   type LearnedRule,
 } from '../../ai/ruleBank';
 import { bumpRuleHits, loadLearnedRules, recordCorrection } from '../../api/learnedRules';
+import { onOpenSmartRecord } from '../../lib/smartRecordBus';
 import SmartRecordCard, { type RecordCardState } from './SmartRecordCard';
 import { toastError, toastSuccess, useDataStore, useSettingsStore } from '../../store';
 import type { AiResultItem } from '../../types/ai';
@@ -54,6 +55,21 @@ function nameOfLedger(note: string): string {
   return (note ?? '').replace(/^[早午晚宵夜下上]{1,2}[饭餐茶]·/, '').trim();
 }
 
+/** 按住说话的计时显示：0:03 / 1:05。 */
+function fmtRecSecs(s: number): string {
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/**
+ * ★v1.3.1 当前是否跑在 Capacitor 原生容器（APP）里。
+ * 语音识别报错文案要分场景：APP 内引导系统设置，浏览器引导地址栏授权。
+ * 用 window 探测而非 import，与 theme.ts 保持一致（jsdom 测试环境零依赖）。
+ */
+function inNativeApp(): boolean {
+  const w = window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } };
+  return w.Capacitor?.isNativePlatform?.() === true;
+}
+
 let msgSeq = 0;
 
 /* ---------------- 悬浮入口 + 面板 ---------------- */
@@ -61,6 +77,9 @@ let msgSeq = 0;
 export default function SmartRecordDock({ mode }: { mode: 'desktop' | 'mobile' }) {
   const [open, setOpen] = useState(false);
   const [rules, setRules] = useState<LearnedRule[]>([]);
+
+  // ★v1.3.1：全局打开通道（加号右滑 / 加号菜单「对话记一笔」/ 生活流空态 CTA）
+  useEffect(() => onOpenSmartRecord(() => setOpen(true)), []);
 
   // 打开面板时读一次本地规则库（关闭后再打开会拿到最新学到的规则）
   useEffect(() => {
@@ -94,6 +113,7 @@ export default function SmartRecordDock({ mode }: { mode: 'desktop' | 'mobile' }
       </button>
       {open ? (
         <SmartRecordPanel
+          mode={mode}
           rules={rules}
           onRulesChange={reloadRules}
           onClose={() => setOpen(false)}
@@ -106,10 +126,13 @@ export default function SmartRecordDock({ mode }: { mode: 'desktop' | 'mobile' }
 /* ---------------- 对话面板 ---------------- */
 
 function SmartRecordPanel({
+  mode,
   rules,
   onRulesChange,
   onClose,
 }: {
+  /** ★v1.3.1：移动端底部抽屉 / 桌面端右侧面板两种形态。 */
+  mode: 'desktop' | 'mobile';
   rules: LearnedRule[];
   onRulesChange: () => void;
   onClose: () => void;
@@ -167,6 +190,32 @@ function SmartRecordPanel({
   const recFinalRef = useRef('');
   const recCancelRef = useRef(false);
   const recStartYRef = useRef(0);
+  /**
+   * ★v1.3.1 识别是否在跑的真实来源。
+   * 旧实现 pointerup 读 `recording` state：pointerdown 里的 setRecording(true)
+   * 还没渲染完就松手（快速点按），闭包里还是 false → 漏掉 stop()，
+   * 识别挂着不收尾——用户感知就是「长按语音没反应」。
+   */
+  const recActiveRef = useRef(false);
+  /** 按住说话计时：开始时间戳 / 已录秒数（进度条与 0:03 显示的来源）。 */
+  const recStartAtRef = useRef(0);
+  const recTimerRef = useRef<number | null>(null);
+  const [recSecs, setRecSecs] = useState(0);
+  /** 录音计时上限（秒）：与进度条满格对应，到点自动停止并发送。 */
+  const REC_MAX_SECS = 60;
+
+  /** 面板卸载（关闭）时中止识别，避免 onend 回调打到已卸载组件。 */
+  const aliveRef = useRef(true);
+  useEffect(
+    () => () => {
+      aliveRef.current = false;
+      recActiveRef.current = false;
+      if (recTimerRef.current) window.clearInterval(recTimerRef.current);
+      recTimerRef.current = null;
+      recRef.current?.abort();
+    },
+    [],
+  );
 
   useBackGuard(true, onClose);
 
@@ -194,7 +243,7 @@ function SmartRecordPanel({
     };
   };
 
-  /** 按名称模糊定位物品（退役转卖用；逻辑同 AiPage）。 */
+  /** 按名称模糊定位物品（退役转卖用）。 */
   const findGoods = (match: string): Goods | undefined => {
     const key = (match ?? '').trim();
     if (!key) return undefined;
@@ -452,6 +501,8 @@ function SmartRecordPanel({
 
   /** 按下「按住 说话」：启动 Web Speech 识别，松手/出错自动收尾。 */
   const beginRecognition = (): void => {
+    // 双击/双 pointerdown 防护：已在识别中就直接忽略
+    if (recActiveRef.current) return;
     const w = window as unknown as {
       SpeechRecognition?: new () => SpeechRecognitionLike;
       webkitSpeechRecognition?: new () => SpeechRecognitionLike;
@@ -482,10 +533,21 @@ function SmartRecordPanel({
       finishRecognition();
       if (recCancelRef.current) return;
       const code = (ev as { error?: string } | undefined)?.error ?? '';
+      // ★v1.3.1 报错文案分场景：APP 内（Capacitor 原生）引导系统设置，
+      // 浏览器引导地址栏授权；网络类错误说明 HTTPS 要求
+      const native = inNativeApp();
       if (code === 'not-allowed' || code === 'service-not-allowed') {
-        toastError('麦克风权限被拒绝，请在浏览器地址栏允许麦克风');
+        toastError(
+          native
+            ? '麦克风权限被拒绝：请到系统设置 → 应用 → 纳物 → 权限 里允许「麦克风」'
+            : '麦克风权限被拒绝，请在浏览器地址栏允许麦克风',
+        );
       } else if (code === 'network' || code === 'audio-capture') {
-        toastError('当前浏览器/网络不支持语音识别（Chrome 需 HTTPS 环境），可打字或识图');
+        toastError(
+          native
+            ? '语音识别服务连接失败，请检查网络后重试（也可直接打字）'
+            : '当前浏览器/网络不支持语音识别（Chrome 需 HTTPS 环境），可打字或识图',
+        );
       } else {
         toastError('语音识别失败，请再试或直接打字');
       }
@@ -494,24 +556,44 @@ function SmartRecordPanel({
       const cancelled = recCancelRef.current;
       const text = recFinalRef.current;
       finishRecognition();
-      if (cancelled || !text) return;
+      if (cancelled || !text || !aliveRef.current) return;
       enqueueSend(text);
     };
     recRef.current = rec;
     recFinalRef.current = '';
     recCancelRef.current = false;
+    // 注意：recStartYRef 由 pointerdown 写入（上滑取消的基准），这里不能清零
+    recStartAtRef.current = 0;
     try {
       rec.start();
-      setRecording(true);
-      setRecHint('松开手指 发送');
     } catch {
       finishRecognition();
       toastError('语音启动失败，请直接打字');
+      return;
     }
+    // 启动成功：置运行标志 + 起计时器（进度条/秒数视觉反馈，
+    // 治「长按无响应」——按下瞬间就有 0:00 与脉冲点）
+    recActiveRef.current = true;
+    setRecording(true);
+    recStartAtRef.current = Date.now();
+    setRecSecs(0);
+    setRecHint('松开手指 发送');
+    recTimerRef.current = window.setInterval(() => {
+      const s = Math.floor((Date.now() - recStartAtRef.current) / 1000);
+      setRecSecs(s);
+      if (s >= REC_MAX_SECS) {
+        setRecHint(`已达 ${REC_MAX_SECS} 秒上限，自动发送`);
+        recRef.current?.stop();
+      }
+    }, 250);
   };
 
-  /** 收尾（清高亮与提示）。 */
+  /** 收尾（清高亮、计时与提示）。 */
   const finishRecognition = (): void => {
+    recActiveRef.current = false;
+    if (recTimerRef.current) window.clearInterval(recTimerRef.current);
+    recTimerRef.current = null;
+    setRecSecs(0);
     setRecording(false);
     setRecHint('');
   };
@@ -578,10 +660,25 @@ function SmartRecordPanel({
       {/* 遮罩：点空白区域关闭面板 */}
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
       <aside
-        className="nw-smart-enter nw-smart-panel fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-surface shadow-2xl"
-        style={{ top: 0, bottom: 0, right: 0, left: 'auto', paddingTop: 'env(safe-area-inset-top)' }}
+        className={`nw-smart-enter nw-smart-panel fixed z-50 flex flex-col bg-surface shadow-2xl ${
+          mode === 'mobile'
+            ? 'nw-smart-sheet inset-x-0 bottom-0 max-h-[86vh] rounded-t-3xl'
+            : 'inset-y-0 right-0 w-full max-w-md'
+        }`}
+        style={
+          mode === 'mobile'
+            ? { paddingBottom: 'env(safe-area-inset-bottom)' }
+            : { top: 0, bottom: 0, right: 0, left: 'auto', paddingTop: 'env(safe-area-inset-top)' }
+        }
         aria-label="智能记录"
       >
+        {/* ★v1.3.1 移动端抽屉把手（视觉提示：可下滑关闭的底部抽屉） */}
+        {mode === 'mobile' ? (
+          <div className="flex shrink-0 justify-center pt-2">
+            <span className="h-1 w-9 rounded-full bg-line-2" aria-hidden />
+          </div>
+        ) : null}
+
         {/* 顶部标题栏 */}
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
           <span className="text-sm font-semibold">智能记录</span>
@@ -646,7 +743,10 @@ function SmartRecordPanel({
         {/* 底部输入区（微信式：语音/文字切换 · 输入/按住说话 · 识图 · 发送） */}
         <div
           className="shrink-0 border-t border-line p-3"
-          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
+          style={{
+            // 桌面右侧面板自带顶部安全区；移动抽屉的安全区已在 aside 上留过，这里不重复
+            paddingBottom: mode === 'mobile' ? '0.75rem' : 'calc(env(safe-area-inset-bottom) + 0.75rem)',
+          }}
         >
           <div className="flex items-center gap-2">
             {/* 左侧：语音 / 文字 形态切换 */}
@@ -681,11 +781,13 @@ function SmartRecordPanel({
                   beginRecognition();
                 }}
                 onPointerMove={(e) => {
-                  if (!recording) return;
+                  if (!recActiveRef.current) return;
                   setRecHint(recStartYRef.current - e.clientY > 60 ? '抬起手指 取消' : '松开手指 发送');
                 }}
                 onPointerUp={(e) => {
-                  if (!recording) return;
+                  // ★v1.3.1 读 ref 不读 state：快速点按时 setRecording 还没渲染完，
+                  // 闭包里 recording 仍是 false 会漏收尾（识别挂着不发送）
+                  if (!recActiveRef.current) return;
                   if (recStartYRef.current - e.clientY > 60) {
                     recCancelRef.current = true;
                     recRef.current?.abort();
@@ -700,7 +802,16 @@ function SmartRecordPanel({
                   finishRecognition();
                 }}
               >
-                {recHint || '按住 说话'}
+                {recording ? (
+                  <span className="flex w-full items-center justify-center gap-2 px-2">
+                    {/* 脉冲点：麦克风已启动的即时视觉确认 */}
+                    <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" aria-hidden />
+                    <span className="shrink-0 font-semibold tabular-nums">{fmtRecSecs(recSecs)}</span>
+                    <span className="truncate">{recHint || '正在聆听…'}</span>
+                  </span>
+                ) : (
+                  '按住 说话'
+                )}
               </button>
             ) : (
               <input
@@ -752,6 +863,22 @@ function SmartRecordPanel({
               </button>
             ) : null}
           </div>
+          {/* ★v1.3.1 按住说话进度条：录音时长的视觉反馈（用户反馈「长按语音进度条无响应」） */}
+          {recording ? (
+            <div
+              className="mt-2 h-[3px] w-full overflow-hidden rounded-full bg-surface-2"
+              role="progressbar"
+              aria-label="录音时长"
+              aria-valuemin={0}
+              aria-valuemax={REC_MAX_SECS}
+              aria-valuenow={Math.min(recSecs, REC_MAX_SECS)}
+            >
+              <div
+                className="h-full rounded-full bg-accent transition-all duration-200"
+                style={{ width: `${(Math.min(recSecs, REC_MAX_SECS) / REC_MAX_SECS) * 100}%` }}
+              />
+            </div>
+          ) : null}
           {busy ? <p className="mt-1.5 text-center text-[11px] text-ink-3">识别中…</p> : null}
         </div>
       </aside>
@@ -773,8 +900,8 @@ function SimpleCard({
   onCancel: () => void;
 }) {
   return (
-    <section className="rounded-card border border-line bg-surface p-4" aria-label={title}>
-      <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+    <section className="rounded-card border border-line bg-surface p-3.5" aria-label={title}>
+      <h3 className="mb-1.5 text-sm font-semibold">{title}</h3>
       {lines.map((l, i) => (
         <p key={i} className="text-sm leading-5 text-ink-2">
           {l}
