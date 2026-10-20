@@ -336,29 +336,36 @@ export default function WeatherLine({ className = '' }: { className?: string }):
     <>
       {/* ★v1.1.8：原来是 11px 的 ink-3 纯文字，在玻璃皮肤的浅色渐变背景上几乎看不见；
           改成带描边的浅底胶囊（12px / ink-2 / 图标用主色），任何皮肤与深浅色下都能读出来 */}
-      {/* 块级容器：否则 inline-flex 的胶囊会和下面的「物品/订阅」分段控件挤在同一行 */}
-      <div className={`flex ${className}`}>
+      {/* ★v1.3.4 天气胶囊加宽（用户反馈：只显示两个字就被截断）：
+          原来是一枚「按内容自适应 + max-w-full + truncate」的胶囊，只要地名或
+          天气描述长一点（区县名 + 雷雨伴冰雹 + 建议），后半句就被省略号吃掉。
+          现在改为**整行宽**的浅底条：手机上占满内容宽度，电脑上按内容自适应但
+          最宽 24rem；文案允许换行（去掉了 truncate），多长的地名都完整显示。 */}
+      <div className={`flex w-full ${className}`}>
         <button
           type="button"
           onClick={() => setOpen(true)}
           title={`${loc.full} · 按网络 IP 定位${wx ? ` · 今日 ${wx.tMin}~${wx.tMax}° · 降水概率 ${wx.pop}% · 紫外线 ${wx.uv}` : ''}（点击查看定位详情）`}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-left text-xs font-medium leading-4 text-ink-2 active:opacity-80"
+          className="flex w-full max-w-full items-center gap-2 rounded-2xl bg-accent-soft px-3 py-1.5 text-left text-[13px] font-medium leading-5 text-ink-2 active:opacity-80 sm:w-auto sm:min-w-[15rem] sm:max-w-[24rem]"
         >
           {advice ? (
-            <advice.Icon size={13} strokeWidth={1.9} className="shrink-0 text-accent" aria-hidden />
+            <advice.Icon size={14} strokeWidth={1.9} className="shrink-0 text-accent" aria-hidden />
           ) : (
-            <MapPin size={13} strokeWidth={1.9} className="shrink-0 text-accent" aria-hidden />
+            <MapPin size={14} strokeWidth={1.9} className="shrink-0 text-accent" aria-hidden />
           )}
-          <span className="min-w-0 truncate">
+          <span className="min-w-0 flex-1 break-words">
             {loc.short}
             {wx ? ` ${wx.temp}° ${label}` : ' …'}
-            {advice ? (
-              <>
-                <span className="mx-1 text-ink-3/50">·</span>
-                {advice.text}
-              </>
-            ) : null}
           </span>
+          {advice ? (
+            <>
+              {/* 建议靠右：整行宽之后，左侧地名天气 + 右侧一句建议，读起来更像一条状态条 */}
+              <span className="shrink-0 text-ink-3/50" aria-hidden>
+                ·
+              </span>
+              <span className="shrink-0">{advice.text}</span>
+            </>
+          ) : null}
         </button>
       </div>
 

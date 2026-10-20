@@ -953,6 +953,39 @@ html[data-shell='pc'][data-skin-preview='1'] .nw-skinbar {
   height: 100dvh;
 }
 
+/* ★v1.3.4 微信式横向分页器：把「跟手」交给浏览器原生横向滚动。
+   为什么不用 JS 手动 translate：真机上一碰就被 pointercancel 打断（见 MainShell 注释）。
+   - scroll-snap-type: x mandatory → 拖到哪停哪（无极悬停），松手吸附最近一页；
+   - scroll-snap-stop: always   → 一次最多翻一页，甩快了也不连跳；
+   - 每页各自 overflow-y:auto   → 横竖手势互不抢；
+   - scrollbar 隐藏             → 原生滚动条在 App 里是多余的视觉噪音。 */
+.nw-pager-track {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.nw-pager-track::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.nw-pager-pane {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  -webkit-overflow-scrolling: touch;
+}
+
 html[data-shell='pc'] .nw-page-flush > header {
   background: transparent !important;
   backdrop-filter: none !important;

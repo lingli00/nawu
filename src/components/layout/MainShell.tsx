@@ -381,32 +381,27 @@ function SideAction({ Icon, label, narrow, onClick }: { Icon: LucideIcon; label:
 /* ---------------- 移动壳：微信式横向分页器（四页签，v1.3.3） ---------------- */
 
 /**
- * ★v1.3.3 滑页重做（用户反馈：切换不连贯，要「微信那种」手感）。
+ * ★v1.3.4 横滑第二次重做（用户反馈：手机上根本滑不动、没有「停在中途」的手感）。
  *
- * 旧实现的问题：手指拖动时只把**当前页**平移 40%（没有下一页跟在后面），
- * 松手先弹回原位、再整页跳转——中间是断的，所以「不连贯」。
+ * 为什么 v1.3.3 的写法在真机上失效：那一版用 pointer 事件 + 手动 translate。
+ * 鼠标拖动是好的，但手指一碰，浏览器在判定「这是滚动手势」后会立刻派发
+ * `pointercancel`（实测只走到 19.5px 就被取消），拖动状态随即作废 ——
+ * 所以 App / 手机网页里四页纹丝不动。
  *
- * 新实现是一个真正的横向分页器：
- * - 四页并排成一条 track，手指横移多少，track 就跟着走多少（1:1，无缩放）；
- * - 相邻页在**决定横滑的那一刻**才挂载（不预渲染，省流量），所以拖到一半
- *   左右都能看到邻页真实内容，可以停在任意半过渡位置（无极悬停）；
- * - 松手按「位移 > 22% 屏宽」或「甩动速度 > 0.45 px/ms」判定翻页，
- *   否则回弹；翻页用 280ms 的同一条缓动曲线，和微信的跟手感对齐；
- * - 首尾页继续给阻尼（0.32），拖不出去。
+ * 现在把「跟手」交还给浏览器原生横向滚动：
+ * - track 是 `overflow-x:auto` + `scroll-snap-type: x mandatory`：
+ *   手指移多少跟多少（1:1），**可以停在两页中间**（无极悬停），松手才吸附；
+ * - 每屏一个吸附点（`scroll-snap-align:start`），再加 `scroll-snap-stop:always`，
+ *   一次最多翻一页，甩得再快也不会连跳——与微信的分页手感一致；
+ * - 纵向滚动仍归每页自己的 `overflow-y:auto`，横竖不抢手势；
+ * - 滚动停下后（`scrollend`，老内核回落 120ms 防抖）才把路由切到当前页，
+ *   底栏高亮跟着走；点底栏则把 track 瞬时对齐到目标页。
  *
- * 每页各自滚动（`overflow-y-auto`），切回来时滚动位置还在——这也是微信的行为。
+ * 每页各自滚动，切回来时滚动位置还在——这也是微信的行为。
  */
 
-/** 翻页判定：位移阈值占屏宽比例。 */
-const PAGE_RATIO = 0.22;
-/** 翻页判定：甩动速度阈值（px/ms）。 */
-const PAGE_VELOCITY = 0.45;
-/** 横向/纵向判定比（纵向占主导就交还给滚动）。 */
-const SWIPE_DOMINATE = 1.2;
-/** 手指位移小于该值视为「没想滑」。 */
-const SWIPE_SLOP = 8;
-/** 翻页动画时长与曲线（与微信接近的减速曲线）。 */
-const PAGE_TRANSITION = 'transform 280ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+/** 滚动停止的兜底判定时长（ms）：scrollend 不可用的老内核靠这个防抖。 */
+const SETTLE_MS = 120;
 
 /** ★v1.3.2 左右滑动引导的「已看过」标记（看过一次后不再打扰）。 */
 const SWIPE_GUIDE_KEY = 'gf.swipeGuide.seen';
@@ -481,118 +476,92 @@ function MobileShell({
     return () => window.clearTimeout(t);
   }, [guideOpen]);
 
-  /* ---------- 分页器：track 平移 + 邻页按需挂载 ---------- */
+  /* ---------- 分页器：原生横向滚动 + 吸附（v1.3.4） ---------- */
 
-  const mainRef = useRef<HTMLElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
-  /** 已挂载过的邻页索引（挂上就不再卸载，来回滑不用重新请求数据）。 */
-  const [mounted, setMounted] = useState<Set<number>>(() => new Set());
-  const drag = useRef({ active: false, decided: false, x: 0, y: 0, dx: 0, t: 0, w: 0 });
+  /** 已挂载的页索引：用过就不再卸载，来回滑不重新取数、滚动位置也留着。 */
+  const [mounted, setMounted] = useState<Set<number>>(() => new Set<number>([idx]));
+  /** 手指是否还在屏上：拖动中不改路由，免得和手指抢滚动位置。 */
+  const touching = useRef(false);
+  /** 滚动停止的合并定时器（scrollend 的兜底）。 */
+  const settleTimer = useRef(0);
+  const idxRef = useRef(idx);
+  idxRef.current = idx;
 
-  const widthOf = (): number => mainRef.current?.clientWidth ?? 0;
+  /** 把路由切到「滚动停下来的那一页」；滚动未停或手指还在屏上时不动。 */
+  const commitRef = useRef<() => void>(() => undefined);
+  commitRef.current = (): void => {
+    const el = trackRef.current;
+    if (!el || touching.current) return;
+    const w = el.clientWidth || 1;
+    const i = Math.max(0, Math.min(TABS.length - 1, Math.round(el.scrollLeft / w)));
+    if (i === idxRef.current) return;
+    const target = TABS[i];
+    if (!target) return;
+    dismissGuide();
+    void haptic('select');
+    nav(target.to);
+  };
 
-  /**
-   * 路由变化 → track 无动画归位到目标页。
-   * 用 layout effect：必须在浏览器绘制前完成，否则会看到上一页闪一帧。
-   */
+  /** 邻页预热：当前页 ±1 先挂上真实内容，手指一动就看得到下一页。 */
+  useEffect(() => {
+    setMounted((prev) => {
+      let grew = false;
+      const next = new Set(prev);
+      for (const i of [idx - 1, idx, idx + 1]) {
+        if (i >= 0 && i < TABS.length && !next.has(i)) {
+          next.add(i);
+          grew = true;
+        }
+      }
+      return grew ? next : prev;
+    });
+  }, [idx]);
+
+  /** 路由变化 → track 瞬时对齐到目标页（点底栏、返回、深链都走这里）。 */
   useLayoutEffect(() => {
     const el = trackRef.current;
     if (!el) return;
-    el.style.transition = 'none';
-    el.style.transform = `translate3d(${-idx * widthOf()}px, 0, 0)`;
+    const w = el.clientWidth;
+    if (!w) return;
+    const target = idx * w;
+    if (Math.abs(el.scrollLeft - target) > 1) el.scrollLeft = target;
   }, [idx]);
 
-  /** 屏幕尺寸变化（旋转 / 键盘）后重新对齐，避免错位半屏。 */
+  /** 旋转 / 键盘 / 窗口尺寸变化后重新对齐，避免停在两页中间。 */
   useEffect(() => {
     const onResize = (): void => {
       const el = trackRef.current;
-      if (!el) return;
-      el.style.transition = 'none';
-      el.style.transform = `translate3d(${-idx * widthOf()}px, 0, 0)`;
+      if (!el || !el.clientWidth) return;
+      el.scrollLeft = idxRef.current * el.clientWidth;
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [idx]);
+  }, []);
 
-  const mountNeighbors = (): void => {
-    setMounted((prev) => {
-      const next = new Set(prev);
-      for (const i of [idx - 1, idx + 1]) if (i >= 0 && i < TABS.length) next.add(i);
-      return next.size === prev.size ? prev : next;
-    });
-  };
-
-  const onMainDown = (e: React.PointerEvent<HTMLElement>): void => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    const t = e.target as HTMLElement | null;
-    // 表单 / 可点击元素 / 横向滚动容器不参与滑页（避免与内部手势打架）
-    if (t?.closest('input, textarea, select, button, a, [data-no-swipe]')) {
-      drag.current.active = false;
-      return;
-    }
-    drag.current = { active: true, decided: false, x: e.clientX, y: e.clientY, dx: 0, t: Date.now(), w: widthOf() };
-    if (trackRef.current) trackRef.current.style.transition = 'none';
-  };
-
-  const onMainMove = (e: React.PointerEvent<HTMLElement>): void => {
-    const s = drag.current;
-    if (!s.active) return;
-    const dx = e.clientX - s.x;
-    const dy = e.clientY - s.y;
-    if (!s.decided) {
-      if (Math.abs(dx) < SWIPE_SLOP && Math.abs(dy) < SWIPE_SLOP) return;
-      // 纵向不占主导 → 放弃滑页，交还纵向滚动
-      if (Math.abs(dx) < Math.abs(dy) * SWIPE_DOMINATE) {
-        s.active = false;
-        return;
-      }
-      s.decided = true;
-      s.w = widthOf();
-      // 决定横滑的这一帧才挂邻页：页面数据不会因为「可能滑动」而被提前请求
-      mountNeighbors();
-    }
-    s.dx = dx;
-    // 首尾页阻尼：拖不出去，但仍有跟随反馈
-    const atEdge = (dx > 0 && idx === 0) || (dx < 0 && idx === TABS.length - 1);
-    const offset = dx * (atEdge ? 0.32 : 1);
-    if (trackRef.current) {
-      trackRef.current.style.transform = `translate3d(${-idx * (s.w || 0) + offset}px, 0, 0)`;
-    }
-  };
-
-  const onMainUp = (): void => {
-    const s = drag.current;
-    if (!s.active) return;
-    s.active = false;
+  /** 滚动结束判定：新内核走 scrollend，老内核靠 onScroll 的 120ms 防抖兜底。 */
+  useEffect(() => {
     const el = trackRef.current;
-    const w = s.w || widthOf() || 360;
-    const elapsed = Math.max(1, Date.now() - s.t);
-    const velocity = s.dx / elapsed;
+    if (!el) return;
+    const end = (): void => commitRef.current();
+    el.addEventListener('scrollend', end);
+    return () => el.removeEventListener('scrollend', end);
+  }, []);
 
-    let next = idx;
-    if (s.decided) {
-      const moved = Math.abs(s.dx);
-      // 位移够远（>22% 屏宽）**或**甩得够快；但再快也要过 56px 底线，
-      // 否则手抖一下（几十毫秒内 20~40px）就会整页翻走，比微信敏感到误触
-      const farEnough = moved > Math.max(56, w * PAGE_RATIO);
-      const fastEnough = moved > 56 && Math.abs(velocity) > PAGE_VELOCITY;
-      if (farEnough || fastEnough) next = s.dx < 0 ? idx + 1 : idx - 1;
-    }
-    next = Math.min(TABS.length - 1, Math.max(0, next));
-
-    if (el) {
-      el.style.transition = PAGE_TRANSITION;
-      el.style.transform = `translate3d(${-next * w}px, 0, 0)`;
-    }
-
-    const dx = s.dx;
-    s.dx = 0;
-    if (next === idx) return;
-    // ★v1.3.2：用户已经会用横滑了，引导气泡立刻退场
-    if (Math.abs(dx) > 0) dismissGuide();
-    void haptic('select');
-    nav(TABS[next]!.to);
+  /** 合并式「滚动停稳后再判定」：动画中不断有 scroll 事件，定时器会被反复重置。 */
+  const scheduleCommit = (ms: number = SETTLE_MS): void => {
+    if (settleTimer.current) window.clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(() => commitRef.current(), ms);
   };
+
+  const onTrackScroll = (): void => scheduleCommit();
+
+  useEffect(
+    () => () => {
+      if (settleTimer.current) window.clearTimeout(settleTimer.current);
+    },
+    [],
+  );
 
   if (!SHELL_PATHS.has(pathname)) {
     return <>{children}</>;
@@ -605,26 +574,38 @@ function MobileShell({
       className="nw-pager-shell flex flex-col overflow-hidden bg-surface-2 text-ink"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
-      {/* 分页器本体：手指拖到哪停到哪，松手才吸附 */}
-      <main
-        ref={mainRef}
-        className="relative min-h-0 flex-1 overflow-hidden"
-        style={{ touchAction: 'pan-y' }}
-        onPointerDown={onMainDown}
-        onPointerMove={onMainMove}
-        onPointerUp={onMainUp}
-        onPointerCancel={onMainUp}
-      >
-        <div ref={trackRef} className="flex h-full w-full will-change-transform">
+      {/* 分页器本体：四页并排、原生横向滚动；拖到哪停到哪，松手吸附到最近一页 */}
+      <main className="relative min-h-0 flex-1 overflow-hidden">
+        <div
+          ref={trackRef}
+          className="nw-pager-track"
+          onScroll={onTrackScroll}
+          onTouchStart={() => {
+            touching.current = true;
+          }}
+          onTouchEnd={() => {
+            touching.current = false;
+            // 抬指瞬间吸附动画才刚开始，多等一拍（260ms）让 scroll 事件把定时器重置
+            scheduleCommit(SETTLE_MS * 2 + 20);
+          }}
+          onTouchCancel={() => {
+            touching.current = false;
+            scheduleCommit(SETTLE_MS * 2 + 20);
+          }}
+        >
           {TABS.map((t, i) => (
             <section
               key={t.to}
-              className={`h-full w-full shrink-0 overflow-y-auto overscroll-contain px-4 pt-2 ${panePad}`}
+              className={`nw-pager-pane px-4 pt-2 ${panePad}`}
               aria-hidden={i !== idx}
               // 非当前页不参与无障碍树与点击（视觉上仍在，滑动时看得到）
               style={i === idx ? undefined : { pointerEvents: 'none' }}
             >
-              {i === idx ? children : mounted.has(i) && tabPane ? tabPane(t.to) : null}
+              {tabPane && (i === idx || mounted.has(i))
+                ? tabPane(t.to)
+                : i === idx
+                  ? children
+                  : null}
             </section>
           ))}
         </div>
