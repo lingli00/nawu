@@ -17,6 +17,7 @@ import { groupByDay, sumExpense, sumIncome } from '../domain/ledger';
 import { formatSignedMoney, formatMoney } from '../lib/money';
 import { addDays, monthKey, monthLabel, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
 import { haptic } from '../lib/haptics';
+import { useLiveInput } from '../lib/useLiveInput';
 import { dailyQuote } from '../lib/dailyQuote';
 import { topSuggestion } from '../lib/iconSuggest';
 import type { Judgement, ValueRecord } from '../types/entities';
@@ -74,6 +75,10 @@ export default function LedgerPage() {
      支持关键词 / 备注 / 标题（分类名）/ 金额 四路匹配。 */
   const [searchOpen, setSearchOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
+  /* ★v1.3.5：输入即搜。非受控输入框 + 事件/轮询双保险（IME 铁律）——
+     中文输入法提交选词时 input 事件可能不派发，只挂 onChange 会出现
+     「输完「馒头」不搜、删一个字才搜」。见 lib/useLiveInput.ts。 */
+  const searchRef = useLiveInput((v) => setKeyword(v), searchOpen);
   const [day, setDay] = useState(today());
   const [ym, setYm] = useState(monthKey());
   const [year, setYear] = useState(() => Number(monthKey().slice(0, 4)));
@@ -400,8 +405,9 @@ export default function LedgerPage() {
             <input
               // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
+              ref={searchRef}
               defaultValue={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
+              enterKeyHint="search"
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   setSearchOpen(false);

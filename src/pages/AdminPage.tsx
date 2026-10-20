@@ -1731,15 +1731,20 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
       return;
     }
     const d = check.diff;
-    const delPreview = d.deletedList.slice(0, 50).join('；');
+    /* ★v1.3.5：文件删除清单不再拼进正文。
+       旧版把最多 50 条路径塞进 message，弹窗被撑得比屏幕还高，
+       标题和「开始更新」按钮一起被顶出可视区（用户点不到按钮）。
+       现在正文只留一行统计，清单走 detail —— 弹窗内独立可滚动区域，按钮固定底部。 */
     const ok = await useUiStore.getState().confirm({
       title: `更新到 v${check.remote.version}？`,
       message:
-        `新增 ${d.added} 个文件 · 更新 ${d.updated} 个 · 删除 ${d.deleted} 个 · 保留 ${d.kept} 个` +
-        (d.deleted > 0
-          ? `。将删除：${delPreview}${d.deleted > 50 ? ' …等共 ' + d.deleted + ' 个' : ''}`
-          : '。') +
-        '。更新前自动备份，失败可一键回滚；更新期间请勿关闭页面。',
+        `新增 ${d.added} 个文件 · 更新 ${d.updated} 个 · 删除 ${d.deleted} 个 · 保留 ${d.kept} 个。` +
+        '更新前自动备份，失败可一键回滚；更新期间请勿关闭页面。',
+      detail: d.deletedList.length > 0 ? d.deletedList.join('\n') : undefined,
+      detailLabel:
+        d.deletedList.length > 0
+          ? `将删除的 ${d.deleted} 个旧版本遗留文件（不影响现有数据，可上下滑动查看）`
+          : undefined,
       confirmText: '开始更新',
       danger: d.deleted > 0,
     });

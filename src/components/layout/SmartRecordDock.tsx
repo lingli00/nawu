@@ -675,10 +675,14 @@ function SmartRecordPanel({
       {/* 遮罩：点空白区域关闭面板 */}
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
       <aside
-        className={`nw-smart-enter nw-smart-panel fixed z-50 flex flex-col bg-surface shadow-2xl ${
+        /* ★v1.3.5：桌面端抽屉补左圆角（1.5rem，与 Sheet.tsx 右侧抽屉、全站 R 角一致）。
+           旧版 `inset-y-0 right-0` 没有圆角，网页端面板左侧是一条直角边，
+           和「记一笔」等其它弹层并排看像两种设计语言。
+           overflow-hidden 保证面板内的标题栏/输入区不会盖住圆角。 */
+        className={`nw-smart-enter nw-smart-panel fixed z-50 flex flex-col overflow-hidden bg-surface shadow-2xl ${
           mode === 'mobile'
             ? 'nw-smart-sheet inset-x-0 bottom-0 max-h-[86vh] rounded-t-3xl'
-            : 'inset-y-0 right-0 w-full max-w-md'
+            : 'inset-y-0 right-0 w-full max-w-md rounded-l-3xl'
         }`}
         style={
           mode === 'mobile'

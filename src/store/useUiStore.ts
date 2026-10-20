@@ -31,6 +31,14 @@ export interface ToastItem {
 export interface ConfirmOptions {
   title: string;
   message?: string;
+  /**
+   * ★v1.3.5：长文本明细（如在线更新的文件删除清单）。
+   * 单独放进**可滚动的独立区域**，不参与正文排版——否则几十条文件路径会把
+   * 弹窗撑到屏幕外，底部的「确认」按钮直接掉出可视区（用户点不到按钮）。
+   */
+  detail?: string;
+  /** detail 区域的说明标签（如「将删除的 85 个文件」）。 */
+  detailLabel?: string;
   confirmText?: string;
   cancelText?: string;
   /** 危险操作：确认按钮用 danger 色 */

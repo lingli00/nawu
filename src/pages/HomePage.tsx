@@ -24,6 +24,7 @@ import { Segmented } from '../components/ui/Segmented';
 import { Toggle } from '../components/ui/Toggle';
 import RecordMenu from '../components/RecordMenu';
 import { useBackGuard } from '../lib/backGuard';
+import { useLiveInput } from '../lib/useLiveInput';
 import { useShellMode } from '../components/layout/MainShell';
 import SubListPage from './SubListPage';
 import CategoryManageSheet from '../components/CategoryManageSheet';
@@ -926,6 +927,10 @@ export default function HomePage() {
   const [view, setView] = useState<ViewMode>('grid3');
   const [searchOpen, setSearchOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
+  /* ★v1.3.5：输入即搜 —— 非受控输入框 + 事件/轮询双保险同步（IME 铁律）。
+     旧版只挂 onChange，中文输入法选词提交那一下的事件偶尔丢失，输完最后一个字不搜，
+     删掉一个字才搜。详见 lib/useLiveInput.ts。 */
+  const searchRef = useLiveInput((v) => setKeyword(v), searchOpen);
   /** ★v1.0.33 P0-2：顶栏＋统一开加号动作菜单（与侧边栏「记一笔」/底部 FAB 同一组件），
    *  一个记录入口 —— 旧行为是直接开物品表单，三个入口两种行为。 */
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1214,8 +1219,9 @@ export default function HomePage() {
             <input
               // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
+              ref={searchRef}
               defaultValue=""
-              onChange={(e) => setKeyword(e.target.value)}
+              enterKeyHint="search"
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   setSearchOpen(false);
