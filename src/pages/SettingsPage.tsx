@@ -4,7 +4,7 @@ import PageShell from '../components/layout/PageShell';
 import PageField from '../components/ui/PageField';
 import { Toggle } from '../components/ui/Toggle';
 import { Segmented } from '../components/ui/Segmented';
-import { useAppStore, useSettingsStore, currentServer, toastSuccess, toastError } from '../store';
+import { useAppStore, useSettingsStore, useUiStore, currentServer, toastSuccess, toastError } from '../store';
 import { CURRENCIES } from '../lib/money';
 import { fmtTimestamp } from '../lib/date';
 import { APP_VERSION } from '../lib/appVersion';
@@ -69,7 +69,12 @@ export default function SettingsPage() {
   };
 
   const [checking, setChecking] = useState(false);
-  const [updateTarget, setUpdateTarget] = useState<AppUpdateTarget | null>(null);
+  /** ★v1.3.9：主壳启动检查已发现的更新直接接管（清掉全局引用），用户进来即可开更。 */
+  const [updateTarget, setUpdateTarget] = useState<AppUpdateTarget | null>(() => {
+    const pre = useUiStore.getState().pendingUpdate;
+    if (pre) useUiStore.getState().setPendingUpdate(null);
+    return pre;
+  });
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
 
@@ -105,9 +110,11 @@ export default function SettingsPage() {
     }
   };
 
-  /** 进入设置页时静默检查一次（24h 节流），有更新就直接展示更新面板。 */
+  /** 进入设置页时静默检查一次（24h 节流），有更新就直接展示更新面板。
+   *  ★v1.3.9：主壳启动检查已经带回了更新 → 不再重复请求。 */
   useEffect(() => {
     if (!isNative()) return;
+    if (updateTarget) return;
     let last = 0;
     try {
       last = Number(localStorage.getItem(AUTO_CHECK_KEY) ?? '0') || 0;

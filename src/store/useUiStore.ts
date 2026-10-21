@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { create } from 'zustand';
 import { newId } from '../lib/id';
 import { haptic } from '../lib/haptics';
+import type { AppUpdateTarget } from '../api/appUpdate';
 
 /**
  * 全局 UI 状态：Toast / 确认弹窗 / 底部弹层。
@@ -56,6 +57,12 @@ interface UiStoreState {
   toasts: ToastItem[];
   confirmRequest: ConfirmRequest | null;
   sheet: { key: string; node: ReactNode } | null;
+  /**
+   * ★v1.3.9 启动静默检查发现的可用更新。
+   * MainShell 启动检查命中后写入，全局提醒条读取展示；设置页接管后清空。
+   */
+  pendingUpdate: AppUpdateTarget | null;
+  setPendingUpdate: (t: AppUpdateTarget | null) => void;
 
   /** 弹出 Toast，3.5s 自动消失，返回 id。 */
   toast: (message: string, kind?: ToastKind, opts?: { actionLabel?: string; onAction?: () => void; durationMs?: number }) => string;
@@ -85,6 +92,8 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
   toasts: [],
   confirmRequest: null,
   sheet: null,
+  pendingUpdate: null,
+  setPendingUpdate: (t) => set({ pendingUpdate: t }),
 
   toast: (message, kind = 'info', opts = {}) => {
     const id = newId();

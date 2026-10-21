@@ -5,6 +5,17 @@ import type { LucideIcon } from 'lucide-react';
 import { APP_VERSION } from '../../lib/appVersion';
 import { haptic } from '../../lib/haptics';
 import { getSkin, type Skin } from '../../lib/skin';
+import { checkAppUpdate } from '../../api/appUpdate';
+import { useUiStore, currentServer } from '../../store';
+import { isNative } from '../../net/env';
+import {
+  markBootCheck,
+  shouldBootCheck,
+  dismissedVersion,
+  dismissVersion,
+  shouldPromptUpdate,
+} from '../../lib/updatePrompt';
+import { Download, X } from 'lucide-react';
 import RecordMenu from '../RecordMenu';
 import SkinBar from '../SkinBar';
 import { BrandMark } from '../BrandMark';
@@ -188,6 +199,25 @@ export default function MainShell({
       delete document.documentElement.dataset.shell;
     };
   }, [mode]);
+
+  // ★v1.3.9 启动静默检查更新（仅 App；12h 节流）：命中就写进全局 store，
+  // 由底部 UpdatePromptBar 弹出「发现新版本」提醒条——用户不进设置页也能看到。
+  useEffect(() => {
+    if (!isNative()) return;
+    const p = window.location.hash.replace(/^#/, '').split('?')[0];
+    if (p === '/flyme' || p.startsWith('/flyme/')) return;
+    if (!shouldBootCheck()) return;
+    markBootCheck();
+    // 延迟 3 秒：别跟启动加载、数据水合抢网络与 CPU
+    const t = window.setTimeout(() => {
+      void checkAppUpdate(currentServer())
+        .then((target) => {
+          if (target) useUiStore.getState().setPendingUpdate(target);
+        })
+        .catch(() => undefined);
+    }, 3000);
+    return () => window.clearTimeout(t);
+  }, [pathname]);
   // 管理后台独立全屏：不带主壳侧边栏/底栏，登录卡与内容才能真正居中
   // v1.1.5：后台入口已收为隐蔽路径 /flyme（界面不再给按钮）
   if (pathname === '/flyme' || pathname.startsWith('/flyme/')) {
@@ -196,6 +226,7 @@ export default function MainShell({
   // ★v1.2.0 对话式智能记录入口：全局悬浮气泡（后台 /flyme 不带）
   return (
     <>
+      <UpdatePromptBar />
       {mode === 'desktop' ? (
         <DesktopShell>{children}</DesktopShell>
       ) : (
@@ -693,5 +724,61 @@ function Tab({ to, label, Icon }: { to: string; label: string; Icon: LucideIcon 
         </>
       )}
     </NavLink>
+  );
+}
+
+/* ---------------- ★v1.3.9 全局更新提醒条 ---------------- */
+
+/**
+ * 启动静默检查命中新版本后，在页面顶部弹一条可关闭的提醒：
+ * 「发现新版本 vX.Y.Z · 去更新」→ 跳设置页（更新面板已由 store 预填，可直接开更）。
+ * 点 ✕ 记住该版本号，同版本不再打扰；发了更新版本会重新出现。
+ */
+function UpdatePromptBar(): JSX.Element | null {
+  const pendingUpdate = useUiStore((s) => s.pendingUpdate);
+  const nav = useNavigate();
+  const [dismissed, setDismissed] = useState<string>(() => dismissedVersion());
+
+  if (!pendingUpdate || !shouldPromptUpdate(pendingUpdate, dismissed)) return null;
+
+  return (
+    <div
+      className="fixed inset-x-3 z-40 mx-auto flex max-w-md justify-center"
+      style={{ top: 'calc(env(safe-area-inset-top) + 10px)' }}
+      role="status"
+      aria-label="发现新版本提醒"
+    >
+      <div
+        className="flex w-full items-center gap-2 rounded-2xl border border-accent/30 bg-surface/95 py-2 pl-3 pr-1.5 shadow-lg backdrop-blur"
+        style={{ borderColor: 'color-mix(in srgb, var(--accent) 30%, transparent)' }}
+      >
+        <Download size={15} strokeWidth={2} className="shrink-0 text-accent" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
+          发现新版本 <span className="font-semibold">v{pendingUpdate.version}</span>
+          {pendingUpdate.patch ? '（增量包，下载更快）' : ''}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            void haptic('select');
+            nav('/settings');
+          }}
+          className="h-7 shrink-0 rounded-full bg-accent px-3 text-[11px] font-semibold text-white active:opacity-90"
+        >
+          去更新
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            dismissVersion(pendingUpdate.version);
+            setDismissed(pendingUpdate.version);
+          }}
+          aria-label="关闭更新提醒"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-3 active:bg-surface-2"
+        >
+          <X size={13} strokeWidth={2.2} aria-hidden />
+        </button>
+      </div>
+    </div>
   );
 }
