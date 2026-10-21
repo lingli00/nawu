@@ -22,6 +22,7 @@ import { bumpRuleHits, loadLearnedRules, recordCorrection } from '../../api/lear
 import { pushLearnedRulesToCloud } from '../../api/ruleSync';
 import { onOpenSmartRecord } from '../../lib/smartRecordBus';
 import { isNativeApp, speechErrorText, startSpeech, type SpeechSession } from '../../lib/speechLocal';
+import { round } from '../../lib/money';
 import SmartRecordCard, { type RecordCardState } from './SmartRecordCard';
 import TradeRecordCard, { type TradeCardState } from './TradeRecordCard';
 import RetireSellCard, { type RetireCardState } from './RetireSellCard';
@@ -394,11 +395,19 @@ function SmartRecordPanel({
     });
     if (tradeHit) {
       if (pendingRef.current) pushMsg('sys', '已放弃上一条未保存的识别，重新识别本条');
+      // ★v1.3.8「预填 + 核对」：说话人没提的费用，用物品上已存的费率/快递费/杂费补齐，
+      // 卡片弹出时账已经算好，用户核对无误直接提交即可。
+      const hitGoods = findGoods(tradeHit.name);
+      const pre = goodsFeePreset(hitGoods);
       applyPending({
         mode: 'trade',
         text,
         trade: {
           ...tradeHit,
+          feeRatePermille:
+            tradeHit.feeRatePermille || (tradeHit.feeAmount > 0 ? 0 : pre.feeRatePermille),
+          shippingFee: tradeHit.shippingFee || pre.shippingFee,
+          extraFee: tradeHit.extraFee || pre.extraFee,
           categoryId: matchCategoryId(text, categories, 'goods', rules),
         },
       });
@@ -456,7 +465,12 @@ function SmartRecordPanel({
     else toastError('复制失败，请长按气泡手动选择文字');
   };
 
-  /** 进入就地编辑（同一时间只编辑一条）。 */
+  /** 进入就地编辑（同一时间只编辑一条）。
+   *
+   * ★v1.3.8：编辑期间自动收起下方确认卡片（见卡片区渲染），
+   * 把屏幕空间完全让给输入法与编辑框——卡片悬浮在输入法上方、
+   * 盖住正在编辑的内容，是用户反馈最痛的编辑体验问题。
+   */
   const startEdit = (m: ChatMsg): void => {
     setEditingId(m.id);
     // 下一帧聚焦并定位到末尾：用户要改的往往就是句尾的金额
@@ -465,6 +479,9 @@ function SmartRecordPanel({
       if (!el) return;
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
+      // 键盘弹出时固定高度抽屉不会自动滚动，主动把编辑框滚进可视区
+      // （jsdom 无此 API，老 WebView 兜底跳过）
+      el.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
     }, 0);
   };
 
@@ -921,8 +938,21 @@ function SmartRecordPanel({
           ))}
         </div>
 
-        {/* 确认卡片区（浮在会话内容下方、输入框上方） */}
-        {pending ? (
+        {/* 确认卡片区（浮在会话内容下方、输入框上方）。
+            ★v1.3.8：就地编辑期间自动收起——卡片悬浮在输入法上方会盖住
+            正在编辑的内容；提交/取消编辑后自动恢复。 */}
+        {editingId !== null ? (
+          <div className="flex shrink-0 items-center justify-between border-t border-line bg-surface-2/60 px-3 py-2">
+            <span className="text-[11px] text-ink-2">卡片已暂时收起，编辑完成后自动恢复</span>
+            <button
+              type="button"
+              onClick={() => setEditingId(null)}
+              className="rounded-full border border-line px-2.5 py-1 text-[11px] text-ink-2 active:bg-surface"
+            >
+              完成编辑
+            </button>
+          </div>
+        ) : pending ? (
           <div className="max-h-[62%] shrink-0 overflow-y-auto border-t border-line bg-surface-2/60 p-3">
             {pending.mode === 'record' ? (
               <SmartRecordCard
@@ -962,7 +992,7 @@ function SmartRecordPanel({
                 targetName={findGoods(pending.item.retireDraft.match)?.name}
                 buyPrice={findGoods(pending.item.retireDraft.match)?.price ?? 0}
                 sellPrice={pending.item.retireDraft.sellPrice}
-                initial={retireInitialOf(pending.item.retireDraft)}
+                initial={retireInitialOf(pending.item.retireDraft, findGoods(pending.item.retireDraft.match))}
                 onConfirm={(s) => void confirmRetire(s)}
                 onCancel={() => showNext(items)}
                 done={pending.done}
@@ -1080,7 +1110,12 @@ function SmartRecordPanel({
                 placeholder="一句话描述消费/心情…"
                 enterKeyHint="send"
                 /* ★v1.3.7：高度随内容自适应（旧版是固定高 input，长文本只能左右拖着看） */
-                onInput={(e) => autoGrowTextarea(e.currentTarget)}
+                onInput={(e) => {
+                  // ★v1.3.8：中文输入法组合期不改高度——高度抖动会让部分
+                  // WebView 重启组词、光标表现异常；compositionend 再补一次撑高
+                  if (!(e.nativeEvent as InputEvent).isComposing) autoGrowTextarea(e.currentTarget);
+                }}
+                onCompositionEnd={(e) => autoGrowTextarea(e.currentTarget)}
                 onKeyDown={(e) => {
                   // 回车发送；Shift+回车换行；中文输入法组合中的回车不算（否则选词就发出去了）
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -1243,13 +1278,35 @@ function plainSummary(item: AiResultItem): string {
   return item.explanation ?? '确认保存这条记录';
 }
 
-/** 退役草稿 → 卡片初值（识别到的费用直接预填，用户在卡上还能改）。 */
-function retireInitialOf(d: RetireDraft): RetireCardState {
+/** 退役草稿 → 卡片初值。
+ *
+ * ★v1.3.8「预填 + 核对」模式：说话人没提到的费用，用物品上**已经存过的**
+ * 手续费费率 / 快递费 / 杂费自动补齐——用户只需核对金额，不用重填一遍。
+ * 识别结果里明确说了的费用永远优先（用户这次说的和上次不一样很正常）。
+ */
+function goodsFeePreset(g?: Goods): { feeRatePermille: number; shippingFee: number; extraFee: number } {
+  const fees = g?.extraFees ?? [];
+  const ship = fees.find((f) => /快递|运费|邮费|物流/.test(f.name))?.amount ?? 0;
+  const extra = fees
+    .filter((f) => f.name !== '手续费' && !/快递|运费|邮费|物流/.test(f.name))
+    .reduce((a, f) => a + f.amount, 0);
+  return { feeRatePermille: g?.feeRatePermille ?? 0, shippingFee: ship, extraFee: round(extra, 2) };
+}
+
+function retireInitialOf(d: RetireDraft, g?: Goods): RetireCardState {
+  const pre = goodsFeePreset(g);
+  // 老数据只存过手续费金额、没有费率：按当时的售价反推费率，统一成「费率」口径
+  let rate = d.feeRatePermille || pre.feeRatePermille;
+  if (!rate) {
+    const manual = (g?.extraFees ?? []).find((f) => f.name === '手续费')?.amount ?? 0;
+    const sp = d.sellPrice || g?.sellPrice || 0;
+    if (manual > 0 && sp > 0) rate = round((manual / sp) * 1000, 4);
+  }
   return {
-    sellPrice: d.sellPrice,
-    feeRatePermille: d.feeRatePermille ?? 0,
-    shippingFee: d.shippingFee ?? 0,
-    extraFee: d.extraFee ?? 0,
+    sellPrice: d.sellPrice || g?.sellPrice || 0,
+    feeRatePermille: rate,
+    shippingFee: d.shippingFee || pre.shippingFee,
+    extraFee: d.extraFee || pre.extraFee,
   };
 }
 

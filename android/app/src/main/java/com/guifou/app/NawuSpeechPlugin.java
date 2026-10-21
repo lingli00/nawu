@@ -49,6 +49,10 @@ public class NawuSpeechPlugin extends Plugin {
     private boolean onDevice = false;
     /** ★v1.3.7：系统识别器不可用时的兜底——拉起任意能处理识别 Intent 的应用。 */
     private static final int REQ_SPEECH = 0x5350;
+    /** ★v1.3.8 重试状态：本次会话语言 / 已尝试次数（标准 → 离线 共 2 次）。 */
+    private String pendingLang = null;
+    private int attempt = 0;
+    private static final int MAX_ATTEMPTS = 2;
 
     /* ==================== 能力探测 ==================== */
 
@@ -110,41 +114,89 @@ public class NawuSpeechPlugin extends Plugin {
         final String lang = call.getString("lang", "zh-CN");
         activity.runOnUiThread(() -> {
             destroyRecognizer();
-            try {
-                boolean useOnDevice = false;
-                if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(getContext())) {
-                    recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(getContext());
-                    useOnDevice = true;
-                } else if (SpeechRecognizer.isRecognitionAvailable(getContext())) {
-                    recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
-                } else {
-                    // ★v1.3.7：系统里绑不到识别器时（不少 ROM 精简掉了 SpeechRecognizer 服务），
-                    // 仍然可能有应用能处理 ACTION_RECOGNIZE_SPEECH。用 Intent 兜底拉起，
-                    // 总比直接告诉用户「语音功能不可用」强。
+            pendingLang = lang;
+            pendingStartCall = call;
+            attempt = 0;
+            // ★v1.3.8：**标准识别器优先**。旧版 Android 12+ 一律走
+            // createOnDeviceSpeechRecognizer + 强制离线，不少 ROM 的离线引擎
+            // 根本没有中文模型，start 后秒报 ERROR_CLIENT——用户看到的就是
+            // 「点击按住说话立刻弹出识别失败」。标准识别器会绑到系统当前
+            // 语音服务（讯飞/语音助手等，在线离线均可），兼容性远好于纯离线。
+            tryStart(false, call);
+        });
+    }
+
+    /**
+     * ★v1.3.8 引擎选择：标准识别器优先（兼容 ROM 自带语音服务），离线为备选。
+     *
+     * @param wantOnDevice true = 纯离线识别器；false = 标准识别器
+     */
+    private void tryStart(final boolean wantOnDevice, final PluginCall call) {
+        final Activity activity = getActivity();
+        if (activity == null) return;
+        final String lang = pendingLang == null ? "zh-CN" : pendingLang;
+        attempt += 1;
+        try {
+            if (!wantOnDevice) {
+                if (!SpeechRecognizer.isRecognitionAvailable(getContext())) {
+                    // 标准识别器都没有 → 换离线（再不行由离线分支转 Intent 兜底）
+                    tryStart(true, call);
+                    return;
+                }
+                recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
+                onDevice = false;
+            } else {
+                if (Build.VERSION.SDK_INT < 31 || !SpeechRecognizer.isOnDeviceRecognitionAvailable(getContext())) {
                     startIntentRecognizer(call, lang);
                     return;
                 }
-                onDevice = useOnDevice;
-                recognizer.setRecognitionListener(listener);
+                recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(getContext());
+                onDevice = true;
+            }
+            recognizer.setRecognitionListener(recognitionListener);
+            final Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang);
+            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+            intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+            // ★v1.3.8：不再强制 EXTRA_PREFER_OFFLINE——离线引擎缺中文模型时
+            // 这是「秒报失败」的直接原因；标准识别器在线/离线由引擎自选。
+            if (wantOnDevice) {
+                // onDevice 识别器创建后服务异步绑定，立刻 startListening 会秒报
+                // ERROR_CLIENT；延迟 200ms 等绑定完成（标准识别器无此问题）。
+                final Intent delayed = intent;
+                new android.os.Handler(android.os.Looper.getMainLooper())
+                        .postDelayed(startDelayedRunnable(delayed, call), 200);
+                return;
+            }
+            recognizer.startListening(intent);
+            JSObject ret = new JSObject();
+            ret.put("onDevice", false);
+            call.resolve(ret);
+        } catch (Exception e) {
+            emitError("start-failed", e.getMessage() == null ? "语音启动失败" : e.getMessage());
+            call.reject("start-failed");
+        }
+    }
 
-                Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang);
-                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang);
-                intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-                intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
-                // 关键：优先离线（API 23+ 的官方开关）
-                intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
-                recognizer.startListening(intent);
-
-                JSObject ret = new JSObject();
-                ret.put("onDevice", useOnDevice);
-                call.resolve(ret);
+    /** onDevice 延迟启动的 Runnable（服务异步绑定完成后真正开始听）。 */
+    private Runnable startDelayedRunnable(final Intent intent, final PluginCall call) {
+        return () -> {
+            try {
+                if (recognizer != null) {
+                    recognizer.startListening(intent);
+                    JSObject ret = new JSObject();
+                    ret.put("onDevice", true);
+                    call.resolve(ret);
+                } else {
+                    call.reject("start-failed");
+                }
             } catch (Exception e) {
                 emitError("start-failed", e.getMessage() == null ? "语音启动失败" : e.getMessage());
                 call.reject("start-failed");
             }
-        });
+        };
     }
 
     /**
@@ -311,7 +363,58 @@ public class NawuSpeechPlugin extends Plugin {
         }
     }
 
-    private final RecognitionListener listener = new RecognitionListener() {
+    /**
+     * ★v1.3.8 出错自动换引擎重试一次。
+     *
+     * 场景：标准识别器在部分 ROM 上会秒报 ERROR_CLIENT / ERROR_NO_MATCH，
+     * 而离线识别器可能正常（反之亦然）。第一次错误时若还有重试额度
+     * （MAX_ATTEMPTS=2），自动销毁当前实例、换成另一引擎重新开始听——
+     * 前端无感知；两个引擎都失败才把错误交给前端。
+     */
+    private boolean retryWithOtherEngine() {
+        final PluginCall call = pendingStartCall;
+        if (call == null || attempt >= MAX_ATTEMPTS) return false;
+        final String lang = pendingLang == null ? "zh-CN" : pendingLang;
+        destroyRecognizer();
+        final boolean next = !onDevice;
+        attempt += 1;
+        try {
+            if (!next) {
+                if (!SpeechRecognizer.isRecognitionAvailable(getContext())) {
+                    return false;
+                }
+                recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
+                onDevice = false;
+            } else {
+                if (Build.VERSION.SDK_INT < 31 || !SpeechRecognizer.isOnDeviceRecognitionAvailable(getContext())) {
+                    return false;
+                }
+                recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(getContext());
+                onDevice = true;
+            }
+            recognizer.setRecognitionListener(recognitionListener);
+            final Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang);
+            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+            intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+            if (next) {
+                new android.os.Handler(android.os.Looper.getMainLooper())
+                        .postDelayed(startDelayedRunnable(intent, call), 200);
+            } else {
+                recognizer.startListening(intent);
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 本次 start 调用的引用（重试时需要重新 resolve）。 */
+    private PluginCall pendingStartCall = null;
+
+    private final RecognitionListener recognitionListener = new RecognitionListener() {
         @Override
         public void onReadyForSpeech(Bundle params) {
             /* 前端按下即已进入录音态，无需额外事件 */
@@ -340,7 +443,12 @@ public class NawuSpeechPlugin extends Plugin {
         @Override
         public void onError(int error) {
             String code = mapError(error);
-            // no-match / speech-timeout 属于「没听清」，交给前端当普通提示，不当崩溃
+            // ★v1.3.8 权限/音频占用没有重试意义；其余错误先换引擎重试一次，
+            // 重试也失败才通知前端（用户感知就是「多等一下」，而不是秒弹失败）。
+            boolean canRetry = attempt < MAX_ATTEMPTS
+                    && !"not-allowed".equals(code)
+                    && !"audio".equals(code);
+            if (canRetry && retryWithOtherEngine()) return;
             emitError(code, code);
             JSObject end = new JSObject();
             end.put("reason", "error");

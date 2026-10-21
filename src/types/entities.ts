@@ -80,6 +80,12 @@ export interface Goods {
   extraFees: ExtraFee[];
   incomes: unknown[];
   sellPrice?: number;
+  /**
+   * ★v1.3.8 手续费费率（千分比，2.1% → 21）。
+   * 编辑面板固定展示「手续费」行：填了费率就按售价自动折算金额，
+   * 折算结果在保存时同步写进 extraFees（名称「手续费」），净赚口径不变。
+   */
+  feeRatePermille?: number;
   targetDailyCost?: number;
   countEnabled?: boolean;
   totalCount?: number;
@@ -295,7 +301,7 @@ export interface ServerConfig {
   /** 'srv_' + newId() */
   id: string;
   alias: string;
-  /** 归一化后：'http://10.0.0.209:3030'（无尾斜杠、无 path） */
+  /** 归一化后：'http://192.168.1.100:3030'（无尾斜杠、无 path） */
   url: string;
   note?: string;
   createdAt: string;

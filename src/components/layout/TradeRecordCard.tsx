@@ -21,8 +21,9 @@ import type { TradeDraft } from '../../types/ai';
  * 3. 底部常驻一行「净赚 = 售价 − 买入 − 手续费 − 快递 − 杂费」，
  *    用户按下确认之前就知道这笔到底赚了多少。
  *
- * IME 铁律：名称非受控（defaultValue + ref 读 DOM 真值）；数字字段受控无妨
- * （纯数字不走中文输入法组合）。
+ * IME 铁律：名称非受控（defaultValue + ref 读 DOM 真值）；★v1.3.8 起数字字段
+ * 也改为非受控（NumCell）——受控 + onChange 改写会在「内容中间插入字符」时把
+ * 光标顶到末尾（用户反复反馈的光标跳位 Bug 的真正来源）。
  */
 
 /** 卡片提交给调用方的最终状态。 */
@@ -43,6 +44,52 @@ export interface TradeCardState {
 function numOf(v: string): number {
   const n = Number.parseFloat((v ?? '').replace(/[^\d.]/g, ''));
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * ★v1.3.8 光标安全的数字输入（修复「在内容中间插入字符，光标跳到末尾」）。
+ *
+ * 旧实现 `value={x}` + onChange 里 `replace(/[^\d.]/g, '')` 受控改写：
+ * 在内容**中间**插入字符（粘贴、全角符号、中文标点）时，React 会把改写后的值
+ * 整体写回 DOM，浏览器只能把光标顶到末尾——这正是用户反复反馈的
+ * 「编辑框里改一个数字，光标飞走」的根因。
+ *
+ * 现在改为**非受控**：DOM 永远保持用户输入原样；onChange 只把净化后的数值
+ * 镜像到状态（供净赚/手续费实时计算）；失焦时才把 DOM 规整成净化文本
+ * （此时光标位置无感知）。
+ */
+function NumCell({
+  init,
+  onValue,
+  locked,
+  ariaLabel,
+  placeholder,
+  className,
+}: {
+  init: string;
+  onValue: (sanitized: string) => void;
+  locked?: boolean;
+  ariaLabel?: string;
+  placeholder?: string;
+  className: string;
+}) {
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      enterKeyHint="done"
+      disabled={locked}
+      defaultValue={init}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      onChange={(e) => onValue(e.target.value.replace(/[^\d.]/g, ''))}
+      onBlur={(e) => {
+        const clean = e.target.value.replace(/[^\d.]/g, '');
+        if (clean !== e.target.value) e.target.value = clean;
+      }}
+      className={className}
+    />
+  );
 }
 
 export default function TradeRecordCard({
@@ -212,13 +259,12 @@ export default function TradeRecordCard({
         <label className="flex items-center gap-2">
           <span className="w-12 shrink-0 text-[11px] text-ink-3">买入</span>
           <span className="text-sm text-ink-3">¥</span>
-          <input
-            disabled={locked}
-            value={buyPrice}
-            onChange={(e) => setBuyPrice(e.target.value.replace(/[^\d.]/g, ''))}
+          <NumCell
+            init={buyPrice}
+            onValue={setBuyPrice}
+            locked={locked}
             placeholder="0"
-            inputMode="decimal"
-            enterKeyHint="done"
+            ariaLabel="买入价"
             className={inputCls}
           />
         </label>
@@ -258,13 +304,12 @@ export default function TradeRecordCard({
         <label className="flex items-center gap-2">
           <span className="w-12 shrink-0 text-[11px] text-ink-3">售价</span>
           <span className="text-sm text-ink-3">¥</span>
-          <input
-            disabled={locked}
-            value={sellPrice}
-            onChange={(e) => setSellPrice(e.target.value.replace(/[^\d.]/g, ''))}
+          <NumCell
+            init={sellPrice}
+            onValue={setSellPrice}
+            locked={locked}
             placeholder="0"
-            inputMode="decimal"
-            enterKeyHint="done"
+            ariaLabel="售价"
             className={inputCls}
           />
         </label>
@@ -273,14 +318,12 @@ export default function TradeRecordCard({
         <label className="flex items-center gap-2">
           <span className="w-12 shrink-0 text-[11px] text-ink-3">费率</span>
           <span className="shrink-0 text-[11px] text-ink-3">千分之</span>
-          <input
-            disabled={locked}
-            value={rate}
-            onChange={(e) => setRate(e.target.value.replace(/[^\d.]/g, ''))}
+          <NumCell
+            init={rate}
+            onValue={setRate}
+            locked={locked}
             placeholder="6"
-            inputMode="decimal"
-            enterKeyHint="done"
-            aria-label="手续费费率（千分之）"
+            ariaLabel="手续费费率（千分之）"
             className={inputCls}
           />
           <span className="tnum w-20 shrink-0 text-right text-[11px] text-ink-2">
@@ -291,13 +334,12 @@ export default function TradeRecordCard({
         <label className="flex items-center gap-2">
           <span className="w-12 shrink-0 text-[11px] text-ink-3">快递费</span>
           <span className="text-sm text-ink-3">¥</span>
-          <input
-            disabled={locked}
-            value={shipping}
-            onChange={(e) => setShipping(e.target.value.replace(/[^\d.]/g, ''))}
+          <NumCell
+            init={shipping}
+            onValue={setShipping}
+            locked={locked}
             placeholder="0"
-            inputMode="decimal"
-            enterKeyHint="done"
+            ariaLabel="快递费"
             className={inputCls}
           />
         </label>
@@ -305,14 +347,12 @@ export default function TradeRecordCard({
         <label className="flex items-center gap-2">
           <span className="w-12 shrink-0 text-[11px] text-ink-3">杂费</span>
           <span className="text-sm text-ink-3">¥</span>
-          <input
-            disabled={locked}
-            value={extra}
-            onChange={(e) => setExtra(e.target.value.replace(/[^\d.]/g, ''))}
+          <NumCell
+            init={extra}
+            onValue={setExtra}
+            locked={locked}
             placeholder="0"
-            inputMode="decimal"
-            enterKeyHint="done"
-            aria-label="额外杂费"
+            ariaLabel="额外杂费"
             className={inputCls}
           />
         </label>

@@ -42,6 +42,7 @@ import { GLASS_STYLE } from '../components/layout/MainShell';
 import { useDataStore, useSettingsStore, useUiStore, toastSuccess, toastError } from '../store';
 import { dailyCost, holdDays, perUseCost, sortGoods, totalInvest, achieveRate } from '../domain/goods';
 import { formatMoney, symbolOf, round } from '../lib/money';
+import { searchGoods } from '../lib/itemMatch';
 import { fmtDate, today } from '../lib/date';
 import { drawGoodsCard, shareOrDownload } from '../lib/shareCard';
 import { compressDataUrlUnder, IMAGE_MAX_KB } from '../lib/imageCompress';
@@ -535,6 +536,20 @@ export function GoodsFormSheet({
   const [usedCount, setUsedCount] = useState(String(initial?.usedCount ?? 0));
   const [sellPrice, setSellPrice] = useState(initial?.sellPrice != null ? String(initial.sellPrice) : '');
   /**
+   * ★v1.3.8 手续费费率（百分比展示，2.1 表示 2.1%）。
+   * 编辑面板「附加费用」区固定展示手续费行：填了费率就按出售价自动折算金额；
+   * 旧数据只存了手续费金额时，按「金额 ÷ 出售价」反推出费率，口径无缝衔接。
+   */
+  const [feeRate, setFeeRate] = useState(() => {
+    if (initial?.feeRatePermille != null && initial.feeRatePermille > 0) {
+      return String(round(initial.feeRatePermille / 10, 4));
+    }
+    const sp = initial?.sellPrice ?? 0;
+    const manual = (initial?.extraFees ?? []).find((f) => f.name === '手续费')?.amount ?? 0;
+    if (sp > 0 && manual > 0) return String(round((manual / sp) * 100, 4));
+    return '';
+  });
+  /**
    * ★v1.3.6（恶性数据 Bug）附加费用行：`name` 与 `amount` 都必须完整持久化。
    *
    * 旧实现只有一个受控 state + `key={i}`：中文费用名走输入法组合时 Android WebView
@@ -569,6 +584,16 @@ export function GoodsFormSheet({
         return { name: nameNow, amount: Number(amountRaw) || 0 };
       })
       .filter((f) => f.name !== '' || f.amount > 0);
+
+  /**
+   * ★v1.3.8 手续费自动折算：费率（%）× 出售价 → 金额。
+   * 费率存千分比（与退役转卖/二手买卖同一口径），金额实时预演。
+   */
+  const feeRatePct = Number(feeRate.replace(/[^\d.]/g, '')) || 0;
+  const feePermille = feeRatePct > 0 ? round(feeRatePct * 10, 4) : 0;
+  const sellPriceNum = Number(sellPrice) || 0;
+  const autoFeeAmount =
+    sellPriceNum > 0 && feePermille > 0 ? round((sellPriceNum * feePermille) / 1000, 2) : 0;
 
   const goodsCats = useMemo(
     () => categories.filter((c) => c.kind === 'goods').sort((a, b) => a.order - b.order),
@@ -618,12 +643,23 @@ export function GoodsFormSheet({
            旧实现读 state 于是名称丢失，只剩金额落库）。先取出来，下面
            询问弹窗的净赚与最终 patch 共用同一份数据。 */
         const extraFeesNow = readFees();
+        /**
+         * ★v1.3.8：费率折算的手续费统一并进 extraFees（净赚口径不变）。
+         * 填了费率 → 用折算金额替换旧「手续费」行（避免手工行+折算行双计）；
+         * 没填费率 → 保留用户手动填的「手续费」行（兼容旧数据）。
+         */
+        const feesWithAuto =
+          feePermille > 0
+            ? autoFeeAmount > 0
+              ? [{ name: '手续费', amount: autoFeeAmount }, ...extraFeesNow.filter((f) => f.name !== '手续费')]
+              : extraFeesNow.filter((f) => f.name !== '手续费')
+            : extraFeesNow;
         // 出售价语义：填了出售价且仍在役 → 询问是否同时标记为已转卖（退役）
         const sp = sellPrice.trim() ? Number(sellPrice) : 0;
         let markSold = false;
         if (Number.isFinite(sp) && sp > 0 && initial.status !== 'retired') {
           // ★v1.1.3：confirm 里就把净赚算出来——用户答「是」时知道会计入生活流收入
-          const invest = round(p + extraFeesNow.reduce((acc, f) => acc + f.amount, 0));
+          const invest = round(p + feesWithAuto.reduce((acc, f) => acc + f.amount, 0));
           const profit = round(sp - invest);
           markSold = await confirm({
             title: '标记为已转卖？',
@@ -641,7 +677,8 @@ export function GoodsFormSheet({
           totalCount: countEnabled && totalCount.trim() ? Number(totalCount) : undefined,
           usedCount: Math.max(0, Math.round(Number(usedCount) || 0)),
           sellPrice: sellPrice.trim() ? Number(sellPrice) : undefined,
-          extraFees: extraFeesNow,
+          feeRatePermille: feePermille > 0 ? feePermille : undefined,
+          extraFees: feesWithAuto,
           warrantyDate: warrantyDate || undefined,
           ...(markSold ? { status: 'retired' as const } : {}),
         });
@@ -836,6 +873,34 @@ export function GoodsFormSheet({
                   </PageField>
                   <div>
                     <p className="text-xs font-medium text-ink-2">附加费用（计入总投入）</p>
+                    {/* ★v1.3.8 固定手续费行：填了费率（%）就按出售价自动折算金额，
+                       折算结果保存时写进 extraFees，不填视为无手续费。 */}
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span
+                        className="flex h-10 min-w-0 flex-1 items-center rounded-btn border border-line bg-surface-2 px-3 text-sm text-ink"
+                        title="填写费率后按出售价自动计算手续费"
+                      >
+                        手续费
+                      </span>
+                      <div className="flex h-10 w-24 shrink-0 items-center rounded-btn border border-line bg-surface-2 px-2 focus-within:border-accent">
+                        <input
+                          value={feeRate}
+                          onChange={(e) => setFeeRate(e.target.value.replace(/[^\d.]/g, ''))}
+                          inputMode="decimal"
+                          placeholder="费率"
+                          aria-label="手续费费率（百分比）"
+                          className="tnum h-full min-w-0 flex-1 bg-transparent text-right text-sm outline-none"
+                        />
+                        <span className="ml-0.5 shrink-0 text-sm text-ink-3">%</span>
+                      </div>
+                      <span
+                        className="tnum w-20 shrink-0 text-right text-sm text-ink-2"
+                        aria-label="手续费金额（自动折算）"
+                      >
+                        {autoFeeAmount > 0 ? `= ${formatMoney(autoFeeAmount, currency)}` : '= —'}
+                      </span>
+                      <span className="w-8 shrink-0" aria-hidden />
+                    </div>
                     {fees.map((f) => (
                       <div key={f.key} className="mt-1.5 flex items-center gap-2">
                         <input
@@ -1118,16 +1183,16 @@ export default function HomePage() {
       if (status === 'all') return true;
       return g.status === status;
     });
-    /* ★v1.0.33 P1-7：搜索匹配扩展到备注（原只匹配名称/标签，备注里的
-       「通勤降噪主力」这类关键信息搜不到） */
-    const byKw = kw
-      ? byStatus.filter(
-          (g) =>
-            g.name.toLowerCase().includes(kw) ||
-            g.tags.some((t) => t.toLowerCase().includes(kw)) ||
-            (g.note ?? '').toLowerCase().includes(kw),
-        )
-      : byStatus;
+    /**
+     * ★v1.3.8 搜索升级：分词 + 同义别名 + 重合度排序（lib/itemMatch.searchGoods）。
+     * 旧版是严格子串匹配，搜「美光内存条」找不到「镁光DDR4 8G」；现在
+     * 「美光≈镁光」「内存条≈DDR/内存」都能互换，结果按关键词重合度排序。
+     */
+    const byKw = kw ? searchGoods(byStatus, keyword.trim()).map((r) => r.item) : byStatus;
+    if (kw) {
+      // 搜索态：按相关度返回（searchGoods 已在役优先），不再套用普通排序
+      return byKw;
+    }
     const sorted = sortGoods(byKw, sortBy);
     // 在役优先：退役/已转卖一律沉底（稳定排序，同组内保持所选排序键；
     // 用户显式选「退役」筛选时全部沉底组，顺序不变）

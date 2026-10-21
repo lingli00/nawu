@@ -29,6 +29,8 @@ export interface MatchableItem {
   name: string;
   note?: string;
   status?: string;
+  /** ★v1.3.8 标签参与搜索匹配。 */
+  tags?: string[];
 }
 
 export interface MatchResult<T> {
@@ -123,8 +125,8 @@ export function matchGoods<T extends MatchableItem>(list: T[], query: string): M
       score = 1;
       hits = qTokens.filter((t) => nameNorm.includes(t));
     } else {
-      // ② 名称覆盖率
-      const nameHay = nameNorm;
+      // ② 名称覆盖率（★v1.3.8：同义别名互换，搜「内存条」能命中「DDR4」）
+      const nameHay = withSynonyms(nameNorm, qNorm);
       const nameTokens = new Set(tokenizeForMatch(item.name ?? ''));
       const nameScore = coverage(qTokens, nameHay, nameTokens);
       const nameHits = hitTokens(qTokens, nameHay);
@@ -133,7 +135,7 @@ export function matchGoods<T extends MatchableItem>(list: T[], query: string): M
       let fullScore = nameScore;
       let fullHits = nameHits;
       if (noteNorm) {
-        const merged = nameHay + noteNorm;
+        const merged = withSynonyms(nameHay + noteNorm, qNorm);
         const mergedTokens = new Set([...nameTokens, ...tokenizeForMatch(item.note ?? '')]);
         const s = coverage(qTokens, merged, mergedTokens) * NOTE_WEIGHT;
         if (s > fullScore) {
@@ -168,4 +170,107 @@ export function matchGoodsTopN<T extends MatchableItem>(list: T[], query: string
     if (r) out.push(r);
   }
   return out.sort((a, b) => b.score - a.score).slice(0, n);
+}
+
+/* ======================================================================
+ * ★v1.3.8 物品搜索：分词 + 同义别名 + 按重合度排序
+ *
+ * 用户反馈：物品叫「镁光DDR4 8G」，搜「美光内存条」「美光的DDR4」全都没有结果——
+ * 旧实现是严格子串 `name.includes(kw)`，不懂分词、不懂别名。
+ *
+ * 三件事：
+ * 1. 分词：复用 tokenizeForMatch（中文 2-gram + 英文数字串），长句/口语都能拆；
+ * 2. 同义别名：内存条↔DDR↔内存、美光↔镁光、笔记本↔电脑……查询与物品
+ *    分别命中同组的**不同**成员时互换（normalizeForMatch 会把「条/的」等虚词去掉，
+ *    组内词统一用归一化形态）；
+ * 3. 排序：重合度（覆盖率）高在前，在役优先于退役；搜索比语音定位宽松
+ *    （阈值 0.34），宁多给几个候选也不要「搜不到」。
+ * ==================================================================== */
+
+/** 互为同义/别名的词组（组内均为 normalizeForMatch 之后的形态）。 */
+const SYNONYM_GROUPS: string[][] = [
+  ['内存', 'ddr', 'ram', '存储'],
+  ['美光', '镁光', 'micron'],
+  ['笔记本', '笔电', '电脑', 'laptop', '手提'],
+  ['手机', '电话'],
+  ['硬盘', '固态', 'ssd'],
+  ['显卡', 'gpu', '显示卡'],
+  ['平板', 'ipad'],
+  ['耳机', '耳塞'],
+  ['手表', '手环'],
+  ['充电器', '充电头', '电源'],
+  ['数据线', '充电线'],
+  ['相机', '摄像机'],
+];
+
+/**
+ * 同义互换：查询里出现组内某别名、物品文本里出现同组另一别名时，
+ * 把查询侧的别名借给物品文本，让覆盖率打分能命中。
+ */
+function withSynonyms(itemNorm: string, queryNorm: string): string {
+  if (!itemNorm || !queryNorm) return itemNorm;
+  let extra = '';
+  for (const group of SYNONYM_GROUPS) {
+    const inQuery = group.filter((w) => queryNorm.includes(w));
+    if (inQuery.length === 0) continue;
+    const inItem = group.some((w) => itemNorm.includes(w));
+    if (!inItem) continue;
+    for (const w of inQuery) {
+      if (!itemNorm.includes(w)) extra += w;
+    }
+  }
+  return extra ? itemNorm + extra : itemNorm;
+}
+
+/** 列表搜索的接受阈值：比语音定位（0.62）宽松得多——搜索要召回，不要保守。 */
+const SEARCH_ACCEPT = 0.34;
+
+/**
+ * 物品列表搜索：返回按重合度排序的全部命中（在役优先）。
+ *
+ * 与 matchGoods（唯一定位，用于语音关联物品）不同，这里面向搜索列表：
+ * 阈值放宽、返回多个结果、名称/标签/备注一起参与匹配。
+ */
+export function searchGoods<T extends MatchableItem>(list: T[], query: string, limit = 50): Array<MatchResult<T>> {
+  const key = (query ?? '').trim();
+  if (!key) return [];
+  const qNorm = normalizeForMatch(key);
+  if (!qNorm) return [];
+  const qTokens = tokenizeForMatch(key);
+
+  const out: Array<MatchResult<T>> = [];
+  for (const item of list) {
+    const nameNorm = normalizeForMatch(item.name ?? '');
+    const tagsNorm = normalizeForMatch((item.tags ?? []).join(' '));
+    const noteNorm = normalizeForMatch(item.note ?? '');
+    if (!nameNorm && !noteNorm && !tagsNorm) continue;
+
+    const nameTokens = new Set(tokenizeForMatch(item.name ?? ''));
+    const fullTokens = new Set([
+      ...nameTokens,
+      ...tokenizeForMatch((item.tags ?? []).join(' ')),
+      ...tokenizeForMatch(item.note ?? ''),
+    ]);
+    const nameHay = withSynonyms(nameNorm, qNorm);
+    const fullHay = withSynonyms(nameNorm + tagsNorm + noteNorm, qNorm);
+
+    // ① 整串包含（语序一致的强命中）直接满分；② 否则取名称覆盖 / 全文覆盖的较大者
+    let score = 0;
+    if (nameNorm.includes(qNorm) || qNorm.includes(nameNorm)) score = 1;
+    else {
+      score = Math.max(coverage(qTokens, nameHay, nameTokens), coverage(qTokens, fullHay, fullTokens) * NOTE_WEIGHT);
+    }
+    if (score < SEARCH_ACCEPT) continue;
+    out.push({ item, score: Number(score.toFixed(3)), hits: hitTokens(qTokens, fullHay) });
+  }
+
+  // 排序：在役优先 → 重合度高 → 名称更短更精确
+  out.sort((a, b) => {
+    const ra = a.item.status === 'retired' ? 1 : 0;
+    const rb = b.item.status === 'retired' ? 1 : 0;
+    if (ra !== rb) return ra - rb;
+    if (b.score !== a.score) return b.score - a.score;
+    return (normalizeForMatch(a.item.name ?? '').length ?? 0) - (normalizeForMatch(b.item.name ?? '').length ?? 0);
+  });
+  return out.slice(0, Math.max(1, limit));
 }

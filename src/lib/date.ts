@@ -134,9 +134,16 @@ export function toDateString(value: unknown, fallback: string = today()): string
   return value;
 }
 
-/** ISO → 本地可读时间 'MM-DD HH:mm'。 */
+/**
+ * ISO → 本地可读时间 'MM-DD HH:mm'。
+ *
+ * ★v1.3.8 修复：manifest 早期只写了日期（'2026-10-21'），dayjs 会把它解析成
+ * 当天 00:00，更新面板于是显示「发布于 10-21 00:00」。日期粒度的输入
+ * 原样展示日期，不再伪造出「零点整」。
+ */
 export function fmtTimestamp(iso: string): string {
   if (!iso) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso.slice(5).replace('-', '-');
   const d = dayjs(iso);
   return d.isValid() ? d.format('MM-DD HH:mm') : '';
 }

@@ -228,6 +228,10 @@ async function startWeb(opts: SpeechCallbacks & { lang?: string }): Promise<Spee
   /** 致命错误（权限/被占用）→ 不要无限重启。 */
   let fatal = false;
   let restartTimer: number | null = null;
+  /** ★v1.3.8 续听次数上限：浏览器静音断流会一直触发 onend，无限续听
+   *  在「引擎根本不可用」的机器上表现成永远「正在聆听」却永远不出字。 */
+  let restarts = 0;
+  const RESTART_MAX = 20;
 
   const settle = (reason: 'result' | 'error' | 'cancelled'): void => {
     if (settled) return;
@@ -295,7 +299,8 @@ async function startWeb(opts: SpeechCallbacks & { lang?: string }): Promise<Spee
       return;
     }
     // 还没松手：浏览器自己断流了（静音/超时）→ 续上，保持「一直听」
-    if (!fatal && !settled) {
+    if (!fatal && !settled && restarts < RESTART_MAX) {
+      restarts += 1;
       restartTimer = window.setTimeout(() => {
         restartTimer = null;
         if (cancelled || stopping || fatal) return;
@@ -363,7 +368,12 @@ export function speechErrorText(code: string, native: boolean): string {
     case 'busy':
       return '语音识别正在被其它应用占用，请稍后再试';
     case 'network':
-      return '系统语音服务需要联网，可改用键盘输入（不影响记账）';
+      // ★v1.3.8：网页端 Chrome 的 Web Speech 把音频送到 Google 服务，国内不可达——
+      // 这是网页端「录几秒就断、什么都没识别」的根因。APP 端的 network 是系统
+      // 语音服务联网失败，换个说法引导重试/键盘。
+      return native
+        ? '系统语音服务联网失败，请重试；仍不行可改用键盘输入（不影响记账）'
+        : '浏览器语音服务（Google）在国内网络不可达，网页端暂无法转写：手机请用纳物 APP 的语音，电脑可用系统语音输入（Win+H）后粘贴进来';
     case 'audio':
       return '麦克风被占用或不可用，请检查是否正在通话';
     default:
