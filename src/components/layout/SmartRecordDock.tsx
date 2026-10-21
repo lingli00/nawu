@@ -7,6 +7,7 @@ import { today as todayStr } from '../../lib/date';
 import { emojiForName } from '../../lib/emoji';
 import { aiConfigOf, isAiConfigured, parse, parseImage, parseLocalOnly } from '../../ai/parseService';
 import { detectTrade, feeAmountOf, tradeFees, tradeNetProfit } from '../../ai/trade';
+import { matchGoods } from '../../lib/itemMatch';
 import { matchCategoryId } from '../../ai/localParser';
 import { answerQuery, type QueryData } from '../../ai/queryLocal';
 import { splitTasks } from '../../ai/splitTasks';
@@ -23,8 +24,9 @@ import { onOpenSmartRecord } from '../../lib/smartRecordBus';
 import { isNativeApp, speechErrorText, startSpeech, type SpeechSession } from '../../lib/speechLocal';
 import SmartRecordCard, { type RecordCardState } from './SmartRecordCard';
 import TradeRecordCard, { type TradeCardState } from './TradeRecordCard';
+import RetireSellCard, { type RetireCardState } from './RetireSellCard';
 import { toastError, useDataStore, useSettingsStore } from '../../store';
-import type { AiResultItem, TradeDraft } from '../../types/ai';
+import type { AiResultItem, RetireDraft, TradeDraft } from '../../types/ai';
 import type { Category, Goods } from '../../types/entities';
 
 /**
@@ -176,7 +178,7 @@ function SmartRecordPanel({
   const editRef = useRef<HTMLTextAreaElement | null>(null);
 
   /** 非受控输入框（IME 铁律）：DOM 自持值，发送时读真值。 */
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   /** 最近一次输入的原文（学习样本 / 多句场景兜底用）。 */
@@ -269,16 +271,15 @@ function SmartRecordPanel({
     };
   };
 
-  /** 按名称模糊定位物品（退役转卖用）。 */
+  /**
+   * 按名称/备注定位物品（退役转卖用）。
+   *
+   * ★v1.3.7：改成关键词覆盖率匹配（lib/itemMatch）。旧版是严格子串
+   * `g.name.includes(key) || key.includes(g.name)`——语序一变（「粉色的N95笔记本」
+   * vs 库里的「N95笔记本准系统 粉色」）就匹配不到，而且完全不看备注。
+   */
   const findGoods = (match: string): Goods | undefined => {
-    const key = (match ?? '').trim();
-    if (!key) return undefined;
-    const hit = goods.filter((g) => g.name.includes(key) || key.includes(g.name));
-    if (hit.length === 0) return undefined;
-    return hit.sort((a, b) => {
-      if ((a.status === 'retired') !== (b.status === 'retired')) return a.status === 'retired' ? 1 : -1;
-      return b.name.length - a.name.length;
-    })[0];
+    return matchGoods(goods, match)?.item;
   };
 
   /** 把一条解析结果转成待确认卡片；不支持的动作返回 null。 */
@@ -375,7 +376,11 @@ function SmartRecordPanel({
   const doSend = async (text: string): Promise<void> => {
     lastTextRef.current = text;
     pushMsg('user', text);
-    if (inputRef.current) inputRef.current.value = '';
+    if (inputRef.current) {
+      inputRef.current.value = '';
+      // 清空后把高度收回一行，否则发完还留着一个大框
+      inputRef.current.style.height = 'auto';
+    }
 
     /**
      * ★v1.3.6 二手买卖一体（需求 1）：**必须在分句之前拦截**。
@@ -598,12 +603,13 @@ function SmartRecordPanel({
     }
   };
 
-  /** 确认保存（心情 / 时间 / 退役转卖：只保存，不学习）。 */
+  /** 确认保存（心情 / 时间：只保存，不学习）。退役转卖走 confirmRetire。 */
   const confirmPlain = async (): Promise<void> => {
-    if (!pendingRef.current || pendingRef.current.mode === 'record' || pendingRef.current.mode === 'trade') return;
-    const { item } = pendingRef.current;
+    const cur = pendingRef.current;
+    if (!cur || cur.mode === 'record' || cur.mode === 'trade') return;
+    const { item } = cur;
     try {
-      if (pendingRef.current.mode === 'mood' && item.moodDraft) {
+      if (cur.mode === 'mood' && item.moodDraft) {
         await addMood({ feeling: item.moodDraft.feeling, text: item.moodDraft.text });
       } else if (item.action === 'create_time' && item.timeDraft) {
         await addTime({
@@ -612,28 +618,59 @@ function SmartRecordPanel({
           meaning: item.timeDraft.meaning,
           note: item.timeDraft.note,
         });
-      } else if (item.action === 'retire_sell' && item.retireDraft) {
-        const target = findGoods(item.retireDraft.match);
-        if (!target) {
-          toastError(`没找到与「${item.retireDraft.match}」匹配的物品，请先入库`);
-          return;
-        }
-        await updateGoods(target.id, { status: 'retired', sellPrice: item.retireDraft.sellPrice });
-        const res = await syncSaleIncome(target.id);
-        markDone(
-          res.action === 'created' || res.action === 'updated'
-            ? `已退役，转卖净赚 ¥${(res.amount ?? 0).toFixed(2)} 已记入生活流`
-            : '已标记退役',
-        );
-        return;
       }
       markDone(
-        pendingRef.current.mode === 'mood'
-          ? '已记入情绪'
-          : item.action === 'create_time'
-            ? '已记入时间'
-            : '已保存',
+        cur.mode === 'mood' ? '已记入情绪' : item.action === 'create_time' ? '已记入时间' : '已保存',
       );
+    } catch (e) {
+      toastError((e as Error).message || '保存失败');
+    }
+  };
+
+  /**
+   * ★v1.3.7 退役转卖（带卖出费用）。
+   *
+   * 手续费按**费率**折算成金额后写进 `extraFees`，与「二手买卖一体」同一口径：
+   * 净赚 = 售价 − 买入 − 手续费 − 运费 − 杂费，由 `syncSaleIncome` 统一入生活流。
+   */
+  const confirmRetire = async (state: RetireCardState): Promise<void> => {
+    const cur = pendingRef.current;
+    if (!cur || cur.mode !== 'plain' || !cur.item.retireDraft) return;
+    const draft = cur.item.retireDraft;
+    const target = findGoods(draft.match);
+    if (!target) {
+      toastError(`没找到与「${draft.match}」匹配的物品，请先入库`);
+      return;
+    }
+    if (state.sellPrice <= 0) {
+      toastError('转卖价要大于 0');
+      return;
+    }
+    const fees = tradeFees({
+      sellPrice: state.sellPrice,
+      feeRatePermille: state.feeRatePermille,
+      shippingFee: state.shippingFee,
+      extraFee: state.extraFee,
+    });
+    try {
+      await updateGoods(target.id, {
+        status: 'retired',
+        sellPrice: state.sellPrice,
+        extraFees: fees,
+      });
+      const res = await syncSaleIncome(target.id);
+      const profit = tradeNetProfit({
+        buyPrice: target.price,
+        sellPrice: state.sellPrice,
+        feeRatePermille: state.feeRatePermille,
+        shippingFee: state.shippingFee,
+        extraFee: state.extraFee,
+      });
+      const feeText = fees.map((f) => `${f.name} ${f.amount.toFixed(2)}`).join(' + ');
+      const head = `已退役${profit > 0 ? `，净赚 ¥${profit.toFixed(2)}` : '（无净赚）'}`;
+      const tail =
+        res.action === 'created' || res.action === 'updated' ? ' 已记入生活流收入' : '';
+      markDone(feeText ? `${head}${tail}｜扣 ${feeText}` : `${head}${tail}`);
     } catch (e) {
       toastError((e as Error).message || '保存失败');
     }
@@ -659,7 +696,7 @@ function SmartRecordPanel({
     // 立即进入录音态：按下瞬间就有 0:00 与脉冲点，治「长按无响应」
     setRecording(true);
     setRecSecs(0);
-    setRecHint('正在启动本地识别…');
+    setRecHint(isNativeApp() ? '正在启动本地识别…' : '正在启动语音识别…');
     recStartAtRef.current = Date.now();
     recTimerRef.current = window.setInterval(() => {
       const s = Math.floor((Date.now() - recStartAtRef.current) / 1000);
@@ -919,14 +956,23 @@ function SmartRecordPanel({
                 remaining={items.length}
                 onNext={() => showNext(items)}
               />
+            ) : pending.item.action === 'retire_sell' && pending.item.retireDraft ? (
+              <RetireSellCard
+                matchName={pending.item.retireDraft.match}
+                targetName={findGoods(pending.item.retireDraft.match)?.name}
+                buyPrice={findGoods(pending.item.retireDraft.match)?.price ?? 0}
+                sellPrice={pending.item.retireDraft.sellPrice}
+                initial={retireInitialOf(pending.item.retireDraft)}
+                onConfirm={(s) => void confirmRetire(s)}
+                onCancel={() => showNext(items)}
+                done={pending.done}
+                remaining={items.length}
+                onNext={() => showNext(items)}
+              />
             ) : (
               <SimpleCard
                 title={pending.item.action === 'retire_sell' ? '退役转卖确认' : '时间记录确认'}
-                lines={
-                  pending.item.action === 'retire_sell'
-                    ? [plainSummary(pending.item), '确认后自动扣减：摊销定格在退役日，转卖净赚记入生活流']
-                    : [plainSummary(pending.item)]
-                }
+                lines={[plainSummary(pending.item)]}
                 onConfirm={() => void confirmPlain()}
                 onCancel={() => showNext(items)}
                 done={pending.done}
@@ -949,7 +995,17 @@ function SmartRecordPanel({
             {/* 左侧：语音 / 文字 形态切换 */}
             <button
               type="button"
-              onClick={() => setVoiceMode((v) => !v)}
+              onClick={() => {
+                // ★v1.3.7：切到语音前先收键盘。网页端「点语音却跳出输入法语音」
+                // 就是输入框还攥着焦点导致的；这里主动失焦 + 关闭软键盘。
+                if (!voiceMode) {
+                  inputRef.current?.blur();
+                  const active = document.activeElement as HTMLElement | null;
+                  if (active && active !== document.body) active.blur();
+                  (navigator as unknown as { virtualKeyboard?: { hide?: () => void } }).virtualKeyboard?.hide?.();
+                }
+                setVoiceMode((v) => !v);
+              }}
               aria-label={voiceMode ? '切换到文字输入' : '切换到语音输入'}
               title={voiceMode ? '切换到文字输入' : '切换到语音输入'}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-btn border border-line bg-surface-2 text-ink-2 active:bg-surface"
@@ -1017,18 +1073,22 @@ function SmartRecordPanel({
                 )}
               </button>
             ) : (
-              <input
+              <textarea
                 ref={inputRef}
+                rows={1}
                 defaultValue=""
                 placeholder="一句话描述消费/心情…"
                 enterKeyHint="send"
+                /* ★v1.3.7：高度随内容自适应（旧版是固定高 input，长文本只能左右拖着看） */
+                onInput={(e) => autoGrowTextarea(e.currentTarget)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  // 回车发送；Shift+回车换行；中文输入法组合中的回车不算（否则选词就发出去了）
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     sendFromInput();
                   }
                 }}
-                className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-surface-2 px-3 text-sm outline-none focus:border-accent"
+                className="max-h-40 min-h-10 min-w-0 flex-1 resize-none overflow-y-auto rounded-btn border border-line bg-surface-2 px-3 py-2 text-sm leading-6 outline-none focus:border-accent"
               />
             )}
 
@@ -1181,4 +1241,26 @@ function plainSummary(item: AiResultItem): string {
     return `「${item.retireDraft.match}」标记退役，转卖价 ¥${item.retireDraft.sellPrice}`;
   }
   return item.explanation ?? '确认保存这条记录';
+}
+
+/** 退役草稿 → 卡片初值（识别到的费用直接预填，用户在卡上还能改）。 */
+function retireInitialOf(d: RetireDraft): RetireCardState {
+  return {
+    sellPrice: d.sellPrice,
+    feeRatePermille: d.feeRatePermille ?? 0,
+    shippingFee: d.shippingFee ?? 0,
+    extraFee: d.extraFee ?? 0,
+  };
+}
+
+/**
+ * 输入框自动撑高（★v1.3.7）。
+ *
+ * textarea 的 scrollHeight 只在 height:auto 时才是内容真实高度，
+ * 所以先把 height 归零再按 scrollHeight 设值；上限由 CSS 的 max-h-40 兜住，
+ * 超过就内部纵向滚动——横向永远不需要滑动。
+ */
+function autoGrowTextarea(el: HTMLTextAreaElement): void {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
 }

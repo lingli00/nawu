@@ -70,6 +70,10 @@ export interface RetireDraft {
   /** 用于唯一定位物品库中的物品 */
   match: string;
   sellPrice: number;
+  /** ★v1.3.7 卖出费用：识别到就带出来，卡片上可改；落库进 goods.extraFees。 */
+  feeRatePermille?: number;
+  shippingFee?: number;
+  extraFee?: number;
 }
 
 /**

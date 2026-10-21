@@ -266,3 +266,85 @@ export function detectTrade(text: string, ctx: TradeParseContext): TradeDraft | 
 export function parseTrade(text: string, ctx: TradeParseContext): TradeDraft | null {
   return detectTrade(text, ctx);
 }
+
+/**
+ * ★v1.3.7：从整句里取**卖出价**（别让运费/手续费抢走这个数）。
+ *
+ * 用户原句：「我把粉色的N95笔记本卖了329，运费10块，手续费是2.1%」
+ * 整句跑通用金额提取，很容易拿到 10（运费）或 2.1（费率），
+ * 退役卡上就会出现「转卖价 ¥10」——所以这里只认带卖出语义、且不含费用词的分句。
+ */
+export function parseSellAmount(text: string): number {
+  const raw = toHalfWidth(text ?? '').trim();
+  if (!raw) return 0;
+  const clauses = raw.split(CLAUSE_SEP).map((c) => c.trim()).filter(Boolean);
+  const isFeeClause = (c: string): boolean =>
+    SHIP_RE.test(c) || EXTRA_RE.test(c) || FEE_RE.test(c) || RATE_RE.test(c);
+
+  // ① 带卖出词、且不是费用分句 → 最可信
+  for (const c of clauses) {
+    if (!SELL_RE.test(c) || isFeeClause(c)) continue;
+    const v = firstAmountIn(c);
+    if (v > 0) return v;
+  }
+  // ② 退一步：任何带卖出词的分句都行（「卖了329 运费10」这种没逗号的写法）
+  for (const c of clauses) {
+    if (!SELL_RE.test(c)) continue;
+    const v = firstAmountIn(c);
+    if (v > 0) return v;
+  }
+  return 0;
+}
+
+/** 卖出侧费用四件套（退役 / 买卖一体共用同一套解析，口径不许分叉）。 */
+export interface SellFees {
+  feeRatePermille: number;
+  feeAmount: number;
+  shippingFee: number;
+  extraFee: number;
+}
+
+/**
+ * ★v1.3.7：从**纯卖出**的句子里抠费用。
+ *
+ * 用户原句：「我把粉色的N95笔记本卖了329，运费10块，手续费是2.1%」
+ * 旧版退役链路只取「物品 + 售价」，运费与手续费被整句丢掉，
+ * 于是净赚永远偏高。
+ *
+ * 复用 `detectTrade` 同一组正则与同一个 `parseFeePermille`，
+ * 保证「买卖一体」与「纯退役」两条链路的费率口径完全一致。
+ */
+export function parseSellFees(text: string): SellFees {
+  const raw = toHalfWidth(text ?? '').trim();
+  const out: SellFees = { feeRatePermille: 0, feeAmount: 0, shippingFee: 0, extraFee: 0 };
+  if (!raw) return out;
+
+  for (const clause of raw.split(CLAUSE_SEP).map((c) => c.trim()).filter(Boolean)) {
+    // ① 费率：手续费/Fee 词存在，或显式写了「费率」，且该分句不是「X 元」的绝对金额
+    if (RATE_RE.test(clause) && (FEE_RE.test(clause) || /费率/.test(clause) || !/\d+\s*(元|块)/.test(clause))) {
+      const rate = parseFeePermille(clause);
+      if (rate > 0) {
+        out.feeRatePermille = rate;
+        continue;
+      }
+    }
+    // ② 运费 / 快递 / 邮费
+    if (SHIP_RE.test(clause)) {
+      const v = firstAmountIn(clause);
+      if (v > 0) out.shippingFee = v;
+      continue;
+    }
+    // ③ 额外杂费
+    if (EXTRA_RE.test(clause)) {
+      const v = firstAmountIn(clause);
+      if (v > 0) out.extraFee = v;
+      continue;
+    }
+    // ④ 手续费给了绝对值（「手续费 5 元」）
+    if (FEE_RE.test(clause)) {
+      const v = firstAmountIn(clause);
+      if (v > 0) out.feeAmount = v;
+    }
+  }
+  return out;
+}

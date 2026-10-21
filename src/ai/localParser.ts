@@ -6,6 +6,7 @@ import type { Category, CategoryKind, Judgement } from '../types/entities';
 import { cnToNumber, isAmountLike, toNumber, CN_NUM_CHARS } from './cnNumber';
 import { cleanNameText, detailsNote, extractOralDetails } from './colloquial';
 import { matchLearnedRule, type LearnedRule } from './ruleBank';
+import { parseSellAmount, parseSellFees } from './trade';
 import {
   AMBIGUOUS_CLUSTERS,
   CATEGORY_KEYWORDS,
@@ -502,9 +503,23 @@ export function parseLocal(
 
   // 2) 卖出 / 退役（动作语义优先于分类学习）
   if (RE_SELL.test(text)) {
+    /**
+     * ★v1.3.7：把卖出费用一起带出来。
+     * 「卖了329，运费10块，手续费2.1%」——旧版只留 329，运费与费率被丢弃，
+     * 净赚自然算高；现在识别到的费用会预填进确认卡，用户还能在卡上改。
+     */
+    const fees = parseSellFees(text);
+    // 售价单独取：整句的通用金额提取可能抓到「运费 10」或「2.1%」
+    const sold = parseSellAmount(text) || amount;
     return withRaw({
       action: 'retire_sell',
-      retireDraft: { match: cleanNameText(text, hit?.raw), sellPrice: amount },
+      retireDraft: {
+        match: cleanNameText(text, hit?.raw),
+        sellPrice: sold,
+        feeRatePermille: fees.feeRatePermille,
+        shippingFee: fees.shippingFee,
+        extraFee: fees.extraFee,
+      },
       explanation: '本地规则：退役转卖',
       source: 'local',
     });

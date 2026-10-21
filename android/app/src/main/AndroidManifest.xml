@@ -16,6 +16,17 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+      ★v1.3.7：语音兜底需要知道自己能不能拉起「语音输入」类应用。
+      Android 11+ 的包可见性默认不可见其它应用，不声明 queries 时
+      resolveActivity() 恒为 null —— 会被误判成「本机没有语音引擎」。
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:hardwareAccelerated="true"

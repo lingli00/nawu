@@ -151,7 +151,13 @@ async function startNative(opts: SpeechCallbacks & { lang?: string }): Promise<S
       return;
     }
     if (event === 'error') {
-      errorCode = data.code ?? 'unknown';
+      const code = data.code ?? 'unknown';
+      // ★v1.3.7 Intent 兜底路径里用户按返回键 = 取消，不该弹「识别失败」
+      if (code === 'cancelled') {
+        cancelled = true;
+        return;
+      }
+      errorCode = code;
       opts.onError?.(errorCode);
       return;
     }
@@ -189,7 +195,21 @@ async function startNative(opts: SpeechCallbacks & { lang?: string }): Promise<S
   };
 }
 
-/** 网页端：Web Speech（浏览器能力，非本机模型）。 */
+/**
+ * 网页端：Web Speech，**长按连续录入**（★v1.3.7）。
+ *
+ * 用户反馈：网页端点语音会跳去系统键盘的语音，而且说一句就断，不能连着说。
+ *
+ * 这里做两件事：
+ * 1. `continuous = true` + 自动续听：浏览器的识别器遇到静音会自行 `onend`，
+ *    只要用户还没松手就立刻 `start()` 续上，实现「按住一直说」；
+ * 2. 结果按句累积（final 追加、interim 仅用于实时提示），
+ *    松手时一次性把整段话交给调用方，不用一句一句往输入框里塞。
+ *
+ * 注意：Web Speech 走的是**浏览器**的识别能力（Chrome 需要 HTTPS/安全上下文），
+ * 它不会弹出系统键盘——跳出键盘通常是输入框被聚焦导致的，
+ * 调用方（对话面板）在按下麦克风时不该让输入框抢焦点。
+ */
 async function startWeb(opts: SpeechCallbacks & { lang?: string }): Promise<SpeechSession> {
   const w = window as unknown as {
     SpeechRecognition?: new () => SpeechRecognitionLike;
@@ -200,48 +220,123 @@ async function startWeb(opts: SpeechCallbacks & { lang?: string }): Promise<Spee
 
   const rec = new SR();
   let finalText = '';
+  let interim = '';
   let cancelled = false;
   let settled = false;
+  /** 用户主动松手 → 不再自动续听。 */
+  let stopping = false;
+  /** 致命错误（权限/被占用）→ 不要无限重启。 */
+  let fatal = false;
+  let restartTimer: number | null = null;
+
   const settle = (reason: 'result' | 'error' | 'cancelled'): void => {
     if (settled) return;
     settled = true;
+    if (restartTimer !== null) {
+      window.clearTimeout(restartTimer);
+      restartTimer = null;
+    }
     opts.onEnd?.(reason);
+  };
+
+  const joined = (): string => {
+    const rest = interim.trim();
+    const head = finalText.trim();
+    if (!rest) return head;
+    return head ? `${head}${/[，。,.!！?？]$/.test(head) ? '' : '，'}${rest}` : rest;
   };
 
   rec.lang = opts.lang ?? 'zh-CN';
   rec.interimResults = true;
+  // ★v1.3.7：连续听，不再「说一句就结束」
+  rec.continuous = true;
   rec.maxResults = 1;
+
   rec.onresult = (e) => {
-    const last = e.results?.[e.results.length - 1];
-    const t = (last?.[0]?.transcript ?? '').trim();
-    finalText = t;
-    if (t) opts.onPartial?.(t);
+    interim = '';
+    const from = typeof e.resultIndex === 'number' ? e.resultIndex : 0;
+    for (let i = from; i < e.results.length; i++) {
+      const item = e.results[i];
+      const t = (item?.[0]?.transcript ?? '').trim();
+      if (!t) continue;
+      if (item.isFinal !== false) {
+        finalText = finalText ? `${finalText}${/[，。,.!！?？]$/.test(finalText) ? '' : '，'}${t}` : t;
+      } else {
+        interim = t;
+      }
+    }
+    const live = joined();
+    if (live) opts.onPartial?.(live);
   };
+
   rec.onerror = (ev) => {
     const code = (ev as { error?: string } | undefined)?.error ?? 'unknown';
+    // 这几种重试也没用，直接收尾报错
+    if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-busy') {
+      fatal = true;
+    }
     if (!cancelled) opts.onError?.(code);
   };
+
   rec.onend = () => {
     if (cancelled) {
       settle('cancelled');
       return;
     }
-    if (finalText) {
-      opts.onResult(finalText);
+    // 松手：把这一段话交出去（interim 里可能还有没转正的半句）
+    if (stopping) {
+      const text = joined();
+      if (text) {
+        opts.onResult(text);
+        settle('result');
+        return;
+      }
+      settle('error');
+      return;
+    }
+    // 还没松手：浏览器自己断流了（静音/超时）→ 续上，保持「一直听」
+    if (!fatal && !settled) {
+      restartTimer = window.setTimeout(() => {
+        restartTimer = null;
+        if (cancelled || stopping || fatal) return;
+        try {
+          rec.start();
+        } catch {
+          settle('error');
+        }
+      }, 180);
+      return;
+    }
+    // 致命错误且没有拿到任何文本 → 报错收尾
+    if (finalText.trim() || interim.trim()) {
+      opts.onResult(joined());
       settle('result');
       return;
     }
     settle('error');
   };
+
   rec.start();
 
   return {
     mode: 'web',
     onDevice: false,
-    stop: () => rec.stop(),
+    stop: () => {
+      stopping = true;
+      try {
+        rec.stop();
+      } catch {
+        /* 已停止 */
+      }
+    },
     cancel: () => {
       cancelled = true;
-      rec.abort();
+      stopping = true;
+      try {
+        rec.abort();
+      } catch {
+        /* 已停止 */
+      }
       settle('cancelled');
     },
   };
@@ -280,8 +375,15 @@ export function speechErrorText(code: string, native: boolean): string {
 interface SpeechRecognitionLike {
   lang: string;
   interimResults: boolean;
+  /** ★v1.3.7 长按连续录入需要；老浏览器忽略即可。 */
+  continuous?: boolean;
   maxResults: number;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onresult:
+    | ((e: {
+        results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }>;
+        resultIndex?: number;
+      }) => void)
+    | null;
   onerror: ((e: unknown) => void) | null;
   onend: (() => void) | null;
   start(): void;

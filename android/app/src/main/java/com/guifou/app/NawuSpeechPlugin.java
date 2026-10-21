@@ -47,6 +47,8 @@ public class NawuSpeechPlugin extends Plugin {
     private SpeechRecognizer recognizer = null;
     /** 当前是否用的是「纯离线」识别器（onDevice=true 时不会走网络）。 */
     private boolean onDevice = false;
+    /** ★v1.3.7：系统识别器不可用时的兜底——拉起任意能处理识别 Intent 的应用。 */
+    private static final int REQ_SPEECH = 0x5350;
 
     /* ==================== 能力探测 ==================== */
 
@@ -58,9 +60,21 @@ public class NawuSpeechPlugin extends Plugin {
         if (Build.VERSION.SDK_INT >= 31) {
             device = SpeechRecognizer.isOnDeviceRecognitionAvailable(getContext());
         }
-        ret.put("supported", supported || device);
+        // ★v1.3.7：绑不到识别器时，只要系统里有应用能处理识别 Intent 就算「可用」，
+        // 否则前端会提前判成「功能不可用」，连兜底机会都没有。
+        boolean intentOk = false;
+        try {
+            Intent probe = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intentOk = probe.resolveActivity(getContext().getPackageManager()) != null;
+        } catch (Exception ignored) {
+            /* 查询失败按不可用处理 */
+        }
+        ret.put("supported", supported || device || intentOk);
         ret.put("onDevice", device);
-        ret.put("engine", device ? "android-ondevice" : supported ? "android-service" : "none");
+        ret.put(
+            "engine",
+            device ? "android-ondevice" : supported ? "android-service" : intentOk ? "android-intent" : "none"
+        );
         ret.put("permission", getPermissionState("microphone").toString());
         call.resolve(ret);
     }
@@ -104,8 +118,10 @@ public class NawuSpeechPlugin extends Plugin {
                 } else if (SpeechRecognizer.isRecognitionAvailable(getContext())) {
                     recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
                 } else {
-                    emitError("unavailable", "本机没有可用的语音识别引擎");
-                    call.reject("unavailable");
+                    // ★v1.3.7：系统里绑不到识别器时（不少 ROM 精简掉了 SpeechRecognizer 服务），
+                    // 仍然可能有应用能处理 ACTION_RECOGNIZE_SPEECH。用 Intent 兜底拉起，
+                    // 总比直接告诉用户「语音功能不可用」强。
+                    startIntentRecognizer(call, lang);
                     return;
                 }
                 onDevice = useOnDevice;
@@ -131,8 +147,72 @@ public class NawuSpeechPlugin extends Plugin {
         });
     }
 
-    /* ==================== 停止 / 取消 ==================== */
+    /**
+     * ★v1.3.7 Intent 兜底：让系统里任意「语音输入」应用来转写。
+     *
+     * 场景：某些 ROM（尤其精简版系统）把 SpeechRecognizer 的绑定服务删了，
+     * `isRecognitionAvailable()` 直接 false，但输入法/语音助手仍能处理
+     * `ACTION_RECOGNIZE_SPEECH`。此时拉起该 Activity，用户说完后回到 App，
+     * 结果在 `handleOnActivityResult` 里取 EXTRA_RESULTS。
+     *
+     * 这条路径**一定**会离开 App 界面，所以只在完全绑不到识别器时才走。
+     */
+    private void startIntentRecognizer(final PluginCall call, final String lang) {
+        final Activity activity = getActivity();
+        if (activity == null) {
+            emitError("no-activity", "插件未绑定 Activity");
+            call.reject("no-activity");
+            return;
+        }
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang);
+        intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "请说出要记的内容");
+        if (intent.resolveActivity(activity.getPackageManager()) == null) {
+            emitError("unavailable", "本机没有可用的语音识别引擎");
+            call.reject("unavailable");
+            return;
+        }
+        try {
+            activity.startActivityForResult(intent, REQ_SPEECH);
+            JSObject ret = new JSObject();
+            ret.put("onDevice", false);
+            ret.put("engine", "android-intent");
+            call.resolve(ret);
+        } catch (Exception e) {
+            emitError("start-failed", e.getMessage() == null ? "语音启动失败" : e.getMessage());
+            call.reject("start-failed");
+        }
+    }
 
+    /** Intent 兜底路径的结果回传。 */
+    @Override
+    protected void handleOnActivityResult(int requestCode, int resultCode, Intent data) {
+        super.handleOnActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_SPEECH) return;
+
+        if (resultCode == Activity.RESULT_OK && data != null) {
+            ArrayList<String> list = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+            String text = (list != null && !list.isEmpty() && list.get(0) != null) ? list.get(0).trim() : "";
+            if (!text.isEmpty()) {
+                JSObject r = new JSObject();
+                r.put("text", text);
+                r.put("onDevice", false);
+                notifyListeners("result", r);
+                notifyListeners("end", new JSObject());
+                return;
+            }
+        }
+        // 用户返回/没说话：按「取消」处理，不弹错误提示
+        JSObject err = new JSObject();
+        err.put("code", "cancelled");
+        err.put("message", "已取消");
+        notifyListeners("error", err);
+        notifyListeners("end", new JSObject());
+    }
+
+    /* ==================== 停止 / 取消 ==================== */
     @PluginMethod
     public void stop(PluginCall call) {
         final Activity activity = getActivity();

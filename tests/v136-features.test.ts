@@ -67,10 +67,18 @@ function btnByText(text: string): HTMLButtonElement {
   return btn as HTMLButtonElement;
 }
 
-function inputByPlaceholder(ph: string): HTMLInputElement {
-  const el = [...document.body.querySelectorAll('input')].find((i) => (i.placeholder ?? '').includes(ph));
+/**
+ * 按 placeholder 找输入框。
+ *
+ * ★v1.3.7：对话输入框由单行 `<input>` 换成自适应高度的 `<textarea>`
+ * （长文本不再左右滑动），所以这里 input/textarea 都要找。
+ */
+function inputByPlaceholder(ph: string): HTMLInputElement | HTMLTextAreaElement {
+  const el = [...document.body.querySelectorAll('input, textarea')].find((i) =>
+    ((i as HTMLInputElement | HTMLTextAreaElement).placeholder ?? '').includes(ph),
+  );
   if (!el) throw new Error(`输入框不存在: ${ph}`);
-  return el as HTMLInputElement;
+  return el as HTMLInputElement | HTMLTextAreaElement;
 }
 
 async function renderDock(): Promise<void> {
