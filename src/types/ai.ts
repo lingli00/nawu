@@ -11,6 +11,8 @@ export type AiAction =
   | 'create_mood'
   | 'create_time'
   | 'retire_sell'
+  /** ★v1.3.6 二手买卖一体：买入入库 + 卖出退役，一次确认跑完。 */
+  | 'trade_goods'
   | 'unknown';
 
 /** 物品草稿。 */
@@ -68,6 +70,30 @@ export interface RetireDraft {
   /** 用于唯一定位物品库中的物品 */
   match: string;
   sellPrice: number;
+}
+
+/**
+ * ★v1.3.6 二手买卖一体草稿（「买入 A 360，卖出 560，手续费千分之6、快递20、杂费10」）。
+ *
+ * 落库形状刻意复用既有字段：
+ * - 物品：`price = buyPrice`、`extraFees = [手续费, 快递费, 杂费]`、`sellPrice`、`status = retired`；
+ * - 生活流：由 `syncSaleIncome` 按 `sellPrice − (price + extraFees)` 自动生成，
+ *   不新增表、不新增口径，净赚/日均/报表全部自动对齐。
+ */
+export interface TradeDraft {
+  name: string;
+  buyPrice: number;
+  sellPrice: number;
+  buyDate: string;
+  currency: string;
+  categoryId: string;
+  /** 手续费费率，**千分比**（千分之 6 → 6，0.6% → 6）。0 表示用户没提。 */
+  feeRatePermille: number;
+  /** 手续费绝对值（用户直接说了「手续费 3.4 元」时用）。 */
+  feeAmount: number;
+  shippingFee: number;
+  extraFee: number;
+  note?: string;
 }
 
 /** AI 解析出的单条结果。 */

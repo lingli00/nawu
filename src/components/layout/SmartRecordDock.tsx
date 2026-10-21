@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ImagePlus, Keyboard, Mic, Send, X } from 'lucide-react';
+import { Check, Copy, ImagePlus, Keyboard, Mic, Pencil, Send, X } from 'lucide-react';
 import { useBackGuard } from '../../lib/backGuard';
+import { copyText } from '../../lib/clipboard';
 import { today as todayStr } from '../../lib/date';
 import { emojiForName } from '../../lib/emoji';
 import { aiConfigOf, isAiConfigured, parse, parseImage, parseLocalOnly } from '../../ai/parseService';
+import { detectTrade, feeAmountOf, tradeFees, tradeNetProfit } from '../../ai/trade';
+import { matchCategoryId } from '../../ai/localParser';
 import { answerQuery, type QueryData } from '../../ai/queryLocal';
 import { splitTasks } from '../../ai/splitTasks';
 import { switchableKindOf } from '../../ai/convert';
@@ -17,9 +20,11 @@ import {
 import { bumpRuleHits, loadLearnedRules, recordCorrection } from '../../api/learnedRules';
 import { pushLearnedRulesToCloud } from '../../api/ruleSync';
 import { onOpenSmartRecord } from '../../lib/smartRecordBus';
+import { isNativeApp, speechErrorText, startSpeech, type SpeechSession } from '../../lib/speechLocal';
 import SmartRecordCard, { type RecordCardState } from './SmartRecordCard';
+import TradeRecordCard, { type TradeCardState } from './TradeRecordCard';
 import { toastError, useDataStore, useSettingsStore } from '../../store';
-import type { AiResultItem } from '../../types/ai';
+import type { AiResultItem, TradeDraft } from '../../types/ai';
 import type { Category, Goods } from '../../types/entities';
 
 /**
@@ -63,6 +68,8 @@ type Pending = (
   | { mode: 'record'; text: string; item: AiResultItem; init: RecordCardState; seq?: number }
   | { mode: 'mood'; text: string; item: AiResultItem; seq?: number }
   | { mode: 'plain'; text: string; item: AiResultItem; seq?: number }
+  /** ★v1.3.6 二手买卖一体（买入入库 + 卖出退役）：一张卡跑完整笔交易。 */
+  | { mode: 'trade'; text: string; trade: TradeDraft; seq?: number }
 ) & { done?: string };
 
 /** 生活流 note 可能带「早饭·」前缀，卡片名称里去掉。 */
@@ -76,14 +83,11 @@ function fmtRecSecs(s: number): string {
 }
 
 /**
- * ★v1.3.1 当前是否跑在 Capacitor 原生容器（APP）里。
- * 语音识别报错文案要分场景：APP 内引导系统设置，浏览器引导地址栏授权。
- * 用 window 探测而非 import，与 theme.ts 保持一致（jsdom 测试环境零依赖）。
+ * ★v1.3.6 语音能力与报错文案统一收口到 lib/speechLocal
+ * （`isNativeApp` / `speechErrorText`），这里不再自己探测 Capacitor：
+ * 同一份判断在两个文件里各写一遍，正是「APP 内提示去浏览器地址栏授权」这类
+ * 串味文案的来源。
  */
-function inNativeApp(): boolean {
-  const w = window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } };
-  return w.Capacitor?.isNativePlatform?.() === true;
-}
 
 let msgSeq = 0;
 
@@ -162,6 +166,15 @@ function SmartRecordPanel({
   const [recording, setRecording] = useState(false);
   const [recHint, setRecHint] = useState('');
 
+  /**
+   * ★v1.3.6 已提交条目的就地编辑态。
+   * 用户反馈：已经发出去的那句话错一个字/一个数字，只能整段重打，极其低效。
+   * 现在点气泡下方的「编辑」即可原地改，改完点「重新识别」走同一条发送链路。
+   */
+  const [editingId, setEditingId] = useState<number | null>(null);
+  /** 编辑框非受控（IME 铁律），提交时读 DOM 真值。 */
+  const editRef = useRef<HTMLTextAreaElement | null>(null);
+
   /** 非受控输入框（IME 铁律）：DOM 自持值，发送时读真值。 */
   const inputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -196,10 +209,12 @@ function SmartRecordPanel({
   const chainRef = useRef<Promise<void>>(Promise.resolve());
   /** 防双击/双触发：400ms 内同一文本只入队一次（正常手动重发不受影响）。 */
   const lastSentRef = useRef<{ text: string; at: number }>({ text: '', at: 0 });
-  /** 按住说话：识别实例 / 最终转写 / 取消标志 / 按下时的 Y 坐标。 */
-  const recRef = useRef<SpeechRecognitionLike | null>(null);
+  /** 按住说话：识别会话 / 最终转写 / 取消标志 / 按下时的 Y 坐标。 */
+  const recRef = useRef<SpeechSession | null>(null);
   const recFinalRef = useRef('');
   const recCancelRef = useRef(false);
+  /** 会话还没就绪就松手了：就绪后立即补一次 stop（快速点按场景）。 */
+  const recPendingStopRef = useRef(false);
   const recStartYRef = useRef(0);
   /**
    * ★v1.3.1 识别是否在跑的真实来源。
@@ -223,7 +238,7 @@ function SmartRecordPanel({
       recActiveRef.current = false;
       if (recTimerRef.current) window.clearInterval(recTimerRef.current);
       recTimerRef.current = null;
-      recRef.current?.abort();
+      recRef.current?.cancel();
     },
     [],
   );
@@ -362,6 +377,29 @@ function SmartRecordPanel({
     pushMsg('user', text);
     if (inputRef.current) inputRef.current.value = '';
 
+    /**
+     * ★v1.3.6 二手买卖一体（需求 1）：**必须在分句之前拦截**。
+     * 「买入N95笔记本360元，卖出560元，手续费费率千分之6、快递费20、额外费用10」
+     * 一旦被逗号切开，就变成「入库卡 + 卖出卡」两张互不相认的卡：
+     * 物品还没落库，卖出卡找不到目标，用户看到的是「没找到匹配的物品，请先入库」。
+     */
+    const tradeHit = detectTrade(text, {
+      today: todayStr(),
+      currency: settings.currency,
+    });
+    if (tradeHit) {
+      if (pendingRef.current) pushMsg('sys', '已放弃上一条未保存的识别，重新识别本条');
+      applyPending({
+        mode: 'trade',
+        text,
+        trade: {
+          ...tradeHit,
+          categoryId: matchCategoryId(text, categories, 'goods', rules),
+        },
+      });
+      return;
+    }
+
     // ★v1.2.2 多任务一起（用户反馈 4）：一条消息里多个问题逐个回答，
     // 记录段合并后走既有「本地解析 → AI 兜底 → 逐条弹卡」链路。
     const tasks = splitTasks(text);
@@ -402,6 +440,42 @@ function SmartRecordPanel({
 
   const sendFromInput = (): void => {
     enqueueSend(inputRef.current?.value ?? '');
+  };
+
+  /* ---------------- ★v1.3.6 已提交条目：一键复制 / 就地编辑重发 ---------------- */
+
+  /** 复制原文到剪贴板。 */
+  const copyMsg = async (text: string): Promise<void> => {
+    const ok = await copyText(text);
+    if (ok) pushMsg('sys', '已复制原文，可直接粘贴修改');
+    else toastError('复制失败，请长按气泡手动选择文字');
+  };
+
+  /** 进入就地编辑（同一时间只编辑一条）。 */
+  const startEdit = (m: ChatMsg): void => {
+    setEditingId(m.id);
+    // 下一帧聚焦并定位到末尾：用户要改的往往就是句尾的金额
+    window.setTimeout(() => {
+      const el = editRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }, 0);
+  };
+
+  /**
+   * 提交编辑：读 DOM 真值重新走「识别 → 弹卡」链路。
+   * 历史气泡保持原样（不就地改写），这样「改前 / 改后」都在会话里留痕，
+   * 复核时能看出自己把哪个数字改对了。
+   */
+  const submitEdit = (): void => {
+    const text = (editRef.current?.value ?? '').trim();
+    setEditingId(null);
+    if (!text) {
+      toastError('内容为空，已取消重新识别');
+      return;
+    }
+    enqueueSend(text);
   };
 
   /** 确认保存（记录卡）：改没改分类决定是否触发学习（PRD 3.2 / 3.3）。 */
@@ -471,9 +545,62 @@ function SmartRecordPanel({
     }
   };
 
+  /** 确认保存（二手买卖一体）：先入库 → 再标记退役（已售出）→ 同步生活流。 */
+  const confirmTrade = async (state: TradeCardState): Promise<void> => {
+    const cur = pendingRef.current;
+    if (!cur || cur.mode !== 'trade') return;
+    if (state.buyPrice <= 0 || state.sellPrice <= 0) {
+      toastError('买入价和售价都要大于 0');
+      return;
+    }
+    const fees = tradeFees({
+      sellPrice: state.sellPrice,
+      feeRatePermille: state.feeRatePermille,
+      feeAmount: feeAmountOf(state.sellPrice, state.feeRatePermille),
+      shippingFee: state.shippingFee,
+      extraFee: state.extraFee,
+    });
+    try {
+      // ① 入库（买入金额 + 卖出侧附加费用一次写全，少一次落盘）
+      const row = await addGoods({
+        name: state.name || '物品',
+        price: state.buyPrice,
+        currency: cur.trade.currency,
+        buyDate: state.buyDate || todayStr(),
+        categoryId: state.categoryId,
+        tags: [],
+        note: state.note || undefined,
+        extraFees: fees,
+      });
+      // ② 标记退役（已售出）
+      await updateGoods(row.id, { status: 'retired', sellPrice: state.sellPrice });
+      // ③ 净赚同步生活流（口径：售价 − 买入 − 所有附加费用）
+      const res = await syncSaleIncome(row.id);
+      const profit = tradeNetProfit({
+        buyPrice: state.buyPrice,
+        sellPrice: state.sellPrice,
+        feeRatePermille: state.feeRatePermille,
+        feeAmount: feeAmountOf(state.sellPrice, state.feeRatePermille),
+        shippingFee: state.shippingFee,
+        extraFee: state.extraFee,
+      });
+      const feeText = fees.map((f) => `${f.name} ${f.amount.toFixed(2)}`).join(' + ');
+      const head = `已入库并标记「已售出」${profit > 0 ? `，净赚 ¥${profit.toFixed(2)}` : '（无净赚）'}`;
+      const tail =
+        res.action === 'created' || res.action === 'updated'
+          ? ' 已记入生活流收入'
+          : profit > 0
+            ? '（净赚未入账，请检查出售价）'
+            : '';
+      markDone(feeText ? `${head}${tail}｜扣 ${feeText}` : `${head}${tail}`);
+    } catch (e) {
+      toastError((e as Error).message || '保存失败');
+    }
+  };
+
   /** 确认保存（心情 / 时间 / 退役转卖：只保存，不学习）。 */
   const confirmPlain = async (): Promise<void> => {
-    if (!pendingRef.current || pendingRef.current.mode === 'record') return;
+    if (!pendingRef.current || pendingRef.current.mode === 'record' || pendingRef.current.mode === 'trade') return;
     const { item } = pendingRef.current;
     try {
       if (pendingRef.current.mode === 'mood' && item.moodDraft) {
@@ -512,87 +639,28 @@ function SmartRecordPanel({
     }
   };
 
-  /* ---------------- 语音：微信式「按住 说话」 ---------------- */
+  /* ---------------- 语音：微信式「按住 说话」（★v1.3.6 端侧识别） ---------------- */
 
-  /** 按下「按住 说话」：启动 Web Speech 识别，松手/出错自动收尾。 */
+  /**
+   * 按下「按住 说话」：启动**本机**语音识别（原生离线引擎优先）。
+   *
+   * ★v1.3.6：整条链路换成 lib/speechLocal —— 不再直接用 Web Speech。
+   * 旧实现里 Web Speech 在 Android 上会把音频送去云端识别服务，
+   * 服务端/外网一抖就报「网络错误」，语音输入直接不可用；
+   * 现在走系统离线识别器，服务端停机也照常录音转字。
+   */
   const beginRecognition = (): void => {
     // 双击/双 pointerdown 防护：已在识别中就直接忽略
     if (recActiveRef.current) return;
-    const w = window as unknown as {
-      SpeechRecognition?: new () => SpeechRecognitionLike;
-      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-    };
-    const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-    if (!SR) {
-      toastError('当前环境不支持语音识别，请打字或用识图');
-      return;
-    }
-    let rec: SpeechRecognitionLike;
-    try {
-      rec = new SR();
-    } catch {
-      toastError('语音启动失败，请直接打字');
-      return;
-    }
-    rec.lang = 'zh-CN';
-    rec.interimResults = true;
-    rec.maxResults = 1;
-    rec.onresult = (e) => {
-      // 只取最后一条结果（interim 会被 final 原地替换，拼接会重复）
-      const last = e.results?.[e.results.length - 1];
-      const t = (last?.[0]?.transcript ?? '').trim();
-      recFinalRef.current = t;
-      setRecHint(t || '正在聆听…');
-    };
-    rec.onerror = (ev) => {
-      finishRecognition();
-      if (recCancelRef.current) return;
-      const code = (ev as { error?: string } | undefined)?.error ?? '';
-      // ★v1.3.1 报错文案分场景：APP 内（Capacitor 原生）引导系统设置，
-      // 浏览器引导地址栏授权；网络类错误说明 HTTPS 要求
-      const native = inNativeApp();
-      if (code === 'not-allowed' || code === 'service-not-allowed') {
-        toastError(
-          native
-            ? '麦克风权限被拒绝：请到系统设置 → 应用 → 纳物 → 权限 里允许「麦克风」'
-            : '麦克风权限被拒绝，请在浏览器地址栏允许麦克风',
-        );
-      } else if (code === 'network' || code === 'audio-capture') {
-        toastError(
-          native
-            ? '语音识别服务连接失败，请检查网络后重试（也可直接打字）'
-            : '当前浏览器/网络不支持语音识别（Chrome 需 HTTPS 环境），可打字或识图',
-        );
-      } else {
-        toastError('语音识别失败，请再试或直接打字');
-      }
-    };
-    rec.onend = () => {
-      const cancelled = recCancelRef.current;
-      const text = recFinalRef.current;
-      finishRecognition();
-      if (cancelled || !text || !aliveRef.current) return;
-      enqueueSend(text);
-    };
-    recRef.current = rec;
-    recFinalRef.current = '';
-    recCancelRef.current = false;
-    // 注意：recStartYRef 由 pointerdown 写入（上滑取消的基准），这里不能清零
-    recStartAtRef.current = 0;
-    try {
-      rec.start();
-    } catch {
-      finishRecognition();
-      toastError('语音启动失败，请直接打字');
-      return;
-    }
-    // 启动成功：置运行标志 + 起计时器（进度条/秒数视觉反馈，
-    // 治「长按无响应」——按下瞬间就有 0:00 与脉冲点）
     recActiveRef.current = true;
+    recCancelRef.current = false;
+    recPendingStopRef.current = false;
+    recFinalRef.current = '';
+    // 立即进入录音态：按下瞬间就有 0:00 与脉冲点，治「长按无响应」
     setRecording(true);
-    recStartAtRef.current = Date.now();
     setRecSecs(0);
-    setRecHint('松开手指 发送');
+    setRecHint('正在启动本地识别…');
+    recStartAtRef.current = Date.now();
     recTimerRef.current = window.setInterval(() => {
       const s = Math.floor((Date.now() - recStartAtRef.current) / 1000);
       setRecSecs(s);
@@ -601,6 +669,38 @@ function SmartRecordPanel({
         recRef.current?.stop();
       }
     }, 250);
+
+    void startSpeech({
+      lang: 'zh-CN',
+      onPartial: (t) => {
+        recFinalRef.current = t;
+        setRecHint(t || '正在聆听…');
+      },
+      onResult: (t) => {
+        recFinalRef.current = t;
+      },
+      onError: (code) => {
+        toastError(speechErrorText(code, isNativeApp()));
+      },
+      onEnd: (reason) => {
+        const cancelled = reason === 'cancelled' || recCancelRef.current;
+        const text = recFinalRef.current;
+        finishRecognition();
+        if (cancelled || !text || !aliveRef.current) return;
+        enqueueSend(text);
+      },
+    })
+      .then((session) => {
+        recRef.current = session;
+        if (recActiveRef.current) setRecHint('松开手指 发送');
+        // 松手发生在会话就绪之前（极快的点按）：补一次 stop，别让识别挂着不收尾
+        if (recPendingStopRef.current) session.stop();
+      })
+      .catch((e: unknown) => {
+        finishRecognition();
+        const code = (e as Error)?.message === 'unavailable' ? 'unavailable' : 'start-failed';
+        toastError(speechErrorText(code, isNativeApp()));
+      });
   };
 
   /** 收尾（清高亮、计时与提示）。 */
@@ -608,6 +708,7 @@ function SmartRecordPanel({
     recActiveRef.current = false;
     if (recTimerRef.current) window.clearInterval(recTimerRef.current);
     recTimerRef.current = null;
+    recRef.current = null;
     setRecSecs(0);
     setRecording(false);
     setRecHint('');
@@ -715,13 +816,70 @@ function SmartRecordPanel({
         <div ref={scrollRef} className="flex-1 space-y-2.5 overflow-y-auto p-4">
           {msgs.map((m) => (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <p
-                className={`max-w-[85%] whitespace-pre-line rounded-2xl px-3 py-2 text-sm leading-5 ${
-                  m.role === 'user' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-2'
-                }`}
-              >
-                {m.text}
-              </p>
+              <div className={`flex max-w-[85%] flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                {editingId === m.id ? (
+                  /* ★v1.3.6 就地编辑：不换页面、不弹新层，改完直接重新识别 */
+                  <div className="w-full min-w-[15rem] rounded-2xl border border-accent bg-surface p-2">
+                    <textarea
+                      ref={editRef}
+                      defaultValue={m.text}
+                      rows={3}
+                      aria-label="编辑这条内容"
+                      className="w-full resize-none rounded-xl bg-surface-2 px-2.5 py-2 text-sm leading-5 text-ink outline-none"
+                    />
+                    <div className="mt-1.5 flex justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        className="h-8 rounded-full border border-line px-3 text-xs text-ink-2 active:bg-surface-2"
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        onClick={submitEdit}
+                        className="h-8 rounded-full bg-accent px-3 text-xs font-semibold text-white active:opacity-90"
+                      >
+                        重新识别
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p
+                      className={`whitespace-pre-line rounded-2xl px-3 py-2 text-sm leading-5 ${
+                        m.role === 'user' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-2'
+                      }`}
+                    >
+                      {m.text}
+                    </p>
+                    {m.role === 'user' ? (
+                      <div className="mt-1 flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => void copyMsg(m.text)}
+                          aria-label="复制原文"
+                          title="复制原文"
+                          className="flex h-7 items-center gap-1 rounded-full px-2 text-[11px] text-ink-3 active:bg-surface-2"
+                        >
+                          <Copy size={12} strokeWidth={1.8} aria-hidden />
+                          复制
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => startEdit(m)}
+                          aria-label="编辑这条"
+                          title="编辑后重新识别"
+                          className="flex h-7 items-center gap-1 rounded-full px-2 text-[11px] text-ink-3 active:bg-surface-2"
+                        >
+                          <Pencil size={12} strokeWidth={1.8} aria-hidden />
+                          编辑
+                        </button>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -735,6 +893,17 @@ function SmartRecordPanel({
                 initial={pending.init}
                 categories={categories}
                 onConfirm={(s) => void confirmRecord(s)}
+                onCancel={() => showNext(items)}
+                done={pending.done}
+                remaining={items.length}
+                onNext={() => showNext(items)}
+              />
+            ) : pending.mode === 'trade' ? (
+              <TradeRecordCard
+                key={pending.seq ?? 0}
+                initial={pending.trade}
+                categories={categories}
+                onConfirm={(s) => void confirmTrade(s)}
                 onCancel={() => showNext(items)}
                 done={pending.done}
                 remaining={items.length}
@@ -818,15 +987,21 @@ function SmartRecordPanel({
                   if (!recActiveRef.current) return;
                   if (recStartYRef.current - e.clientY > 60) {
                     recCancelRef.current = true;
-                    recRef.current?.abort();
+                    recPendingStopRef.current = false;
+                    recRef.current?.cancel();
                     finishRecognition();
+                  } else if (recRef.current) {
+                    recRef.current.stop();
                   } else {
-                    recRef.current?.stop();
+                    // 会话还在启动中：等它就绪后立刻 stop（见 beginRecognition 的 then）
+                    recPendingStopRef.current = true;
                   }
                 }}
                 onPointerCancel={() => {
+                  if (!recActiveRef.current) return;
                   recCancelRef.current = true;
-                  recRef.current?.abort();
+                  recPendingStopRef.current = false;
+                  recRef.current?.cancel();
                   finishRecognition();
                 }}
               >
@@ -1006,17 +1181,4 @@ function plainSummary(item: AiResultItem): string {
     return `「${item.retireDraft.match}」标记退役，转卖价 ¥${item.retireDraft.sellPrice}`;
   }
   return item.explanation ?? '确认保存这条记录';
-}
-
-/** Web Speech API 最小结构（避免依赖具体 DOM lib 版本的类型名）。 */
-interface SpeechRecognitionLike {
-  lang: string;
-  interimResults: boolean;
-  maxResults: number;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: ((e: unknown) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
 }

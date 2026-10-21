@@ -50,6 +50,23 @@ import type { Goods, GoodsImage } from '../types/entities';
 import logger from '../lib/log';
 import { haptic } from '../lib/haptics';
 
+/**
+ * ★v1.3.6 附加费用行（本地编辑态）。
+ * `key` 是稳定行 id：旧版拿数组下标当 React key，删掉中间一行后 React 会复用
+ * 下一行的 DOM 节点，`defaultValue` 不重设 → 界面上的名称与 state 错位。
+ */
+interface FeeRow {
+  key: string;
+  name: string;
+  amount: string;
+}
+
+let feeRowSeq = 0;
+function newFeeKey(): string {
+  feeRowSeq += 1;
+  return `fee-${feeRowSeq}`;
+}
+
 /* ============================================================================
  * 首页（对齐原版竞品布局）：
  * 大字标题 + 视图/搜索/记一笔 三按钮 → 物品/订阅 pill tab → 今日卡（P1-5） →
@@ -517,15 +534,41 @@ export function GoodsFormSheet({
   const [totalCount, setTotalCount] = useState(initial?.totalCount != null ? String(initial.totalCount) : '');
   const [usedCount, setUsedCount] = useState(String(initial?.usedCount ?? 0));
   const [sellPrice, setSellPrice] = useState(initial?.sellPrice != null ? String(initial.sellPrice) : '');
-  /** 附加费本地行（amount 用字符串方便输入，保存时转数字）。 */
-  const [fees, setFees] = useState<Array<{ name: string; amount: string }>>(
-    initial?.extraFees?.map((f) => ({ name: f.name, amount: f.amount ? String(f.amount) : '' })) ?? [],
+  /**
+   * ★v1.3.6（恶性数据 Bug）附加费用行：`name` 与 `amount` 都必须完整持久化。
+   *
+   * 旧实现只有一个受控 state + `key={i}`：中文费用名走输入法组合时 Android WebView
+   * 的 `change` 事件会漏发（本工程 IME 铁律已在名称/备注上踩过同一个坑），
+   * 于是 state 里一直是空字符串，提交时 `fees.filter(...).map(f => f.name)` 取到 ''，
+   * 落库就成了「只有金额、没有项目名」——用户重开记录发现「运费」两个字没了。
+   * 现在每个字段各自挂 ref，提交时一律以 DOM 真值为准；行 key 也改成稳定 id，
+   * 避免删除中间一行时 React 复用 DOM 把上一行的 defaultValue 带到下一行。
+   */
+  const [fees, setFees] = useState<FeeRow[]>(() =>
+    (initial?.extraFees ?? []).map((f) => ({
+      key: newFeeKey(),
+      name: f.name ?? '',
+      amount: f.amount ? String(f.amount) : '',
+    })),
   );
+  /** 费用名称 / 金额的 DOM 引用（按行稳定 key 索引），提交时读真值。 */
+  const feeNameRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const feeAmountRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [warrantyDate, setWarrantyDate] = useState(initial?.warrantyDate ?? '');
 
-  const setFee = (i: number, patch: Partial<{ name: string; amount: string }>): void => {
-    setFees((rows) => rows.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
+  const setFee = (key: string, patch: Partial<Pick<FeeRow, 'name' | 'amount'>>): void => {
+    setFees((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   };
+
+  /** 读当前所有费用行（DOM 优先，回退 state），过滤全空行。 */
+  const readFees = (): Array<{ name: string; amount: number }> =>
+    fees
+      .map((f) => {
+        const nameNow = (feeNameRefs.current[f.key]?.value ?? f.name ?? '').trim();
+        const amountRaw = (feeAmountRefs.current[f.key]?.value ?? f.amount ?? '').replace(/[^\d.]/g, '');
+        return { name: nameNow, amount: Number(amountRaw) || 0 };
+      })
+      .filter((f) => f.name !== '' || f.amount > 0);
 
   const goodsCats = useMemo(
     () => categories.filter((c) => c.kind === 'goods').sort((a, b) => a.order - b.order),
@@ -571,12 +614,16 @@ export function GoodsFormSheet({
     // 弹层不关也不提示，用户感知就是「点了保存没反应 / 添加失败」。
     try {
       if (isEdit && initial) {
+        /* ★v1.3.6：附加费用一律以 DOM 为准（中文费用名走输入法时 change 会漏发，
+           旧实现读 state 于是名称丢失，只剩金额落库）。先取出来，下面
+           询问弹窗的净赚与最终 patch 共用同一份数据。 */
+        const extraFeesNow = readFees();
         // 出售价语义：填了出售价且仍在役 → 询问是否同时标记为已转卖（退役）
         const sp = sellPrice.trim() ? Number(sellPrice) : 0;
         let markSold = false;
         if (Number.isFinite(sp) && sp > 0 && initial.status !== 'retired') {
           // ★v1.1.3：confirm 里就把净赚算出来——用户答「是」时知道会计入生活流收入
-          const invest = round(p + fees.reduce((acc, f) => acc + (Number(f.amount) || 0), 0));
+          const invest = round(p + extraFeesNow.reduce((acc, f) => acc + f.amount, 0));
           const profit = round(sp - invest);
           markSold = await confirm({
             title: '标记为已转卖？',
@@ -587,9 +634,6 @@ export function GoodsFormSheet({
           });
         }
         // 编辑：一次提交全量 patch（空值=清除该字段；incomes 不在 patch 里 → 原样保留）
-        const extraFees = fees
-          .filter((f) => f.name.trim() !== '' || Number(f.amount) > 0)
-          .map((f) => ({ name: f.name.trim(), amount: Number(f.amount) || 0 }));
         await updateGoods(initial.id, {
           ...base,
           targetDailyCost: targetDailyCost.trim() ? Number(targetDailyCost) : undefined,
@@ -597,7 +641,7 @@ export function GoodsFormSheet({
           totalCount: countEnabled && totalCount.trim() ? Number(totalCount) : undefined,
           usedCount: Math.max(0, Math.round(Number(usedCount) || 0)),
           sellPrice: sellPrice.trim() ? Number(sellPrice) : undefined,
-          extraFees,
+          extraFees: extraFeesNow,
           warrantyDate: warrantyDate || undefined,
           ...(markSold ? { status: 'retired' as const } : {}),
         });
@@ -792,23 +836,33 @@ export function GoodsFormSheet({
                   </PageField>
                   <div>
                     <p className="text-xs font-medium text-ink-2">附加费用（计入总投入）</p>
-                    {fees.map((f, i) => (
-                      <div key={i} className="mt-1.5 flex items-center gap-2">
+                    {fees.map((f) => (
+                      <div key={f.key} className="mt-1.5 flex items-center gap-2">
                         <input
+                          ref={(el) => {
+                            feeNameRefs.current[f.key] = el;
+                          }}
                           defaultValue={f.name}
-                          onChange={(e) => setFee(i, { name: e.target.value })}
+                          onChange={(e) => setFee(f.key, { name: e.target.value })}
                           placeholder="说明（如运费）"
                           className="h-10 min-w-0 flex-1 nw-input"
                         />
                         <input
+                          ref={(el) => {
+                            feeAmountRefs.current[f.key] = el;
+                          }}
                           defaultValue={f.amount}
-                          onChange={(e) => setFee(i, { amount: e.target.value.replace(/[^\d.]/g, '') })}
+                          onChange={(e) => setFee(f.key, { amount: e.target.value.replace(/[^\d.]/g, '') })}
                           inputMode="decimal"
                           placeholder="0.00"
                           className="tnum h-10 w-20 shrink-0 rounded-btn border border-line bg-surface-2 px-2 text-sm outline-none focus:border-accent"
                         />
                         <button
-                          onClick={() => setFees((rows) => rows.filter((_, idx) => idx !== i))}
+                          onClick={() => {
+                            delete feeNameRefs.current[f.key];
+                            delete feeAmountRefs.current[f.key];
+                            setFees((rows) => rows.filter((row) => row.key !== f.key));
+                          }}
                           aria-label="删除附加费"
                           className="flex h-10 w-8 shrink-0 items-center justify-center text-ink-3 active:opacity-70"
                         >
@@ -817,7 +871,7 @@ export function GoodsFormSheet({
                       </div>
                     ))}
                     <button
-                      onClick={() => setFees((rows) => [...rows, { name: '', amount: '' }])}
+                      onClick={() => setFees((rows) => [...rows, { key: newFeeKey(), name: '', amount: '' }])}
                       className="mt-2 h-9 w-full rounded-btn border border-dashed border-line text-xs text-ink-3 active:opacity-70"
                     >
                       ＋ 添加附加费

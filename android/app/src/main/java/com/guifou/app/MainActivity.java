@@ -33,6 +33,10 @@ public class MainActivity extends BridgeActivity {
   @Override
   public void onCreate(Bundle savedInstanceState) {
     registerPlugin(ApkUpdatePlugin.class);
+    // ★v1.3.6：端侧语音识别插件（NawuSpeech）。同样是 app 本地类，
+    // 必须在 super.onCreate() 之前注册，否则 Bridge 建好后不会再收 ——
+    // 前端会拿到「插件不存在」，语音输入直接不可用。
+    registerPlugin(NawuSpeechPlugin.class);
     super.onCreate(savedInstanceState);
   }
 
