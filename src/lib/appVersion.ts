@@ -12,7 +12,7 @@
  *   （`versionName` 与 `versionCode`）+ `package.json` 的 `version`
  *   + 服务端 `storage/app-release/manifest.json`。
  */
-export const APP_VERSION = '1.4.1';
+export const APP_VERSION = '1.5.0';
 
 /**
  * 官方更新频道（v1.0.36 起）。
@@ -23,6 +23,8 @@ export const APP_VERSION = '1.4.1';
  *
  * ★该地址是唯一硬编码的官方地址，换服务器只改这一处。
  *
+ * ★v1.4.2：2233 独立端口已下线整合到 80 端口后台，频道改由 80 静态目录提供。
+ *
  * ★v1.4.1 修复（重要）：
  * 这里此前一直是 `http://127.0.0.1:2233/nawu-update/` 这个**本地占位地址**，
  * 而构建过程没有任何替换逻辑 —— 手机上的 127.0.0.1 指向手机自己，
@@ -30,7 +32,7 @@ export const APP_VERSION = '1.4.1';
  *   · 增量补丁一次都没用上（只能下 14MB 全量包）；
  *   · 用户服务器没同步 manifest 时，直接显示「已是最新版本」。
  */
-export const OFFICIAL_UPDATE_CHANNEL = 'http://106.53.204.29:2233/nawu-update/';
+export const OFFICIAL_UPDATE_CHANNEL = 'http://106.53.204.29/nawu-update/';
 
 /**
  * 按 `.` 分段的数字版本比较：`a > b` → 1，`a < b` → -1，相等 → 0。

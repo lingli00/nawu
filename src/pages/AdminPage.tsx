@@ -18,8 +18,6 @@ import {
   fetchJob,
   fetchServerInfo,
   fetchSource,
-  pruneUpdateChannel,
-  publishAppRelease,
   rollbackServer,
   runMigration,
   saveSource,
@@ -1553,6 +1551,14 @@ function DbTab({
   );
 }
 
+/** ★v1.4.2 更新通道清单（/nawu-update/app-manifest.json 的最小子集）。 */
+interface ChannelInfo {
+  version: string;
+  publishedAt: string;
+  apk: { size: number };
+  patches: Array<{ from: string }>;
+}
+
 /* ==================== v1.0.36 · 在线更新 Tab ==================== */
 
 const UPDATE_CHECK_KEY = 'gf.adminUpdateCheck';
@@ -1585,13 +1591,27 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
   const [lastAutoCheck, setLastAutoCheck] = useState('');
   const [srcUrl, setSrcUrl] = useState('');
   const [srcAuto, setSrcAuto] = useState(true);
-  const [appFile, setAppFile] = useState<File | null>(null);
-  const [appVersion, setAppVersion] = useState('');
-  const [appNotes, setAppNotes] = useState('');
+  /** ★v1.4.2 更新通道信息（官网静态目录 /nawu-update/app-manifest.json）。 */
+  const [channelInfo, setChannelInfo] = useState<ChannelInfo | null>(null);
+  const [channelLoading, setChannelLoading] = useState(false);
+  const loadChannel = async (): Promise<void> => {
+    setChannelLoading(true);
+    try {
+      const res = await fetch(`${window.location.origin}/nawu-update/app-manifest.json`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      setChannelInfo((await res.json()) as ChannelInfo);
+    } catch {
+      setChannelInfo(null);
+    } finally {
+      setChannelLoading(false);
+    }
+  };
+  useEffect(() => {
+    void loadChannel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [appManifest, setAppManifest] = useState<AppReleaseManifest | null>(null);
   const [appExists, setAppExists] = useState(false);
-  const [publishMsg, setPublishMsg] = useState('');
-  const apkInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadInfo = useCallback(async (): Promise<void> => {
     try {
@@ -1823,64 +1843,6 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
     }
   };
 
-  const doPublish = async (): Promise<void> => {
-    if (!appFile) {
-      toastError('请先选择 APK 文件');
-      return;
-    }
-    const v = appVersion.trim();
-    if (!/^[0-9A-Za-z._-]{1,32}$/.test(v)) {
-      toastError('版本号不合法（字母/数字/点/中划线/下划线，≤32 位）');
-      return;
-    }
-    if (appFile.size > 300 * 1024 * 1024) {
-      toastError('APK 超过 300MB 上限');
-      return;
-    }
-    const ok = await useUiStore.getState().confirm({
-      title: `发布 App v${v}？`,
-      message: '将替换当前安装包，用户端下次检查更新即可收到；旧安装包会被清理。',
-      confirmText: '发布',
-      danger: true,
-    });
-    if (!ok) return;
-    setBusy('publish');
-    setPublishMsg('');
-    try {
-      const r = await publishAppRelease(currentServer(), token, appFile, v, appNotes.trim());
-      setPublishMsg(`已发布 v${r.manifest.version}（${(r.manifest.fileSize / 1048576).toFixed(1)} MB，${r.manifest.publishedAt}）`);
-      setAppFile(null);
-      setAppNotes('');
-      if (apkInputRef.current) apkInputRef.current.value = '';
-      toastSuccess('App 安装包已发布');
-      void loadInfo();
-    } catch (e) {
-      setPublishMsg(e instanceof Error ? e.message : '发布失败');
-      toastError('发布失败');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  /**
-   * 手动清理更新通道（v1.1.7）：完整包 / 增量包各留最近 3 份。
-   * 发布时会自动跑，这里给「换过频道、手动传过包」的场合一个入口。
-   */
-  const doPrune = async (): Promise<void> => {
-    setBusy('prune');
-    try {
-      const r = await pruneUpdateChannel(currentServer(), token);
-      const mb = (r.bytes / 1048576).toFixed(1);
-      toastSuccess(r.apk + r.patch > 0
-        ? `已清理 ${r.apk} 个安装包、${r.patch} 个补丁（释放 ${mb} MB）`
-        : '通道里没有超期文件，无需清理');
-    } catch (e) {
-      toastError(e instanceof Error ? e.message : '清理失败');
-    } finally {
-      setBusy('');
-    }
-  };
-
   const doMigrate = async (): Promise<void> => {
     setBusy('migrate');
     try {
@@ -2045,66 +2007,39 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
         </div>
       ) : null}
 
-      {/* 卡片 D · App 发布 */}
+      {/* 卡片 D · 更新通道（★v1.4.2：原 2233 独立端口面板已下线，整合到这里）
+          只做展示与排查：发布仍由构建流程完成（见 deploy/publish_app.py）。 */}
       <div className="mt-3 rounded-card border border-line bg-surface p-4">
-        <h2 className="text-sm font-semibold">App 安装包发布</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">更新通道</h2>
+          <button onClick={() => void loadChannel()} className={btnGhost}>
+            {channelLoading ? '读取中…' : '刷新'}
+          </button>
+        </div>
         <p className="mt-1 text-[11px] text-ink-3">
-          上传 APK 即发布：服务端自动写入 storage/app-release/manifest.json（含历史记录），用户端下次检查更新即可收到。
-          当前发布：{appManifest?.version ? `v${appManifest.version}` : '未发布'}
-          {appManifest?.publishedAt ? ` · ${appManifest.publishedAt}` : ''}
-          {appManifest?.version && !appExists ? ' · 安装包文件缺失' : ''}
+          App 检查更新时按「当前服务器 → 官网」自动选择渠道；此页展示官网通道的当前内容。
         </p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <input
-            value={appVersion}
-            onChange={(e) => setAppVersion(e.target.value)}
-            placeholder="版本号（如 1.1）"
-            className={inputCls}
-          />
-          <input
-            value={appNotes}
-            onChange={(e) => setAppNotes(e.target.value)}
-            placeholder="更新说明（可选，≤4000 字）"
-            className={inputCls}
-          />
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button onClick={() => apkInputRef.current?.click()} className={btnGhost}>
-            选择 APK 文件
-          </button>
-          <span className="text-xs text-ink-2">
-            {appFile ? `${appFile.name}（${(appFile.size / 1048576).toFixed(1)} MB）` : '未选择文件'}
-          </span>
-          <button onClick={() => void doPublish()} disabled={busy === 'publish' || !appFile} className={btnPrimary}>
-            {busy === 'publish' ? '发布中…' : '发布'}
-          </button>
-          <button onClick={() => void doPrune()} disabled={busy === 'prune'} className={btnGhost}>
-            {busy === 'prune' ? '清理中…' : '清理旧包'}
-          </button>
-        </div>
-        <p className="mt-1.5 text-[11px] text-ink-3">
-          留存策略：完整包与增量补丁各保留最近 3 份，更早的自动删除（当前发布的那份永远保留）。
-        </p>
-        <input
-          ref={apkInputRef}
-          type="file"
-          accept=".apk,application/vnd.android.package-archive"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0] ?? null;
-            setAppFile(f);
-            if (f && !appVersion.trim()) {
-              const m = f.name.match(/nawu-v([0-9A-Za-z._-]+)\.apk$/i);
-              if (m) setAppVersion(m[1]);
-            }
-          }}
-        />
-        {publishMsg ? <p className="mt-2 whitespace-pre-wrap text-xs text-ink-2">{publishMsg}</p> : null}
-        {appManifest && appManifest.history.length > 0 ? (
-          <p className="mt-2 text-[11px] text-ink-3">
-            历史发布：{appManifest.history.map((h) => `v${h.version}`).join('、')}
-          </p>
-        ) : null}
+        {channelInfo ? (
+          <>
+            <p className="mt-2 text-sm font-semibold">
+              最新版本 v{channelInfo.version}
+              <span className="ml-2 text-[11px] font-normal text-ink-3">
+                {channelInfo.publishedAt ? `发布于 ${channelInfo.publishedAt}` : ''}
+              </span>
+            </p>
+            <p className="mt-1 text-[11px] text-ink-3">
+              全量包 {(channelInfo.apk.size / 1048576).toFixed(1)} MB
+              {channelInfo.patches.length > 0
+                ? ` · 增量包 ${channelInfo.patches.length} 个（${channelInfo.patches.map((x: { from: string }) => x.from).join('、')}）`
+                : ' · 无增量包'}
+            </p>
+            <p className="mt-1 break-all text-[11px] text-ink-3">
+              通道地址：{`${window.location.origin}/nawu-update/app-manifest.json`}
+            </p>
+          </>
+        ) : (
+          <p className="mt-2 text-[11px] text-ink-3">{channelLoading ? '正在读取通道清单…' : '通道清单不可达（检查 /nawu-update/ 目录与静态服务）'}</p>
+        )}
       </div>
 
       {/* 卡片 E · 更新源设置 */}
@@ -2117,7 +2052,7 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
           <input
             value={srcUrl}
             onChange={(e) => setSrcUrl(e.target.value)}
-            placeholder={info?.source.effective ?? 'http://106.53.204.29:2233/nawu-update/'}
+            placeholder={info?.source.effective ?? 'http://127.0.0.1:2233/nawu-update/'}
             className={`${inputCls} flex-1`}
           />
           <label className="flex items-center gap-1.5 text-xs text-ink-2">

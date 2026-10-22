@@ -4,13 +4,17 @@ import { checkAppVersion } from './app';
 import type { ServerConfig } from '../types/entities';
 
 /**
- * v1.0.36 · App 更新检查（官方频道优先，用户自己的服务器兜底）。
+ * App 更新检查（★v1.4.2 渠道规则改造）。
  *
- * - 官方频道：http://106.53.204.29:2233/nawu-update/app-manifest.json，
- *   含完整安装包 + 可选增量补丁（NAWU-PATCH1，见 .gh/make-app-patch.py）；
- * - 频道不可达时回退用户服务器 /api/app/version（无补丁，只能全量）；
- * - 网页端不适用本模块的安装流程（浏览器打开即最新版），
- *   SettingsPage 会按 isNative() 分流。
+ * 渠道由「当前连接的服务器」自动决定，App 内不做渠道选择：
+ * 1. 当前服务器**已发布**更新包（后台传过 APK）且版本更新 → 走该服务器的更新通道；
+ * 2. 服务器没发布 / 版本不新 / 未配置服务器 → 走官网渠道（含增量补丁）；
+ * 3. 都没有 → 返回 null（界面显示「已是最新」）。
+ * 切换服务器后，下一次检查自动跟随新的服务器。
+ *
+ * 官网渠道：http://106.53.204.29/nawu-update/app-manifest.json（80 端口静态目录，
+ * 原 2233 独立端口已下线整合），含完整安装包 + 增量补丁。
+ * 每次检查都会写一条「更新来源日志」，设置页可见，便于排查走了哪条渠道。
  */
 
 export interface ChannelApk {
@@ -36,6 +40,45 @@ export interface ChannelManifest {
   minVersion: string;
   apk: ChannelApk;
   patches: ChannelPatch[];
+}
+
+/** ★v1.4.2 更新来源日志（排查「这次走的是官网还是服务器」）。 */
+export interface UpdateCheckLog {
+  /** ISO 时间 */
+  at: string;
+  /** 最终采用的渠道；none = 无更新 */
+  source: 'channel' | 'server' | 'none';
+  /** 客户端当前版本 */
+  current: string;
+  /** 远端的版本号（无则空） */
+  remote: string;
+  /** 一句话说明（为什么走这条渠道） */
+  reason: string;
+  /** 当前服务器的地址（未配置为空） */
+  server?: string;
+}
+
+const LOG_KEY = 'nawu-update-check-log';
+
+/** 记录一次检查结果（同时 console 输出，方便真机连日志时查看）。 */
+export function recordUpdateLog(log: UpdateCheckLog): void {
+  try {
+    localStorage.setItem(LOG_KEY, JSON.stringify(log));
+  } catch {
+    /* 隐私模式忽略 */
+  }
+  // eslint-disable-next-line no-console
+  console.info(`[update] ${log.source} ${log.current}→${log.remote || '-'} | ${log.reason}`);
+}
+
+/** 读取最近一次更新来源日志。 */
+export function lastUpdateLog(): UpdateCheckLog | null {
+  try {
+    const raw = localStorage.getItem(LOG_KEY);
+    return raw ? (JSON.parse(raw) as UpdateCheckLog) : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface AppUpdateTarget {
@@ -139,43 +182,85 @@ function absUrl(u: string): string {
  * 频道可达时以频道为准；频道不可达才回退用户服务器。
  */
 export async function checkAppUpdate(server: ServerConfig | null): Promise<AppUpdateTarget | null> {
+  const now = new Date().toISOString();
+
+  /**
+   * ① 当前服务器优先：服务器后台传过更新包 → 只走它的通道
+   *（其他部署者在自己服务器上传包，就形成自己的更新通道；
+   *  切换服务器后这里自然跟着变，不做任何额外选择）
+   */
+  if (server) {
+    try {
+      const info = await checkAppVersion(server);
+      const remote = (info.version ?? '').trim();
+      if (remote && compareVersions(remote, APP_VERSION) > 0) {
+        recordUpdateLog({
+          at: now,
+          source: 'server',
+          current: APP_VERSION,
+          remote,
+          reason: '当前服务器已发布更新包，走该服务器通道',
+          server: server.url,
+        });
+        return {
+          source: 'server',
+          version: remote,
+          notes: info.notes ?? '',
+          publishedAt: info.publishedAt ?? '',
+          apkUrl: `${server.url.replace(/\/+$/, '')}/api/app/download`,
+          apkSize: info.fileSize ?? 0,
+          apkSha256: '',
+          patch: null,
+        };
+      }
+      // 服务器没有发布 / 版本不新 → 继续看官网
+    } catch {
+      /* 服务器不可达：继续尝试官网 */
+    }
+  }
+
+  // ② 官网渠道（有增量补丁）
   const m = await fetchChannelManifest();
   if (m) {
-    if (compareVersions(m.version, APP_VERSION) <= 0) {
-      return null;
+    if (compareVersions(m.version, APP_VERSION) > 0) {
+      const patch = m.patches.find((p) => p.from === APP_VERSION) ?? null;
+      recordUpdateLog({
+        at: now,
+        source: 'channel',
+        current: APP_VERSION,
+        remote: m.version,
+        reason: server ? '当前服务器无更新包，走官网渠道' : '未连接服务器，走官网渠道',
+        server: server?.url,
+      });
+      return {
+        source: 'channel',
+        version: m.version,
+        notes: m.notes,
+        publishedAt: m.publishedAt,
+        apkUrl: m.apk.url,
+        apkSize: m.apk.size,
+        apkSha256: m.apk.sha256,
+        patch,
+      };
     }
-    const patch = m.patches.find((p) => p.from === APP_VERSION) ?? null;
-    return {
-      source: 'channel',
-      version: m.version,
-      notes: m.notes,
-      publishedAt: m.publishedAt,
-      apkUrl: m.apk.url,
-      apkSize: m.apk.size,
-      apkSha256: m.apk.sha256,
-      patch,
-    };
-  }
-  if (!server) {
+    recordUpdateLog({
+      at: now,
+      source: 'none',
+      current: APP_VERSION,
+      remote: m.version,
+      reason: '官网与服务器都没有更新版本',
+      server: server?.url,
+    });
     return null;
   }
-  try {
-    const info = await checkAppVersion(server);
-    const remote = (info.version ?? '').trim();
-    if (!remote || compareVersions(remote, APP_VERSION) <= 0) {
-      return null;
-    }
-    return {
-      source: 'server',
-      version: remote,
-      notes: info.notes ?? '',
-      publishedAt: info.publishedAt ?? '',
-      apkUrl: `${server.url.replace(/\/+$/, '')}/api/app/download`,
-      apkSize: info.fileSize ?? 0,
-      apkSha256: '',
-      patch: null,
-    };
-  } catch {
-    return null;
-  }
+
+  recordUpdateLog({
+    at: now,
+    source: 'none',
+    current: APP_VERSION,
+    remote: '',
+    reason: '官网渠道不可达，且服务器没有可用更新',
+    server: server?.url,
+  });
+  return null;
 }

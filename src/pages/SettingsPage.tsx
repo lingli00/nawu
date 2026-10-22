@@ -10,7 +10,7 @@ import { fmtTimestamp } from '../lib/date';
 import { APP_VERSION } from '../lib/appVersion';
 import { isNative } from '../net/env';
 import { haptic } from '../lib/haptics';
-import { checkAppUpdate, fetchChannelManifest, type AppUpdateTarget } from '../api/appUpdate';
+import { checkAppUpdate, fetchChannelManifest, lastUpdateLog, type AppUpdateTarget } from '../api/appUpdate';
 import { runAppUpdate, fmtSize, type UpdateProgress } from '../api/appUpdateFlow';
 import { chatComplete } from '../net/aiClient';
 import type { ThemeMode } from '../types/entities';
@@ -83,6 +83,8 @@ export default function SettingsPage() {
    * 看不出到底是没新版还是频道不通——把结果摆出来，问题一眼可见。
    */
   const [channel, setChannel] = useState<{ version: string; patches: number } | null | 'error'>(null);
+  /** ★v1.4.2 最近一次检查的渠道来源日志（官网 / 服务器）。 */
+  const [checkLog, setCheckLog] = useState(() => lastUpdateLog());
   const probeChannel = async (): Promise<void> => {
     try {
       const m = await fetchChannelManifest(8000);
@@ -113,6 +115,7 @@ export default function SettingsPage() {
       void probeChannel();
       const target = await checkAppUpdate(server);
       setUpdateTarget(target);
+      setCheckLog(lastUpdateLog());
       if (!target && !auto) {
         toastSuccess(`已是最新版本 v${APP_VERSION}`);
       }
@@ -380,6 +383,17 @@ export default function SettingsPage() {
               </div>
               <p className="mt-1 text-[10px] text-ink-3">更新过程请保持应用在前台，完成后按系统提示安装。</p>
             </div>
+          ) : null}
+
+          {/* ★v1.4.2 更新来源日志：本次走的是官网还是当前服务器 */}
+          {checkLog ? (
+            <p className="mt-1.5 text-[10px] leading-4 text-ink-3" data-testid="update-source-log">
+              上次检查：{fmtTimestamp(checkLog.at)} · 渠道
+              {checkLog.source === 'server' ? '当前服务器' : checkLog.source === 'channel' ? '官网' : '无更新'}
+              {checkLog.remote ? ` · 远端 v${checkLog.remote}` : ''}
+              <br />
+              {checkLog.reason}
+            </p>
           ) : null}
 
           <button

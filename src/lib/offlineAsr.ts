@@ -122,35 +122,165 @@ export async function removeAsrModel(): Promise<void> {
  *
  * @param onPct 0~100 的整数百分比回调；total 未知时传 -1
  */
+/** 分片大小：4MB 一片，落 IndexedDB 后即使退出也能续传。 */
+const CHUNK = 4 * 1024 * 1024;
+const META_KEY = `${IDB_KEY}:meta`;
+
+interface DlMeta {
+  received: number;
+  total: number;
+  url: string;
+}
+
+async function readMeta(): Promise<DlMeta | null> {
+  try {
+    const db = await openDb();
+    return await new Promise<DlMeta | null>((resolve) => {
+      const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(META_KEY);
+      req.onsuccess = () => resolve((req.result as DlMeta | undefined) ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function writeMeta(meta: DlMeta): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(meta, META_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+
+async function putChunk(index: number, data: Uint8Array): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(data, `${IDB_KEY}:c${index}`);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+
+async function readChunks(uptoIndex: number): Promise<BlobPart[]> {
+  const db = await openDb();
+  const out: BlobPart[] = [];
+  for (let i = 0; i < uptoIndex; i += 1) {
+    const v = await new Promise<Uint8Array | undefined>((resolve) => {
+      const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(`${IDB_KEY}:c${i}`);
+      req.onsuccess = () => resolve(req.result as Uint8Array | undefined);
+      req.onerror = () => resolve(undefined);
+    });
+    if (!v) break;
+    out.push(v as unknown as BlobPart);
+  }
+  return out;
+}
+
+async function clearDlState(): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const st = tx.objectStore(IDB_STORE);
+    st.delete(META_KEY);
+    for (let i = 0; i < 64; i += 1) st.delete(`${IDB_KEY}:c${i}`);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+
+/** 已下载的临时字节（供界面提示「继续下载」）。 */
+export async function asrPartialBytes(): Promise<number> {
+  const m = await readMeta();
+  return m ? m.received : 0;
+}
+
+/**
+ * 下载模型（**断点续传**）：
+ * - 每 4MB 一片落 IndexedDB，同时记录已接收字节；
+ * - 退出界面 / 断网 / App 重启后再点下载 → 从上次字节数发 `Range` 续传；
+ * - 上游不支持 Range（200 而非 206）→ 清空重下，不拼接脏数据；
+ * - 完成后拼装、比对总大小，再写入模型槽位并清理分片。
+ */
 export async function downloadAsrModel(
   onPct: (pct: number, received: number, total: number) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const res = await fetch(ASR_MODEL_URL, { signal });
-  if (!res.ok) throw new Error(`模型下载失败（HTTP ${res.status}）`);
-  const total = Number(res.headers.get('content-length') ?? 0);
+  const meta = await readMeta();
+  let received = meta?.received ?? 0;
+  let chunkIndex = Math.floor(received / CHUNK);
+  if (meta && meta.received % CHUNK !== 0) {
+    // 上次中断在半片中间：回退到整片边界重下这一片（最多浪费 4MB）
+    received = chunkIndex * CHUNK;
+  }
+
+  const headers: Record<string, string> = {};
+  if (received > 0) headers.Range = `bytes=${received}-`;
+  const res = await fetch(ASR_MODEL_URL, { headers, signal });
+  if (!res.ok && res.status !== 206) {
+    if (received > 0) {
+      await clearDlState();
+      return downloadAsrModel(onPct, signal);
+    }
+    throw new Error(`模型下载失败（HTTP ${res.status}）`);
+  }
+  if (received > 0 && res.status !== 206) {
+    // 服务器忽略了 Range：从头下，避免拼出坏文件
+    received = 0;
+    chunkIndex = 0;
+    await clearDlState();
+  }
+
+  const len = Number(res.headers.get('content-length') ?? 0);
+  const total = res.status === 206 ? received + len : len || (meta?.total ?? 0);
+  if (total > 0) await writeMeta({ received, total, url: ASR_MODEL_URL });
+  onPct(total > 0 ? Math.min(100, Math.round((received / total) * 100)) : -1, received, total);
+
   const reader = res.body?.getReader();
   if (!reader) {
-    // 老内核没有流式 body：退化为一次性取回（无进度）
+    // 老内核不支持流式 body：一次性取回（无进度、无续传）
     const blob = await res.blob();
-    await idbPut(IDB_KEY, blob);
-    finishDownload(blob);
+    const merged = received > 0 ? new Blob([...(await readChunks(chunkIndex)), blob]) : blob;
+    await idbPut(IDB_KEY, merged);
+    await clearDlState();
+    finishDownload(merged);
     return;
   }
-  const chunks: Uint8Array[] = [];
-  let received = 0;
+
+  let buf = new Uint8Array(0);
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (value) {
-      chunks.push(value);
-      received += value.length;
-      onPct(total > 0 ? Math.min(100, Math.round((received / total) * 100)) : -1, received, total);
+    if (!value) continue;
+    // 拼到当前片，满 4MB 落盘
+    const next = new Uint8Array(buf.length + value.length);
+    next.set(buf, 0);
+    next.set(value, buf.length);
+    buf = next;
+    received += value.length;
+    while (buf.length >= CHUNK) {
+      await putChunk(chunkIndex, buf.slice(0, CHUNK));
+      chunkIndex += 1;
+      buf = buf.slice(CHUNK);
     }
+    await writeMeta({ received, total, url: ASR_MODEL_URL });
+    onPct(total > 0 ? Math.min(99, Math.round((received / total) * 100)) : -1, received, total);
   }
-  const blob = new Blob(chunks as BlobPart[], { type: 'application/gzip' });
-  if (total > 0 && blob.size !== total) throw new Error('模型下载不完整，请重试');
+  if (buf.length > 0) {
+    await putChunk(chunkIndex, buf);
+    chunkIndex += 1;
+  }
+
+  const parts = await readChunks(chunkIndex);
+  const blob = new Blob(parts, { type: 'application/gzip' });
+  if (total > 0 && blob.size !== total) {
+    throw new Error(`模型下载不完整（${blob.size}/${total}），已保留进度，可重试继续`);
+  }
   await idbPut(IDB_KEY, blob);
+  await clearDlState();
   finishDownload(blob);
 }
 
@@ -184,7 +314,8 @@ interface VoskModel {
 }
 interface VoskRecognizer {
   on(event: string, cb: (msg: unknown) => void): void;
-  acceptWaveformFloat(buffer: Float32Array, sampleRate: number): void;
+  /** 传入 AudioBuffer：vosk 内部会按模型采样率重采样（★v1.4.2 关键修复）。 */
+  acceptWaveform(buffer: AudioBuffer): void;
   retrieveFinalResult(): void;
   remove(): void;
 }
@@ -260,6 +391,7 @@ export async function startOfflineAsr(opts: OfflineAsrCallbacks): Promise<Offlin
     URL.revokeObjectURL(url);
   }
 
+  /** 模型采样率 16000（vosk-model-small-cn-0.22），与 acceptWaveform 的重采样目标一致。 */
   const rec = new model.KaldiRecognizer(16000);
   let finalText = '';
   let partial = '';
@@ -292,12 +424,26 @@ export async function startOfflineAsr(opts: OfflineAsrCallbacks): Promise<Offlin
   });
   const Ctx = (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext);
   const ctx = new Ctx();
+  /**
+   * ★v1.4.2 根因修复：移动端/WebView 里新建的 AudioContext 默认是 `suspended`，
+   * 不 resume 就一个音频帧都收不到 —— 表现为「按住说话很有反应，但永远是没听清」。
+   */
+  try {
+    if (ctx.state === 'suspended') await ctx.resume();
+  } catch {
+    /* 某些内核不支持 resume，继续尝试 */
+  }
   const source = ctx.createMediaStreamSource(stream);
   const node = ctx.createScriptProcessor(4096, 1, 1);
   node.onaudioprocess = (ev) => {
     if (cancelled) return;
     try {
-      rec.acceptWaveformFloat(new Float32Array(ev.inputBuffer.getChannelData(0)), ctx.sampleRate);
+      /**
+       * ★v1.4.2：必须传 AudioBuffer（vosk 内部重采样到模型采样率）。
+       * 旧实现 `acceptWaveformFloat(Float32Array, ctx.sampleRate)` 把 48kHz 的
+       * PCM 直接喂给 16kHz 模型，声学特征完全错位 —— 这就是「反复提示没听清」。
+       */
+      rec.acceptWaveform(ev.inputBuffer);
     } catch {
       /* 单帧失败不打断整段识别 */
     }

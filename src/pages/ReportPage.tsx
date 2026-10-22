@@ -15,7 +15,7 @@ import { aiConfigOf, isAiConfigured } from '../ai/parseService';
 import { addDays, daysBetween, fmtDate, lastNDays, lastNMonths, mondayOf, monthKey, monthLabel, monthRange, nextMonth, prevMonth, relativeDayLabel, today } from '../lib/date';
 import type { ValueRecord } from '../types/entities';
 import type { SheetKey } from '../lib/sheetBus';
-import { dailyCost, filterSaleEntries, saleProfitEntries, saleProfitTotal } from '../domain/goods';
+import { dailyCost, saleProfitEntries, saleProfitTotal } from '../domain/goods';
 
 /** P08 报表：按日/周/月/年三态粒度看分类环图 + 趋势 + 归/需/否（全部只统计生活流记账）。
  *  ★v1.3.0：新增「按周」粒度 + 周期日均花费 + 在用物品日均摊销（用户反馈：
@@ -345,24 +345,16 @@ export default function ReportPage() {
     else setYear((y) => y + dir);
   };
 
-  /* ---------- ★v1.4.0 转卖净赚（独立周期：按月 / 按年） ---------- */
-  const [saleGrain, setSaleGrain] = useState<'month' | 'year'>('month');
-  const [saleYm, setSaleYm] = useState(() => monthKey());
-  const [saleYear, setSaleYear] = useState(() => Number(monthKey().slice(0, 4)));
-
-  /** 全部转卖明细（口径 = 生活流 src='goods-sale'，售价 − 总投入）。 */
+  /* ---------- ★v1.4.2 转卖净赚（跟随页面顶部的日/周/月/年筛选） ---------- */
+  /** 全部转卖明细（口径 = 生活流 src='goods-sale'：售价 − 总投入）。 */
   const saleAll = useMemo(() => saleProfitEntries(records, goods), [records, goods]);
   const saleAllTotal = useMemo(() => saleProfitTotal(saleAll), [saleAll]);
-  const saleKey = saleGrain === 'month' ? saleYm : String(saleYear);
-  const saleRows = useMemo(() => filterSaleEntries(saleAll, { kind: saleGrain, key: saleKey }), [saleAll, saleGrain, saleKey]);
+  /** 当前周期窗口内的转卖记录（与支出/收入/结余同一窗口，口径完全一致）。 */
+  const saleRows = useMemo(
+    () => saleAll.filter((e) => e.date >= win.start && e.date <= win.end),
+    [saleAll, win.start, win.end],
+  );
   const saleSum = useMemo(() => round(saleRows.reduce((acc, e) => acc + e.amount, 0), 2), [saleRows]);
-  const saleLabel = saleGrain === 'month' ? monthLabel(saleYm, true) : `${saleYear}年`;
-
-  /** 转卖模块的周期步进（与页面主粒度相互独立，切它不影响上面报表）。 */
-  const stepSale = (dir: -1 | 1): void => {
-    if (saleGrain === 'month') setSaleYm(dir === -1 ? prevMonth(saleYm) : nextMonth(saleYm));
-    else setSaleYear((y) => y + dir);
-  };
 
   /** v1.0.24 · 生活流统计：理智指数（时间健康度）+ 心动 + 冲动拦截 + 情绪晴雨。
    *  口径：times/moods 按 date（YYYY-MM-DD）；wishlist/cooldowns 按 createdAt（ISO）切片。 */
@@ -544,7 +536,7 @@ export default function ReportPage() {
             ★v1.0.35：① 结余改带符号显示（此前 -47.59 显示成 47.59，红字让人
             误读成「还剩 47.59」）；② 点「结余」展开口径解释。 */}
         <div className="page-enter rounded-card border border-line bg-surface p-3 dt:col-span-12 dt:order-2 dt:p-0">
-          <div className="grid grid-cols-3 gap-2 dt:gap-0">
+          <div className="grid grid-cols-4 gap-2 dt:gap-0">
             <div className="text-center dt:px-7 dt:py-5 dt:text-left">
               <p className="text-[11px] text-ink-3 dt:text-xs">支出</p>
               <p className="tnum mt-0.5 text-base font-semibold dt:mt-2 dt:text-[26px] dt:leading-none">{formatMoney(expense, currency)}</p>
@@ -567,6 +559,17 @@ export default function ReportPage() {
                 {formatNetMoney(income - expense, currency)}
               </p>
             </button>
+            <div className="border-l border-line-2 text-center dt:px-7 dt:py-5 dt:text-left">
+              <p className="text-[11px] text-ink-3 dt:text-xs">转卖净赚</p>
+              <p
+                className="tnum mt-0.5 text-base font-semibold dt:mt-2 dt:text-[26px] dt:leading-none"
+                style={{ color: saleSum > 0 ? 'var(--gui)' : 'var(--ink-3)' }}
+                data-testid="sale-profit-metric"
+              >
+                {saleSum >= 0 ? '+' : ''}
+                {formatMoney(saleSum, currency)}
+              </p>
+            </div>
           </div>
           {netOpen ? (
             <p className="mt-2 rounded-btn bg-surface-2 px-3 py-2 text-[11px] leading-5 text-ink-3 dt:mt-0 dt:rounded-none dt:border-t dt:border-line-2 dt:px-7 dt:py-4 dt:text-xs">
@@ -592,85 +595,35 @@ export default function ReportPage() {
           </p>
         </div>
 
-        {/* ★v1.4.0 转卖净赚（全部历史周期，按月/按年筛选）
-            —— 首页只显示「当月」，完整历史与逐笔明细都收在这里。 */}
-        <section className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12 dt:order-2 dt:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold dt:text-[15px]">转卖净赚</h2>
-              <p className="mt-0.5 text-[11px] text-ink-3">
-                {saleLabel} · {saleRows.length} 笔 · 全部历史累计 {formatMoney(saleAllTotal, currency)}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              {/* 按月 / 按年 */}
-              {(['month', 'year'] as const).map((g) => (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => {
-                    void haptic('select');
-                    setSaleGrain(g);
-                  }}
-                  className={`h-8 rounded-full border px-3 text-xs transition-all active:scale-95 ${
-                    saleGrain === g
-                      ? 'border-accent bg-accent-soft font-medium text-accent'
-                      : 'border-line bg-surface text-ink-3'
-                  }`}
-                >
-                  {g === 'month' ? '按月' : '按年'}
-                </button>
-              ))}
-              <span className="mx-0.5 h-4 w-px bg-line" aria-hidden />
-              <button
-                type="button"
-                onClick={() => stepSale(-1)}
-                aria-label="上一期"
-                className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-ink-2 active:bg-surface-2"
-              >
-                ‹
-              </button>
-              <span className="min-w-[4.5rem] text-center text-xs font-medium tabular-nums text-ink-2">
-                {saleLabel}
+        {/* ★v1.4.2 转卖明细（跟随顶部 日/周/月/年 筛选；不设独立周期选择器） */}
+        {saleAll.length > 0 ? (
+          <section className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-12 dt:order-3 dt:p-5">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold dt:text-[15px]">转卖明细</h2>
+              <span className="text-[11px] text-ink-3">
+                本期 {saleRows.length} 笔 · 全部累计 {formatMoney(saleAllTotal, currency)}
               </span>
-              <button
-                type="button"
-                onClick={() => stepSale(1)}
-                aria-label="下一期"
-                className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-ink-2 active:bg-surface-2"
-              >
-                ›
-              </button>
             </div>
-          </div>
-
-          <p className="tnum mt-3 text-2xl font-bold leading-8" style={{ color: saleSum > 0 ? 'var(--gui)' : 'var(--ink-3)' }}>
-            {saleSum >= 0 ? '+' : ''}
-            {formatMoney(saleSum, currency)}
-          </p>
-
-          {saleRows.length === 0 ? (
-            <p className="mt-2 text-[12px] text-ink-3">这个周期没有转卖记录（退役转卖后会自动记入）</p>
-          ) : (
-            <ul className="mt-2 divide-y divide-line">
-              {saleRows.slice(0, 8).map((e) => (
-                <li key={e.id} className="flex items-center justify-between gap-2 py-2 text-[13px]">
-                  <span className="min-w-0 flex-1 truncate">
-                    <span className="text-ink">{e.name || '已删除的物品'}</span>
-                    <span className="ml-2 text-[11px] text-ink-3">{fmtDate(e.date, 'M/D')}</span>
-                  </span>
-                  <span className="tnum shrink-0 font-medium" style={{ color: e.amount > 0 ? 'var(--gui)' : 'var(--ink-3)' }}>
-                    {e.amount >= 0 ? '+' : ''}
-                    {formatMoney(e.amount, currency)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {saleRows.length > 8 ? (
-            <p className="mt-1 text-[11px] text-ink-3">仅显示最近 8 笔，共 {saleRows.length} 笔</p>
-          ) : null}
-        </section>
+            {saleRows.length === 0 ? (
+              <p className="mt-2 text-[12px] text-ink-3">这个周期没有转卖记录（退役转卖后会自动记入）</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-line">
+                {saleRows.slice(0, 8).map((e) => (
+                  <li key={e.id} className="flex items-center justify-between gap-2 py-2 text-[13px]">
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="text-ink">{e.name || '已删除的物品'}</span>
+                      <span className="ml-2 text-[11px] text-ink-3">{fmtDate(e.date, 'M/D')}</span>
+                    </span>
+                    <span className="tnum shrink-0 font-medium" style={{ color: e.amount > 0 ? 'var(--gui)' : 'var(--ink-3)' }}>
+                      {e.amount >= 0 ? '+' : ''}
+                      {formatMoney(e.amount, currency)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : null}
 
         {/* 分类环图 */}
         <div className="page-enter rounded-card border border-line bg-surface p-4 dt:col-span-5 dt:order-3 dt:p-5">
