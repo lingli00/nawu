@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
 import PageField from '../components/ui/PageField';
-import { Toggle } from '../components/ui/Toggle';
 import { Segmented } from '../components/ui/Segmented';
 import { useAppStore, useSettingsStore, useUiStore, currentServer, toastSuccess, toastError } from '../store';
 import { CURRENCIES } from '../lib/money';
 import { fmtTimestamp } from '../lib/date';
 import { APP_VERSION } from '../lib/appVersion';
 import { isNative } from '../net/env';
+import { Toggle } from '../components/ui/Toggle';
+import { asrModelBytes, asrResidentStatus, releaseAsrModel } from '../lib/offlineAsr';
 import { haptic } from '../lib/haptics';
 import { checkAppUpdate, fetchChannelManifest, lastUpdateLog, type AppUpdateTarget } from '../api/appUpdate';
 import { runAppUpdate, fmtSize, type UpdateProgress } from '../api/appUpdateFlow';
@@ -65,6 +66,25 @@ export default function SettingsPage() {
       toastError(`连接失败：${e instanceof Error && e.message ? e.message : '未知错误'}`);
     } finally {
       setTesting(false);
+    }
+  };
+
+  /** ★v1.6.1 语音模型常驻开关（默认关闭）。 */
+  const keepAsr = useSettingsStore((st) => st.settings.asrKeepModel === true);
+  const [asrResident, setAsrResident] = useState(() => asrResidentStatus());
+  const [asrBytes, setAsrBytes] = useState(0);
+  useEffect(() => {
+    setAsrBytes(asrModelBytes());
+  }, []);
+  const toggleKeepAsr = async (): Promise<void> => {
+    await useSettingsStore.getState().update({ asrKeepModel: !keepAsr });
+    if (keepAsr) {
+      // 关掉 → 立刻释放
+      releaseAsrModel();
+      setAsrResident(false);
+      toastSuccess('已关闭常驻，模型已从内存释放');
+    } else {
+      toastSuccess('已开启，下次语音首次加载后会常驻内存');
     }
   };
 
@@ -313,6 +333,46 @@ export default function SettingsPage() {
             </option>
           ))}
         </select>
+      </section>
+
+      {/* ★v1.6.1 语音识别：模型常驻开关 + 内存占用 */}
+      <section className="mt-3 rounded-card border border-line bg-surface p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">语音识别</h2>
+            <p className="mt-0.5 text-[11px] text-ink-3">离线转写在本机完成，服务端停机也能用</p>
+          </div>
+          <Toggle on={keepAsr} onClick={() => void toggleKeepAsr()} label="语音模型常驻内存" />
+        </div>
+        <p className="mt-2 text-[11px] leading-5 text-ink-3">
+          <b className="text-ink-2">语音模型常驻内存，加速识别</b>
+          <br />
+          开启：首次使用语音时加载一次模型（约 3~4 秒）后常驻内存，之后每次语音<b>秒启动</b>；
+          只有 App 进程被系统回收/手动彻底关闭时才释放。
+          <br />
+          关闭：每次识别结束立刻释放模型，省内存，但每次都要重新加载。
+          <br />
+          麦克风仍然只在点击录音时开启，闲置时关闭，不会后台录音。
+          {asrBytes > 0 ? (
+            <>
+              <br />
+              已下载模型 {(asrBytes / 1048576).toFixed(1)} MB（存本机，可离线使用）。
+            </>
+          ) : null}
+        </p>
+        {keepAsr && asrResident ? (
+          <button
+            type="button"
+            onClick={() => {
+              releaseAsrModel();
+              setAsrResident(false);
+              toastSuccess('已释放常驻模型占用的内存');
+            }}
+            className="mt-2.5 h-9 rounded-btn border border-line bg-surface px-3 text-[12px] text-ink-2 active:bg-surface-2"
+          >
+            模型当前常驻 · 立即释放内存
+          </button>
+        ) : null}
       </section>
 
       {/* 应用更新（仅 App 显示——网页端在浏览器里打开即是最新版，无"应用更新"可言） */}

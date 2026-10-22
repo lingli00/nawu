@@ -284,6 +284,14 @@ export interface Settings {
   aiKey: string;
   aiModel: string;
   /**
+   * ★v1.6.1 语音模型常驻内存（默认关闭）。
+   * - false：每次识别结束立刻卸载模型（省内存，但每次要 3~4s 重新加载）；
+   * - true ：首次使用时加载一次，之后常驻内存，后续语音秒启动；
+   *   仅 APP 进程被杀/被系统回收时释放。
+   * 注意：常驻只是"模型留在内存"，**麦克风仍然只在点击录音时打开**。
+   */
+  asrKeepModel: boolean;
+  /**
    * ★App 端扩展键：已停用/归档的订阅 id 列表。
    * 归档状态**必须**存这里而不是写在 Subscription 记录上 ——
    * 快照恢复时 collections 会被整体替换（记录上的自定义字段必丢），

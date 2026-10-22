@@ -97,6 +97,8 @@ export const SEED_SETTINGS: Settings = {
   aiKey: '',
   aiModel: 'gpt-4o-mini',
   archivedSubIds: [],
+  /** ★v1.6.1 默认关闭：每次识别后卸载模型，省内存 */
+  asrKeepModel: false,
 };
 
 /** 复制一份默认设置（避免共享引用被误改）。 */

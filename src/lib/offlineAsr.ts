@@ -346,6 +346,36 @@ function loadEngine(): Promise<VoskModule> {
   return enginePromise;
 }
 
+/* ---------------- ★v1.6.1 模型常驻缓存 ---------------- */
+
+/**
+ * 模型常驻（设置项 `asrKeepModel`，默认关闭）。
+ *
+ * - 关：每次识别结束立刻 `terminate()` 释放 wasm 内存，下次重新加载（约 3~4s）；
+ * - 开：首次加载后把 model 留在内存，后续识别直接复用，跳过加载；
+ *   只有进程被系统回收 / 用户手动释放 / 关掉开关时才真正释放。
+ *
+ * ⚠️ 常驻的只是**模型**：麦克风仍然只在每次点击录音时打开、结束即关。
+ */
+let resident: { model: VoskModel } | null = null;
+
+/** 模型当前是否常驻在内存（设置页用来显示状态）。 */
+export function asrResidentStatus(): boolean {
+  return resident !== null;
+}
+
+/** 立即释放常驻模型（关闭开关 / 用户点「释放内存」时调用）。 */
+export function releaseAsrModel(): void {
+  if (!resident) return;
+  const m = resident.model;
+  resident = null;
+  try {
+    m.terminate();
+  } catch {
+    /* 已终止 */
+  }
+}
+
 /* ---------------- 识别会话（★v1.6.0 全链路重写） ---------------- */
 
 /** 识别阶段（界面据此显示「加载模型 / 打开麦克风 / 正在聆听」）。 */
@@ -419,7 +449,11 @@ function micErrorCode(e: unknown): string {
  * - 首帧看门狗：5 秒没有音频帧 → 判定麦克风没打开（mic-silent），立刻报错退出；
  * - 每个异步阶段都有超时，界面永远不会卡在"正在录音"。
  */
-export async function startOfflineAsr(opts: OfflineAsrCallbacks): Promise<OfflineAsrSession> {
+export async function startOfflineAsr(
+  opts: OfflineAsrCallbacks,
+  runOpts?: { keepModel?: boolean },
+): Promise<OfflineAsrSession> {
+  const keepModel = runOpts?.keepModel === true;
   if (!micAvailable()) throw new Error('mic-unavailable');
 
   const blob = await idbGet(IDB_KEY);
@@ -428,19 +462,35 @@ export async function startOfflineAsr(opts: OfflineAsrCallbacks): Promise<Offlin
     throw new Error('model-missing');
   }
 
-  // ① 引擎 + 模型（超时保护：模型损坏/worker 起不来时不会一直转圈）
-  opts.onPhase?.('loading-model');
-  const vosk = await loadEngine();
-  const url = URL.createObjectURL(blob);
+  // ① 引擎 + 模型：★v1.6.1 常驻开启时直接复用，跳过 3~4s 加载
   let model: VoskModel;
-  try {
-    model = await withTimeout(vosk.createModel(url), T_MODEL_MS, 'engine-timeout');
-  } catch (e) {
-    readyCache = false;
-    throw new Error((e as Error)?.message === 'engine-timeout' ? 'engine-timeout' : 'engine-failed');
-  } finally {
-    URL.revokeObjectURL(url);
+  if (resident) {
+    model = resident.model;
+  } else {
+    opts.onPhase?.('loading-model');
+    const vosk = await loadEngine();
+    const url = URL.createObjectURL(blob);
+    try {
+      model = await withTimeout(vosk.createModel(url), T_MODEL_MS, 'engine-timeout');
+    } catch (e) {
+      readyCache = false;
+      throw new Error((e as Error)?.message === 'engine-timeout' ? 'engine-timeout' : 'engine-failed');
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+    if (keepModel) resident = { model };
   }
+
+  /** 按设置决定是否释放模型（常驻时不动，关闭时立刻清）。 */
+  const releaseModel = (): void => {
+    if (keepModel) return;
+    try {
+      model.terminate();
+    } catch {
+      /* 已终止 */
+    }
+    if (resident?.model === model) resident = null;
+  };
 
   // ② 麦克风
   opts.onPhase?.('opening-mic');
@@ -455,11 +505,7 @@ export async function startOfflineAsr(opts: OfflineAsrCallbacks): Promise<Offlin
       'mic-timeout',
     );
   } catch (e) {
-    try {
-      model.terminate();
-    } catch {
-      /* ignore */
-    }
+    releaseModel();
     const code = (e as Error)?.message === 'mic-timeout' ? 'mic-failed' : micErrorCode(e);
     throw new Error(code);
   }
@@ -479,11 +525,7 @@ export async function startOfflineAsr(opts: OfflineAsrCallbacks): Promise<Offlin
   }
   if (ctx.state !== 'running') {
     for (const t of stream.getTracks()) t.stop();
-    try {
-      model.terminate();
-    } catch {
-      /* ignore */
-    }
+    releaseModel();
     throw new Error('audio-suspended');
   }
 
@@ -578,11 +620,7 @@ export async function startOfflineAsr(opts: OfflineAsrCallbacks): Promise<Offlin
     } catch {
       /* ignore */
     }
-    try {
-      model.terminate();
-    } catch {
-      /* ignore */
-    }
+    releaseModel();
   };
 
   return {

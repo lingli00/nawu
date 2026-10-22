@@ -27,6 +27,7 @@ import {
   type AsrPhase,
   asrModelReady,
   downloadAsrModel,
+  releaseAsrModel,
   micAvailable,
   startOfflineAsr,
   type OfflineAsrSession,
@@ -712,6 +713,8 @@ function SmartRecordPanel({
   const [asrDl, setAsrDl] = useState<{ pct: number; received: number; total: number } | null>(null);
   /** 用户主动选「先用系统语音」：本次会话不再提示下载。 */
   const preferSystemRef = useRef(false);
+  /** ★v1.6.1 模型常驻开关（设置页可改，默认关：省内存）。 */
+  const keepAsrModel = useSettingsStore((st) => st.settings.asrKeepModel === true);
 
   useEffect(() => {
     let alive = true;
@@ -819,7 +822,8 @@ function SmartRecordPanel({
 
     const useLocal = asrLocalReady && !preferSystemRef.current && micAvailable();
     const starter = useLocal
-      ? (cb: Parameters<typeof startOfflineAsr>[0]) => startOfflineAsr(cb) as Promise<SpeechSession | OfflineAsrSession>
+      ? (cb: Parameters<typeof startOfflineAsr>[0]) =>
+          startOfflineAsr(cb, { keepModel: keepAsrModel }) as Promise<SpeechSession | OfflineAsrSession>
       : (cb: Parameters<typeof startSpeech>[0]) => startSpeech(cb) as Promise<SpeechSession | OfflineAsrSession>;
 
     void starter({
@@ -916,6 +920,11 @@ function SmartRecordPanel({
     if (Date.now() - lastStopAtRef.current < 400) return;
     if (Date.now() - downAtRef.current >= 500) stopVoice();
   };
+
+  /** 开关被关掉 → 立刻释放常驻模型（用户预期：关掉就省内存）。 */
+  useEffect(() => {
+    if (!keepAsrModel) releaseAsrModel();
+  }, [keepAsrModel]);
 
   /** 切到后台/锁屏时自动结束录音并出结果（避免"看不见的录音"一直占着麦克风）。 */
   useEffect(() => {
