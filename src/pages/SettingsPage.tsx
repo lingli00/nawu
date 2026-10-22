@@ -10,7 +10,7 @@ import { fmtTimestamp } from '../lib/date';
 import { APP_VERSION } from '../lib/appVersion';
 import { isNative } from '../net/env';
 import { haptic } from '../lib/haptics';
-import { checkAppUpdate, type AppUpdateTarget } from '../api/appUpdate';
+import { checkAppUpdate, fetchChannelManifest, type AppUpdateTarget } from '../api/appUpdate';
 import { runAppUpdate, fmtSize, type UpdateProgress } from '../api/appUpdateFlow';
 import { chatComplete } from '../net/aiClient';
 import type { ThemeMode } from '../types/entities';
@@ -77,6 +77,25 @@ export default function SettingsPage() {
   });
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
+  /**
+   * ★v1.4.1 官方频道诊断：直接告诉用户频道版本 / 是否可达。
+   * 此前频道地址写成了 127.0.0.1（手机永远连不上），界面上只显示「已是最新」，
+   * 看不出到底是没新版还是频道不通——把结果摆出来，问题一眼可见。
+   */
+  const [channel, setChannel] = useState<{ version: string; patches: number } | null | 'error'>(null);
+  const probeChannel = async (): Promise<void> => {
+    try {
+      const m = await fetchChannelManifest(8000);
+      setChannel(m ? { version: m.version, patches: m.patches.length } : 'error');
+    } catch {
+      setChannel('error');
+    }
+  };
+  useEffect(() => {
+    if (!isNative()) return;
+    void probeChannel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** 自动检查节流键：24 小时内不重复打扰（成功/失败都记，避免离线用户每次进设置页都等一轮超时）。 */
   const AUTO_CHECK_KEY = 'nawu-app-update-last-check';
@@ -91,6 +110,7 @@ export default function SettingsPage() {
     const server = currentServer();
     setChecking(true);
     try {
+      void probeChannel();
       const target = await checkAppUpdate(server);
       setUpdateTarget(target);
       if (!target && !auto) {
@@ -306,6 +326,15 @@ export default function SettingsPage() {
             {updateTarget
               ? ` · 更新来源：${updateTarget.source === 'channel' ? '官方频道' : '你的服务器'}`
               : ' · 更新来源：官方频道（不可达时回退你的服务器）'}
+          </p>
+          {/* ★v1.4.1 频道诊断：一眼看出「已是最新」还是「频道没连上」 */}
+          <p className="mt-0.5 text-[10px] text-ink-3" data-testid="channel-probe">
+            官方频道：
+            {channel === null
+              ? '检测中…'
+              : channel === 'error'
+                ? '不可达（已回退你的服务器，增量包不可用）'
+                : `v${channel.version}${channel.patches > 0 ? ` · 增量包 ${channel.patches} 个可用` : ' · 无增量包'}`}
           </p>
 
           {/* 发现新版本：版本信息 + 更新说明 + 立即更新 */}
