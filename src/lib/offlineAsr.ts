@@ -27,6 +27,8 @@
  * - 单文件直读 + Content-Length，客户端据此显示下载进度。
  */
 export const ASR_MODEL_URL = 'http://106.53.204.29/asr-model.php';
+
+import { ASR_SAMPLE_RATE, resamplePcm, rms } from './pcm';
 /** 引擎脚本路径（public/vosk/vosk.js，随包分发）。 */
 export const ASR_ENGINE_PATH = '/vosk/vosk.js';
 /** 模型展示大小（MB，用于引导文案；真实大小以下载响应为准）。 */
@@ -314,8 +316,8 @@ interface VoskModel {
 }
 interface VoskRecognizer {
   on(event: string, cb: (msg: unknown) => void): void;
-  /** 传入 AudioBuffer：vosk 内部会按模型采样率重采样（★v1.4.2 关键修复）。 */
-  acceptWaveform(buffer: AudioBuffer): void;
+  /** 已重采样到 16k 的 PCM（★v1.6.0：库内不重采样，必须我们自己降采样）。 */
+  acceptWaveformFloat(buffer: Float32Array, sampleRate: number): void;
   retrieveFinalResult(): void;
   remove(): void;
 }
@@ -344,18 +346,37 @@ function loadEngine(): Promise<VoskModule> {
   return enginePromise;
 }
 
-/* ---------------- 识别会话 ---------------- */
+/* ---------------- 识别会话（★v1.6.0 全链路重写） ---------------- */
+
+/** 识别阶段（界面据此显示「加载模型 / 打开麦克风 / 正在聆听」）。 */
+export type AsrPhase = 'loading-model' | 'opening-mic' | 'listening';
 
 export interface OfflineAsrCallbacks {
+  onPhase?: (phase: AsrPhase) => void;
   onPartial?: (text: string) => void;
   onResult: (text: string) => void;
-  onError?: (code: string) => void;
+  /** code: model-missing / engine-timeout / mic-denied / mic-no-device / mic-failed / mic-silent / no-match */
+  onError?: (code: string, detail?: string) => void;
   onEnd?: (reason: 'result' | 'error' | 'cancelled') => void;
+  /** 实时音量 0~1（界面用于「麦克风真的在收声」的视觉反馈） */
+  onLevel?: (level: number) => void;
 }
 
 export interface OfflineAsrSession {
   stop(): void;
   cancel(): void;
+  /** 诊断：收到的音频帧数 / 平均音量（用于区分「没开麦」与「没听清」）。 */
+  stats(): { frames: number; avgLevel: number };
+}
+
+/** 各阶段超时（ms）：宁可明确报错，也不让界面卡在"录音中"。 */
+const T_MODEL_MS = 20000;
+const T_MIC_MS = 8000;
+const T_FIRST_FRAME_MS = 5000;
+
+/** 麦克风是否可用（非安全上下文 / 无设备都会返回 false）。 */
+export function micAvailable(): boolean {
+  return typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
 }
 
 /** 从 vosk 消息里取文本（partial / final 结构一致）。 */
@@ -364,37 +385,116 @@ function textOf(msg: unknown): string {
   return (r?.text ?? r?.partial ?? '').trim();
 }
 
-/** 麦克风是否可用（非安全上下文 / 无设备都会返回 false）。 */
-export function micAvailable(): boolean {
-  return typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
+function withTimeout<T>(p: Promise<T>, ms: number, code: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = window.setTimeout(() => reject(new Error(code)), ms);
+    p.then(
+      (v) => {
+        window.clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        window.clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
+/** MediaStream 错误 → 稳定错误码（便于界面给可执行提示）。 */
+function micErrorCode(e: unknown): string {
+  const name = (e as { name?: string })?.name ?? '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'mic-denied';
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'mic-no-device';
+  if (name === 'NotReadableError' || name === 'AbortError') return 'mic-busy';
+  return 'mic-failed';
 }
 
 /**
- * 启动一次离线识别（按住说话）。
+ * 启动一次离线识别。
  *
- * 约定：stop() = 用户松手，把已识别文本交出；cancel() = 取消（丢弃）。
+ * 关键约束（都是"以前为什么用不了"的直接原因）：
+ * - 模型固定 16kHz：采集到的一律重采样到 16k 再喂，绝不把 48k 原样塞进去；
+ * - AudioContext 必须 resume 到 running，否则一帧音频都收不到；
+ * - 首帧看门狗：5 秒没有音频帧 → 判定麦克风没打开（mic-silent），立刻报错退出；
+ * - 每个异步阶段都有超时，界面永远不会卡在"正在录音"。
  */
 export async function startOfflineAsr(opts: OfflineAsrCallbacks): Promise<OfflineAsrSession> {
-  if (!micAvailable()) throw new Error('not-allowed');
+  if (!micAvailable()) throw new Error('mic-unavailable');
+
   const blob = await idbGet(IDB_KEY);
   if (!blob) {
     readyCache = false;
     throw new Error('model-missing');
   }
+
+  // ① 引擎 + 模型（超时保护：模型损坏/worker 起不来时不会一直转圈）
+  opts.onPhase?.('loading-model');
   const vosk = await loadEngine();
   const url = URL.createObjectURL(blob);
   let model: VoskModel;
   try {
-    model = await vosk.createModel(url);
+    model = await withTimeout(vosk.createModel(url), T_MODEL_MS, 'engine-timeout');
+  } catch (e) {
+    readyCache = false;
+    throw new Error((e as Error)?.message === 'engine-timeout' ? 'engine-timeout' : 'engine-failed');
   } finally {
-    // 模型已读进 wasm 内存，blob URL 可以立刻回收
     URL.revokeObjectURL(url);
   }
 
-  /** 模型采样率 16000（vosk-model-small-cn-0.22），与 acceptWaveform 的重采样目标一致。 */
-  const rec = new model.KaldiRecognizer(16000);
+  // ② 麦克风
+  opts.onPhase?.('opening-mic');
+  let stream: MediaStream;
+  try {
+    stream = await withTimeout(
+      navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      }),
+      T_MIC_MS,
+      'mic-timeout',
+    );
+  } catch (e) {
+    try {
+      model.terminate();
+    } catch {
+      /* ignore */
+    }
+    const code = (e as Error)?.message === 'mic-timeout' ? 'mic-failed' : micErrorCode(e);
+    throw new Error(code);
+  }
+
+  // ③ 音频图：优先让 AudioContext 直接跑 16k；拿不到就用软件重采样兜底
+  const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  let ctx: AudioContext;
+  try {
+    ctx = new Ctx({ sampleRate: ASR_SAMPLE_RATE });
+  } catch {
+    ctx = new Ctx();
+  }
+  try {
+    if (ctx.state !== 'running') await ctx.resume();
+  } catch {
+    /* 某些内核 resume 会 reject，继续用状态判定 */
+  }
+  if (ctx.state !== 'running') {
+    for (const t of stream.getTracks()) t.stop();
+    try {
+      model.terminate();
+    } catch {
+      /* ignore */
+    }
+    throw new Error('audio-suspended');
+  }
+
+  const rec = new model.KaldiRecognizer(ASR_SAMPLE_RATE);
   let finalText = '';
   let partial = '';
+  let frames = 0;
+  let levelSum = 0;
+  let lastLevel = 0;
+  let firstFrameAt = 0;
+  const openedAt = Date.now();
   let settled = false;
   let cancelled = false;
 
@@ -418,92 +518,103 @@ export async function startOfflineAsr(opts: OfflineAsrCallbacks): Promise<Offlin
     opts.onPartial?.(finalText);
   });
 
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: false,
-    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
-  });
-  const Ctx = (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext);
-  const ctx = new Ctx();
-  /**
-   * ★v1.4.2 根因修复：移动端/WebView 里新建的 AudioContext 默认是 `suspended`，
-   * 不 resume 就一个音频帧都收不到 —— 表现为「按住说话很有反应，但永远是没听清」。
-   */
-  try {
-    if (ctx.state === 'suspended') await ctx.resume();
-  } catch {
-    /* 某些内核不支持 resume，继续尝试 */
-  }
   const source = ctx.createMediaStreamSource(stream);
   const node = ctx.createScriptProcessor(4096, 1, 1);
   node.onaudioprocess = (ev) => {
     if (cancelled) return;
+    const pcm = ev.inputBuffer.getChannelData(0);
+    const lv = rms(pcm);
+    lastLevel = lv;
+    if (lv > 0.0005 || frames === 0) {
+      frames += 1;
+      levelSum += lv;
+      if (!firstFrameAt) firstFrameAt = Date.now();
+      opts.onLevel?.(lv);
+    }
     try {
-      /**
-       * ★v1.4.2：必须传 AudioBuffer（vosk 内部重采样到模型采样率）。
-       * 旧实现 `acceptWaveformFloat(Float32Array, ctx.sampleRate)` 把 48kHz 的
-       * PCM 直接喂给 16kHz 模型，声学特征完全错位 —— 这就是「反复提示没听清」。
-       */
-      rec.acceptWaveform(ev.inputBuffer);
+      // ★必须：48k → 16k（模型 16k；库内不重采样）
+      const pcm16 = ctx.sampleRate === ASR_SAMPLE_RATE ? pcm : resamplePcm(pcm, ctx.sampleRate, ASR_SAMPLE_RATE);
+      rec.acceptWaveformFloat(pcm16, ASR_SAMPLE_RATE);
     } catch {
-      /* 单帧失败不打断整段识别 */
+      /* 单帧异常不打断整段识别 */
     }
   };
   source.connect(node);
   node.connect(ctx.destination);
+  opts.onPhase?.('listening');
+
+  // ④ 首帧看门狗：没收到音频就是没开麦，不能假装在录
+  const watchdog = window.setInterval(() => {
+    if (cancelled || settled) return;
+    if (!firstFrameAt && Date.now() - openedAt > T_FIRST_FRAME_MS) {
+      window.clearInterval(watchdog);
+      opts.onError?.('mic-silent');
+      opts.onEnd?.('error');
+      settled = true;
+      void cleanup();
+    }
+  }, 300);
 
   let cleaned = false;
   const cleanup = async (): Promise<void> => {
     if (cleaned) return;
     cleaned = true;
+    window.clearInterval(watchdog);
     try {
       node.disconnect();
       source.disconnect();
     } catch {
-      /* 已断开 */
+      /* ignore */
     }
+    node.onaudioprocess = null;
     for (const t of stream.getTracks()) t.stop();
     try {
       await ctx.close();
     } catch {
-      /* 已关闭 */
+      /* ignore */
     }
     try {
       rec.remove();
     } catch {
-      /* 已移除 */
+      /* ignore */
     }
     try {
       model.terminate();
     } catch {
-      /* 已终止 */
+      /* ignore */
     }
   };
 
   return {
     stop: () => {
-      if (cancelled) return;
+      if (cancelled || settled) return;
       try {
         rec.retrieveFinalResult();
       } catch {
-        /* 收尾失败：用已有文本 */
+        /* 收尾失败就用已有文本 */
       }
-      // 等最后一帧结果回来再交卷
       window.setTimeout(() => {
+        if (settled) return;
         const text = (finalText || partial).trim();
         if (text) {
           opts.onResult(text);
           settle('result');
+        } else if (frames === 0) {
+          // 一帧都没收到：是麦克风问题，不是"没听清"
+          opts.onError?.('mic-silent');
+          settle('error');
         } else {
           opts.onError?.('no-match');
           settle('error');
         }
         void cleanup();
-      }, 320);
+      }, 420);
     },
     cancel: () => {
       cancelled = true;
       void cleanup();
       settle('cancelled');
     },
+    stats: () => ({ frames, avgLevel: frames > 0 ? levelSum / frames : lastLevel }),
   };
 }

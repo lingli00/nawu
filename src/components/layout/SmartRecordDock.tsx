@@ -24,6 +24,7 @@ import { onOpenSmartRecord } from '../../lib/smartRecordBus';
 import { isNativeApp, speechErrorText, startSpeech, type SpeechSession } from '../../lib/speechLocal';
 import {
   ASR_MODEL_MB,
+  type AsrPhase,
   asrModelReady,
   downloadAsrModel,
   micAvailable,
@@ -748,34 +749,69 @@ function SmartRecordPanel({
    * 服务端/外网一抖就报「网络错误」，语音输入直接不可用；
    * 现在走系统离线识别器，服务端停机也照常录音转字。
    */
-  const beginRecognition = (): void => {
-    // 双击/双 pointerdown 防护：已在识别中就直接忽略
-    if (recActiveRef.current) return;
-    // ★v1.4.0：第一次用语音 → 先引导下载离线模型（本地运算，不依赖云端）。
-    // 没有麦克风能力（非安全上下文 / 无音频设备）时不引导下载，直接走系统语音兜底。
-    if (!asrLocalReady && !preferSystemRef.current && micAvailable()) {
-      setAsrAsk(true);
-      return;
+  /**
+   * ★v1.6.0 语音交互状态机（全链路重写）。
+   *
+   * 旧实现的问题（用户反馈逐条对应）：
+   * - 单次点按就进入"永不停止"的录音：pointerup 依赖 state/re-render，会话未就绪时丢事件；
+   * - 录音中再点没反应：beginRecognition 开头 `if (recActiveRef.current) return`，
+   *   而 recActiveRef 只在结束回调里才复位；
+   * - 7~8 秒后说"没听清"：麦克风其实没开（AudioContext suspended / 采样率没降）
+   *   或模型会话挂死；且没有超时，界面卡在录音态。
+   *
+   * 新规则（可预期、全程可停）：
+   * - 按下即开始（准备中显示阶段），**再按一下立即停止**；长按则松手结束；
+   * - 准备阶段也有看门狗：模型 20s / 麦克风 8s / 首帧 5s，任一超时立刻报错复位；
+   * - 结束拿到文字 → 自动填输入框并发送；拿不到文字 → 明确区分"没开麦"和"没听清"。
+   */
+  const [recStage, setRecStage] = useState<'preparing' | 'listening' | 'stopping'>('preparing');
+  const [recLevel, setRecLevel] = useState(0);
+  const downAtRef = useRef(0);
+  /** 刚停止的时间戳：防止 pointerup→click 的合成事件把录音又拉起来。 */
+  const lastStopAtRef = useRef(0);
+
+  /** 错误码 → 可执行的用户提示（区分「麦克风没开」和「没听清」）。 */
+  const voiceErrorText = (code: string): string => {
+    switch (code) {
+      case 'mic-denied':
+        return '麦克风权限被拒绝：请在系统设置里允许纳物使用麦克风，或改用键盘输入';
+      case 'mic-no-device':
+      case 'mic-unavailable':
+        return '没有可用的麦克风，请改用键盘输入';
+      case 'mic-busy':
+        return '麦克风被其他应用占用，关掉通话/录音类应用后重试，或改用键盘输入';
+      case 'mic-silent':
+        return '没有收到麦克风声音：请检查是否被占用/静音，或改用键盘输入';
+      case 'audio-suspended':
+        return '音频引擎未启动，请重启 App 后再试，或改用键盘输入';
+      case 'engine-timeout':
+      case 'engine-failed':
+        return '离线语音引擎启动失败（可重试），或改用键盘输入';
+      case 'no-match':
+        return '没听清，请靠近麦克风再说一次，或改用键盘输入';
+      default:
+        return speechErrorText(code === 'start-failed' ? 'unavailable' : code, isNativeApp());
     }
-    startRecognitionNow();
   };
 
-  /** 真正开始录音识别：本地离线引擎优先，失败退回系统语音，再失败提示键盘。 */
+  /** 真正开始：本地引擎优先，失败/无麦克风时回落系统语音。 */
   const startRecognitionNow = (): void => {
     if (recActiveRef.current) return;
     recActiveRef.current = true;
     recCancelRef.current = false;
     recPendingStopRef.current = false;
     recFinalRef.current = '';
-    // 立即进入录音态：按下瞬间就有 0:00 与脉冲点，治「长按无响应」
     setRecording(true);
+    setRecStage('preparing');
     setRecSecs(0);
-    setRecHint(asrLocalReady && !preferSystemRef.current ? '正在启动本地识别…' : '正在启动语音识别…');
+    setRecLevel(0);
+    setRecHint(asrLocalReady && !preferSystemRef.current ? '正在启动语音…' : '正在启动系统语音…');
     recStartAtRef.current = Date.now();
+    if (recTimerRef.current) window.clearInterval(recTimerRef.current);
     recTimerRef.current = window.setInterval(() => {
-      const s = Math.floor((Date.now() - recStartAtRef.current) / 1000);
-      setRecSecs(s);
-      if (s >= REC_MAX_SECS) {
+      const sec = Math.floor((Date.now() - recStartAtRef.current) / 1000);
+      setRecSecs(sec);
+      if (sec >= REC_MAX_SECS) {
         setRecHint(`已达 ${REC_MAX_SECS} 秒上限，自动发送`);
         recRef.current?.stop();
       }
@@ -788,53 +824,120 @@ function SmartRecordPanel({
 
     void starter({
       lang: 'zh-CN',
+      onPhase: (phase: AsrPhase) => {
+        if (!recActiveRef.current) return;
+        setRecStage(phase === 'listening' ? 'listening' : 'preparing');
+        if (phase === 'loading-model') setRecHint('正在加载离线模型…');
+        if (phase === 'opening-mic') setRecHint('正在打开麦克风…');
+        if (phase === 'listening') setRecHint('正在聆听… 点击结束');
+      },
+      onLevel: (lv: number) => setRecLevel(lv),
       onPartial: (t) => {
         recFinalRef.current = t;
-        setRecHint(t || '正在聆听…');
+        setRecHint(t || '正在聆听… 点击结束');
       },
       onResult: (t) => {
         recFinalRef.current = t;
       },
-      onError: (code) => {
-        toastError(speechErrorText(code, isNativeApp()));
+      onError: (code: string) => {
+        if (code === 'model-missing') {
+          setAsrLocalReady(false);
+          setAsrAsk(true);
+          return;
+        }
+        toastError(voiceErrorText(code));
       },
       onEnd: (reason) => {
         const cancelled = reason === 'cancelled' || recCancelRef.current;
-        const text = recFinalRef.current;
+        const text = recFinalRef.current.trim();
         finishRecognition();
         if (cancelled || !text || !aliveRef.current) return;
         enqueueSend(text);
       },
-    })
+    } as Parameters<typeof startSpeech>[0])
       .then((session) => {
         recRef.current = session;
-        if (recActiveRef.current) setRecHint('松开手指 发送');
-        // 松手发生在会话就绪之前（极快的点按）：补一次 stop，别让识别挂着不收尾
-        if (recPendingStopRef.current) session.stop();
+        if (!recActiveRef.current) return;
+        setRecStage('listening');
+        setRecHint('正在聆听… 点击结束');
+        // 准备阶段用户已经松手/再按：会话就绪后立刻收尾
+        if (recPendingStopRef.current) recRef.current?.stop();
       })
       .catch((e: unknown) => {
         finishRecognition();
         const msg = (e as Error)?.message ?? '';
         if (msg === 'model-missing') {
-          // 模型被清理了：回到引导下载
           setAsrLocalReady(false);
           setAsrAsk(true);
           return;
         }
-        // ★v1.4.0 兜底：本地与系统语音都不可用 → 明确提示改用键盘（保证基础录入）
-        const code = msg === 'unavailable' ? 'unavailable' : msg === 'not-allowed' ? 'not-allowed' : 'start-failed';
-        toastError(speechErrorText(code, isNativeApp()));
+        toastError(voiceErrorText(msg));
       });
   };
 
-  /** 收尾（清高亮、计时与提示）。 */
+  /** 首次使用 / 模型缺失时先引导下载；否则直接开始。 */
+  const beginRecognition = (): void => {
+    if (recActiveRef.current) return;
+    if (!asrLocalReady && !preferSystemRef.current && micAvailable()) {
+      setAsrAsk(true);
+      return;
+    }
+    startRecognitionNow();
+  };
+
+  /** 停止：会话未就绪则打标记，就绪后立刻停（保证"按了就有反应"）。 */
+  const stopVoice = (): void => {
+    lastStopAtRef.current = Date.now();
+    const session = recRef.current;
+    if (!session) {
+      recPendingStopRef.current = true;
+      setRecHint('正在结束…');
+      return;
+    }
+    setRecStage('stopping');
+    setRecHint('正在整理文字…');
+    session.stop();
+  };
+
+  /** 语音键按下：空闲 → 开始；录音中 → 立即停止（两条路径都必响应）。 */
+  const onVoiceDown = (): void => {
+    downAtRef.current = Date.now();
+    if (recActiveRef.current) {
+      if (recStage === 'listening') stopVoice();
+      else recPendingStopRef.current = true;
+      return;
+    }
+    beginRecognition();
+  };
+
+  /** 松手：长按（≥500ms）→ 结束并出结果；点按 → 保持聆听，等下次点按结束。 */
+  const onVoiceUp = (): void => {
+    if (!recActiveRef.current) return;
+    if (Date.now() - lastStopAtRef.current < 400) return;
+    if (Date.now() - downAtRef.current >= 500) stopVoice();
+  };
+
+  /** 切到后台/锁屏时自动结束录音并出结果（避免"看不见的录音"一直占着麦克风）。 */
+  useEffect(() => {
+    const onVis = (): void => {
+      if (document.visibilityState === 'hidden' && recActiveRef.current) stopVoice();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** 收尾：复位计时/状态（不负责发消息，发消息在 onEnd 里）。 */
   const finishRecognition = (): void => {
     recActiveRef.current = false;
+    recPendingStopRef.current = false;
     if (recTimerRef.current) window.clearInterval(recTimerRef.current);
     recTimerRef.current = null;
     recRef.current = null;
     setRecSecs(0);
     setRecording(false);
+    setRecStage('preparing');
+    setRecLevel(0);
     setRecHint('');
   };
 
@@ -1194,27 +1297,27 @@ function SmartRecordPanel({
                   e.currentTarget.setPointerCapture?.(e.pointerId);
                   recStartYRef.current = e.clientY;
                   recCancelRef.current = false;
-                  beginRecognition();
+                  onVoiceDown();
                 }}
                 onPointerMove={(e) => {
                   if (!recActiveRef.current) return;
-                  setRecHint(recStartYRef.current - e.clientY > 60 ? '抬起手指 取消' : '松开手指 发送');
+                  if (recStartYRef.current - e.clientY > 60) {
+                    setRecHint('抬起手指 取消');
+                  } else if (recStage === 'listening') {
+                    setRecHint(recHint && recHint.startsWith('正在聆听') ? '正在聆听… 点击结束' : recHint);
+                  }
                 }}
                 onPointerUp={(e) => {
-                  // ★v1.3.1 读 ref 不读 state：快速点按时 setRecording 还没渲染完，
-                  // 闭包里 recording 仍是 false 会漏收尾（识别挂着不发送）
+                  // ★v1.6.0：长按松手 → 结束出结果；点按 → 保持聆听（下次点按结束）
                   if (!recActiveRef.current) return;
                   if (recStartYRef.current - e.clientY > 60) {
                     recCancelRef.current = true;
                     recPendingStopRef.current = false;
                     recRef.current?.cancel();
                     finishRecognition();
-                  } else if (recRef.current) {
-                    recRef.current.stop();
-                  } else {
-                    // 会话还在启动中：等它就绪后立刻 stop（见 beginRecognition 的 then）
-                    recPendingStopRef.current = true;
+                    return;
                   }
+                  onVoiceUp();
                 }}
                 onPointerCancel={() => {
                   if (!recActiveRef.current) return;
@@ -1226,13 +1329,26 @@ function SmartRecordPanel({
               >
                 {recording ? (
                   <span className="flex w-full items-center justify-center gap-2 px-2">
-                    {/* 脉冲点：麦克风已启动的即时视觉确认 */}
-                    <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" aria-hidden />
+                    {/* 音量点：随真实音量变亮变大 —— 一眼看出麦克风在不在收声 */}
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full bg-accent transition-transform"
+                      style={{
+                        opacity: recStage === 'listening' ? 0.45 + Math.min(1, recLevel * 20) * 0.55 : 0.35,
+                        transform: `scale(${(1 + Math.min(1, recLevel * 20) * 0.6).toFixed(2)})`,
+                      }}
+                      aria-hidden
+                    />
                     <span className="shrink-0 font-semibold tabular-nums">{fmtRecSecs(recSecs)}</span>
-                    <span className="truncate">{recHint || '正在聆听…'}</span>
+                    <span className="truncate">
+                      {recStage === 'preparing'
+                        ? recHint || '正在启动…'
+                        : recStage === 'stopping'
+                          ? '正在整理文字…'
+                          : recHint || '正在聆听… 点击结束'}
+                    </span>
                   </span>
                 ) : (
-                  '按住 说话'
+                  '点击说话'
                 )}
               </button>
             ) : (

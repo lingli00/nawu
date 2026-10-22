@@ -328,11 +328,11 @@ describe('SmartRecordDock · PRD 交互全流程', () => {
     await renderDock();
     await openPanel();
     expect(inputByPlaceholder('一句话描述消费/心情')).not.toBeNull();
-    // 切到语音形态 → 出现「按住 说话」
+    // 切到语音形态 → 出现语音按钮（★v1.6.0 文案改为「点击说话」）
     await act(async () => {
       btnByText('切换到语音输入').click();
     });
-    expect(btnByText('按住 说话')).not.toBeUndefined();
+    expect(btnByText('点击说话')).not.toBeUndefined();
     expect(document.body.querySelector('input[placeholder="一句话描述消费/心情"]')).toBeNull();
     // 识图按钮两种形态都在
     expect(btnByText('识图记账')).not.toBeUndefined();
@@ -390,7 +390,7 @@ function lastErrorToast(): string {
   return errs.length > 0 ? errs[errs.length - 1]!.message : '';
 }
 
-describe('SmartRecordDock · v1.3.1 按住说话', () => {
+describe('SmartRecordDock · v1.6.0 语音交互状态机', () => {
   beforeEach(() => {
     FakeSR.last = null;
     (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition = FakeSR;
@@ -400,61 +400,80 @@ describe('SmartRecordDock · v1.3.1 按住说话', () => {
     delete (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
   });
 
-  /** 开面板并切到语音形态，返回「按住 说话」按钮。 */
   async function openVoiceMode(): Promise<HTMLButtonElement> {
     await renderDock();
     await openPanel();
     await act(async () => {
       btnByText('切换到语音输入').click();
     });
-    return btnByText('按住 说话');
+    return btnByText('按住说话');
   }
 
-  it('快速点按不漏收尾：pointerup 读 ref 不读 state（旧实现快速点按会挂住识别）', async () => {
+  it('点按一次开始录音并保持（不再"点了就挂住且停不下来"）', async () => {
     const hold = await openVoiceMode();
     await act(async () => {
-      // 同一帧内按下+松手：setRecording 尚未渲染，闭包里 recording 还是 false
       firePtr(hold, 'pointerdown', 300);
       firePtr(hold, 'pointerup', 300);
     });
     expect(FakeSR.last?.started).toBe(true);
-    expect(FakeSR.last?.stopped).toBe(true);
+    // 点按松手后仍在聆听（等用户说完整句、再点一下结束）
+    expect(FakeSR.last?.stopped).toBe(false);
+    expect(hold.textContent).toContain('0:00');
+    expect(document.body.querySelector('[role="progressbar"][aria-label="录音时长"]')).not.toBeNull();
   });
 
-  it('按住即时视觉反馈：0:00 计时 + 脉冲点 + 进度条（治「长按无响应」）', async () => {
+  it('录音中再点一次 → 立即停止并出文字（按钮不再无响应）', async () => {
     const hold = await openVoiceMode();
     await act(async () => {
       firePtr(hold, 'pointerdown', 300);
-    });
-    expect(hold.textContent).toContain('0:00');
-    expect(hold.textContent).toContain('松开手指 发送');
-    const bar = document.body.querySelector('[role="progressbar"][aria-label="录音时长"]');
-    expect(bar).not.toBeNull();
-    // 松手收尾：进度条与计时撤掉
-    await act(async () => {
       firePtr(hold, 'pointerup', 300);
     });
-    expect(document.body.querySelector('[role="progressbar"][aria-label="录音时长"]')).toBeNull();
+    const sr = FakeSR.last;
+    await act(async () => {
+      sr?.onresult?.({ results: [[{ transcript: '午饭花了25' }]] });
+    });
+    await act(async () => {
+      firePtr(hold, 'pointerdown', 300);
+    });
+    expect(sr?.stopped).toBe(true);
+    await flush();
+    const chat = document.body.querySelector('aside[aria-label="对话记一笔"]');
+    expect(chat?.textContent).toContain('午饭花了25');
   });
 
-  it('实时转写 → 松手自动发送并出确认卡', async () => {
+  it('长按（≥500ms）松手即结束并发送', async () => {
     const hold = await openVoiceMode();
     await act(async () => {
       firePtr(hold, 'pointerdown', 300);
     });
     const sr = FakeSR.last;
-    expect(sr).not.toBeNull();
     await act(async () => {
-      sr?.onresult?.({ results: [[{ transcript: '午饭花了25' }]] });
+      sr?.onresult?.({ results: [[{ transcript: '打车35块' }]] });
     });
-    // 转写过程实时显示在按钮上
-    expect(hold.textContent).toContain('午饭花了25');
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 560));
+    });
     await act(async () => {
       firePtr(hold, 'pointerup', 300);
     });
+    expect(sr?.stopped).toBe(true);
     await flush();
     const chat = document.body.querySelector('aside[aria-label="对话记一笔"]');
-    expect(chat?.textContent).toContain('午饭花了25');
+    expect(chat?.textContent).toContain('打车35块');
+  });
+
+  it('录音态展示阶段与计时（0:00 + 进度条）', async () => {
+    const hold = await openVoiceMode();
+    await act(async () => {
+      firePtr(hold, 'pointerdown', 300);
+    });
+    expect(hold.textContent).toContain('0:00');
+    expect(document.body.querySelector('[role="progressbar"][aria-label="录音时长"]')).not.toBeNull();
+    await act(async () => {
+      firePtr(hold, 'pointerdown', 300); // 再点一次结束
+    });
+    await flush();
+    expect(document.body.querySelector('[role="progressbar"][aria-label="录音时长"]')).toBeNull();
   });
 
   it('上滑取消：abort 且不发送', async () => {
@@ -486,7 +505,6 @@ describe('SmartRecordDock · v1.3.1 按住说话', () => {
     });
     expect(lastErrorToast()).toContain('浏览器地址栏');
 
-    // 模拟 Capacitor 原生容器（同一面板再次按住，报错文案应换成系统设置引导）
     (window as unknown as { Capacitor?: unknown }).Capacitor = { isNativePlatform: () => true };
     await act(async () => {
       firePtr(hold, 'pointerdown', 300);
@@ -508,14 +526,14 @@ describe('SmartRecordDock · v1.3.1 按住说话', () => {
       btnByText('关闭').click();
     });
     expect(sr?.aborted).toBe(true);
-    // 卸载后 onresult 不再引发状态更新报错
     await act(async () => {
       sr?.onresult?.({ results: [[{ transcript: '午饭花了25' }]] });
+      await flush();
     });
+    expect(true).toBe(true);
   });
 });
 
-/* ---------- ★v1.3.1 移动端抽屉化（原右侧滑出面板改底部抽屉） ---------- */
 
 describe('SmartRecordDock · v1.3.1 面板形态', () => {
   it('移动端：底部抽屉（上滑动画 + 圆角把手 + 贴底）', async () => {
