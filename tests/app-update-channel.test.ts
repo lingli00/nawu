@@ -46,9 +46,9 @@ describe('官方频道地址必须是线上真实地址（v1.4.1 回归）', () 
     expect(OFFICIAL_UPDATE_CHANNEL).not.toMatch(/127\.0\.0\.1|localhost|0\.0\.0\.0/);
   });
 
-  it('必须是 http(s) 且带 2233 更新通道目录', () => {
+  it('★v1.5.0：官网通道在 80 端口 /nawu-update/（2233 独立端口已下线）', () => {
     expect(OFFICIAL_UPDATE_CHANNEL.startsWith('http://')).toBe(true);
-    expect(OFFICIAL_UPDATE_CHANNEL).toContain(':2233/');
+    expect(OFFICIAL_UPDATE_CHANNEL).not.toContain(':2233');
     expect(OFFICIAL_UPDATE_CHANNEL.endsWith('/nawu-update/')).toBe(true);
   });
 
