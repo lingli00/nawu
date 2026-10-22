@@ -1,6 +1,6 @@
 import { isValidDate, today } from '../lib/date';
 import { round } from '../lib/money';
-import type { Goods } from '../types/entities';
+import type { Goods, ValueRecord } from '../types/entities';
 
 /**
  * 物品领域计算（**纯函数**：只接受数据、只返回派生值，不读 store、不发请求）。
@@ -143,4 +143,72 @@ export function summarizeGoods(list: Goods[], refDate: string = today()): GoodsS
     dailyCostSum: round(active.reduce((acc, g) => acc + dailyCost(g, refDate), 0), 4),
     retiredCount: list.length - active.length,
   };
+}
+
+/* ======================================================================
+ * ★v1.4.0 转卖净赚（首页看当月，报表看全历史 + 按月/按年筛选）
+ *
+ * 数据源只有一个：生活流里 `src === 'goods-sale'` 的收益记录
+ * （由 `syncSaleIncome` 在标记退役/改出售价/删除物品时统一维护，
+ *   date = 转卖当天、amount = 售价 − 总投入，口径与卡片「净赚」完全一致）。
+ * 不另算一套，避免首页/报表/物品详情三个地方各说一套数字。
+ * ==================================================================== */
+
+/** 一条转卖净赚明细。 */
+export interface SaleProfitEntry {
+  id: string;
+  /** 转卖日期 YYYY-MM-DD */
+  date: string;
+  /** 净赚金额（已扣买入价与全部附加费用） */
+  amount: number;
+  /** 关联物品 id（物品可能已被删除） */
+  goodsId: string;
+  /** 展示名：优先取物品库当前名称，物品已删则从备注「转卖「名」净赚」里抠 */
+  name: string;
+}
+
+/** 从备注里抠出物品名（兼容旧数据的备注格式）。 */
+function nameFromSaleNote(note: string): string {
+  const m = /转卖[「"']?(.+?)[」"']?\s*净赚/.exec(note ?? '');
+  return m ? m[1].trim() : (note ?? '').trim();
+}
+
+/** 全部转卖净赚明细（按日期倒序）。 */
+export function saleProfitEntries(records: ValueRecord[], goods: Goods[] = []): SaleProfitEntry[] {
+  const nameOf = new Map(goods.map((g) => [g.id, g.name]));
+  return records
+    .filter((r) => r?.src === 'goods-sale')
+    .map((r) => ({
+      id: r.id,
+      date: r.date,
+      amount: r.amount ?? 0,
+      goodsId: r.refId ?? '',
+      name: nameOf.get(r.refId ?? '') ?? nameFromSaleNote(r.note ?? ''),
+    }))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+
+/** 周期过滤：kind='month' 用 'YYYY-MM'，kind='year' 用 'YYYY'。 */
+export function filterSaleEntries(
+  entries: SaleProfitEntry[],
+  period: { kind: 'month' | 'year'; key: string },
+): SaleProfitEntry[] {
+  return entries.filter((e) => e.date.startsWith(period.key));
+}
+
+/** 周期净赚合计。 */
+export function saleProfitSum(
+  records: ValueRecord[],
+  period: { kind: 'month' | 'year'; key: string },
+  goods: Goods[] = [],
+): number {
+  return round(
+    filterSaleEntries(saleProfitEntries(records, goods), period).reduce((acc, e) => acc + e.amount, 0),
+    2,
+  );
+}
+
+/** 全部历史累计净赚。 */
+export function saleProfitTotal(entries: SaleProfitEntry[]): number {
+  return round(entries.reduce((acc, e) => acc + e.amount, 0), 2);
 }

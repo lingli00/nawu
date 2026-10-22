@@ -12,7 +12,6 @@ import {
   X,
   Star,
   Share2,
-  ChevronDown,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import PageField from '../components/ui/PageField';
@@ -40,10 +39,10 @@ import {
 } from '../lib/goodsIcon';
 import { GLASS_STYLE } from '../components/layout/MainShell';
 import { useDataStore, useSettingsStore, useUiStore, toastSuccess, toastError } from '../store';
-import { dailyCost, holdDays, perUseCost, sortGoods, totalInvest, achieveRate } from '../domain/goods';
+import { dailyCost, holdDays, perUseCost, saleProfitSum, sortGoods, totalInvest, achieveRate } from '../domain/goods';
 import { formatMoney, symbolOf, round } from '../lib/money';
 import { searchGoods } from '../lib/itemMatch';
-import { fmtDate, today } from '../lib/date';
+import { fmtDate, monthKey, today } from '../lib/date';
 import { drawGoodsCard, shareOrDownload } from '../lib/shareCard';
 import { compressDataUrlUnder, IMAGE_MAX_KB } from '../lib/imageCompress';
 import { getCategoryIcon } from '../lib/categoryIcons';
@@ -1068,7 +1067,6 @@ export default function HomePage() {
   /** AI 记一笔添加订阅后跳转过来：传给 SubListPage 自动弹出 SubEditSheet。 */
   const [subEditHint, setSubEditHint] = useState<string | null>(null);
   /** P1-5：今日卡内资产汇总展开态。 */
-  const [assetOpen, setAssetOpen] = useState(false);
   /** 冷静池「到期转物品」预填（sessionStorage gf.prefill.goods，v1.0.20）。 */
   const [prefill, setPrefill] = useState<{ name?: string; price?: number } | undefined>(undefined);
 
@@ -1138,20 +1136,25 @@ export default function HomePage() {
   /** 分类 lucide 图标（旧 emoji 数据由 categoryIcons 兜底回落 Tag）。 */
   const catIconOf = (id: string) => getCategoryIcon(categories.find((c) => c.id === id)?.icon);
 
-  /* —— 汇总（我的资产卡）—— */
+  /* —— 汇总（首页固定统计：在役资产 / 在役日均 / 当月已转卖净赚）—— */
   const summary = useMemo(() => {
     const active = goods.filter((g) => g.status !== 'retired');
     const retired = goods.filter((g) => g.status === 'retired');
     const favorites = goods.filter((g) => g.status === 'favorite');
     const invest = active.reduce((acc, g) => acc + totalInvest(g), 0);
     const daily = active.reduce((acc, g) => acc + dailyCost(g), 0);
-    /* 已转卖收益口径：sellPrice − totalInvest（与卡片「净赚」同口径，不发明新字段） */
-    const soldProfit = goods.reduce((acc, g) => {
-      const sold = Number.isFinite(g?.sellPrice) ? (g.sellPrice as number) : 0;
-      return sold > 0 ? acc + (sold - totalInvest(g)) : acc;
-    }, 0);
-    return { active: active.length, retired: retired.length, favorites: favorites.length, invest, daily, soldProfit };
+    return { active: active.length, retired: retired.length, favorites: favorites.length, invest, daily };
   }, [goods]);
+
+  /**
+   * ★v1.4.0 当月已转卖净赚。
+   * 口径：生活流里 `src='goods-sale'` 的收益记录（由 syncSaleIncome 维护，
+   * 售价 − 总投入），只取**当月**。全历史周期数据移到报表页，支持按月/按年筛选。
+   */
+  const monthSoldProfit = useMemo(
+    () => saleProfitSum(records, { kind: 'month', key: monthKey() }, goods),
+    [records, goods],
+  );
 
   /* —— P1-5「今日卡」：今天花了多少 + 归需否结构（记账产品第一眼应是今日视角）—— */
   const todaySummary = useMemo(() => {
@@ -1282,7 +1285,7 @@ export default function HomePage() {
   };
 
   const symbol = symbolOf(currency);
-  const soldProfitText = `${summary.soldProfit >= 0 ? '+' : ''}${formatMoney(summary.soldProfit, currency)}`;
+  const monthSoldProfitText = `${monthSoldProfit >= 0 ? '+' : ''}${formatMoney(monthSoldProfit, currency)}`;
 
   return (
     <div className="page-enter">
@@ -1419,52 +1422,40 @@ export default function HomePage() {
               </button>
             </div>
 
-            {/* 资产汇总：一行次级信息，点击展开（原四行数据的主视觉位置让位给今日视角） */}
-            <button
-              onClick={() => {
-                void haptic('select');
-                setAssetOpen(!assetOpen);
-              }}
-              aria-expanded={assetOpen}
-              className="mt-3 flex w-full items-center justify-between gap-2 border-t border-line-2 pt-2.5 text-left"
-            >
-              <span className="tnum min-w-0 truncate text-[11px] text-ink-2">
-                在役购入 {symbol}
-                {summary.invest.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} · 在役日均{' '}
-                {formatMoney(summary.daily, currency)} · 已转卖净赚 {soldProfitText}
-              </span>
-              <ChevronDown
-                size={13}
-                className={`shrink-0 text-ink-3 transition-transform ${assetOpen ? 'rotate-180' : ''}`}
-                aria-hidden
-              />
-            </button>
-            {assetOpen ? (
-              <div className="mt-2.5 grid grid-cols-3 gap-2">
-                <div className="rounded-btn bg-surface-2 p-2.5">
-                  <p className="text-[11px] text-ink-3">在役购入</p>
-                  <p className="tnum text-sm font-semibold">
-                    {symbol}
-                    {summary.invest.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
-                  </p>
-                </div>
-                <div className="rounded-btn bg-surface-2 p-2.5">
-                  <p className="text-[11px] text-ink-3">在役日均</p>
-                  <p className="tnum text-sm font-semibold" style={{ color: 'var(--gui)' }}>
-                    {formatMoney(summary.daily, currency)}
-                  </p>
-                </div>
-                <div className="rounded-btn bg-surface-2 p-2.5">
-                  <p className="text-[11px] text-ink-3">已转卖净赚</p>
-                  <p
-                    className="tnum text-sm font-semibold"
-                    style={{ color: summary.soldProfit > 0 ? 'var(--gui)' : 'var(--ink-3)' }}
-                  >
-                    {soldProfitText}
-                  </p>
-                </div>
+            {/* ★v1.4.0 资产三项**固定展示**（不再折叠）：在役资产总金额 / 在役日均成本 / 当月已转卖净赚。
+                全历史周期的转卖净赚移到报表页，支持按月/按年筛选。 */}
+            <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line-2 pt-2.5">
+              <div className="rounded-btn bg-surface-2 p-2.5">
+                <p className="text-[11px] text-ink-3">在役资产</p>
+                <p className="tnum mt-0.5 text-[15px] font-semibold leading-5">
+                  {symbol}
+                  {summary.invest.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
+                </p>
               </div>
-            ) : null}
+              <div className="rounded-btn bg-surface-2 p-2.5">
+                <p className="text-[11px] text-ink-3">在役日均成本</p>
+                <p className="tnum mt-0.5 text-[15px] font-semibold leading-5" style={{ color: 'var(--gui)' }}>
+                  {formatMoney(summary.daily, currency)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void haptic('select');
+                  navigate('/report');
+                }}
+                className="rounded-btn bg-surface-2 p-2.5 text-left active:opacity-80"
+                aria-label="当月已转卖净赚，点击查看报表"
+              >
+                <p className="text-[11px] text-ink-3">当月转卖净赚</p>
+                <p
+                  className="tnum mt-0.5 text-[15px] font-semibold leading-5"
+                  style={{ color: monthSoldProfit > 0 ? 'var(--gui)' : 'var(--ink-3)' }}
+                >
+                  {monthSoldProfitText}
+                </p>
+              </button>
+            </div>
           </div>
 
           {/* ============ 筛选 chips + 排序 chips（P1-9：统一 Chip 组件） ============ */}

@@ -22,11 +22,19 @@ import { bumpRuleHits, loadLearnedRules, recordCorrection } from '../../api/lear
 import { pushLearnedRulesToCloud } from '../../api/ruleSync';
 import { onOpenSmartRecord } from '../../lib/smartRecordBus';
 import { isNativeApp, speechErrorText, startSpeech, type SpeechSession } from '../../lib/speechLocal';
+import {
+  ASR_MODEL_MB,
+  asrModelReady,
+  downloadAsrModel,
+  micAvailable,
+  startOfflineAsr,
+  type OfflineAsrSession,
+} from '../../lib/offlineAsr';
 import { round } from '../../lib/money';
 import SmartRecordCard, { type RecordCardState } from './SmartRecordCard';
 import TradeRecordCard, { type TradeCardState } from './TradeRecordCard';
 import RetireSellCard, { type RetireCardState } from './RetireSellCard';
-import { toastError, useDataStore, useSettingsStore } from '../../store';
+import { toastError, toastSuccess, useDataStore, useSettingsStore } from '../../store';
 import type { AiResultItem, RetireDraft, TradeDraft } from '../../types/ai';
 import type { Category, Goods } from '../../types/entities';
 
@@ -213,7 +221,7 @@ function SmartRecordPanel({
   /** 防双击/双触发：400ms 内同一文本只入队一次（正常手动重发不受影响）。 */
   const lastSentRef = useRef<{ text: string; at: number }>({ text: '', at: 0 });
   /** 按住说话：识别会话 / 最终转写 / 取消标志 / 按下时的 Y 坐标。 */
-  const recRef = useRef<SpeechSession | null>(null);
+  const recRef = useRef<SpeechSession | OfflineAsrSession | null>(null);
   const recFinalRef = useRef('');
   const recCancelRef = useRef(false);
   /** 会话还没就绪就松手了：就绪后立即补一次 stop（快速点按场景）。 */
@@ -693,6 +701,43 @@ function SmartRecordPanel({
     }
   };
 
+  /* ---------------- ★v1.4.0 离线语音模型（首次使用引导下载） ---------------- */
+
+  /** 本地离线模型是否就绪（就绪则所有识别都在本机跑，不依赖任何云端）。 */
+  const [asrLocalReady, setAsrLocalReady] = useState(false);
+  /** 首次使用：弹「下载离线模型」引导。 */
+  const [asrAsk, setAsrAsk] = useState(false);
+  /** 下载进度（null = 未在下载）。 */
+  const [asrDl, setAsrDl] = useState<{ pct: number; received: number; total: number } | null>(null);
+  /** 用户主动选「先用系统语音」：本次会话不再提示下载。 */
+  const preferSystemRef = useRef(false);
+
+  useEffect(() => {
+    let alive = true;
+    void asrModelReady().then((ok) => {
+      if (alive) setAsrLocalReady(ok);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /** 下载离线模型（约 40MB，一次性，存本机后永久离线可用）。 */
+  const downloadAsr = async (): Promise<void> => {
+    if (asrDl) return;
+    setAsrDl({ pct: 0, received: 0, total: 0 });
+    try {
+      await downloadAsrModel((pct, received, total) => setAsrDl({ pct, received, total }));
+      setAsrLocalReady(true);
+      setAsrDl(null);
+      setAsrAsk(false);
+      toastSuccess('离线语音模型已就绪，之后断网也能用');
+    } catch (e) {
+      setAsrDl(null);
+      toastError((e as Error).message || '模型下载失败，请检查网络后重试');
+    }
+  };
+
   /* ---------------- 语音：微信式「按住 说话」（★v1.3.6 端侧识别） ---------------- */
 
   /**
@@ -706,6 +751,18 @@ function SmartRecordPanel({
   const beginRecognition = (): void => {
     // 双击/双 pointerdown 防护：已在识别中就直接忽略
     if (recActiveRef.current) return;
+    // ★v1.4.0：第一次用语音 → 先引导下载离线模型（本地运算，不依赖云端）。
+    // 没有麦克风能力（非安全上下文 / 无音频设备）时不引导下载，直接走系统语音兜底。
+    if (!asrLocalReady && !preferSystemRef.current && micAvailable()) {
+      setAsrAsk(true);
+      return;
+    }
+    startRecognitionNow();
+  };
+
+  /** 真正开始录音识别：本地离线引擎优先，失败退回系统语音，再失败提示键盘。 */
+  const startRecognitionNow = (): void => {
+    if (recActiveRef.current) return;
     recActiveRef.current = true;
     recCancelRef.current = false;
     recPendingStopRef.current = false;
@@ -713,7 +770,7 @@ function SmartRecordPanel({
     // 立即进入录音态：按下瞬间就有 0:00 与脉冲点，治「长按无响应」
     setRecording(true);
     setRecSecs(0);
-    setRecHint(isNativeApp() ? '正在启动本地识别…' : '正在启动语音识别…');
+    setRecHint(asrLocalReady && !preferSystemRef.current ? '正在启动本地识别…' : '正在启动语音识别…');
     recStartAtRef.current = Date.now();
     recTimerRef.current = window.setInterval(() => {
       const s = Math.floor((Date.now() - recStartAtRef.current) / 1000);
@@ -724,7 +781,12 @@ function SmartRecordPanel({
       }
     }, 250);
 
-    void startSpeech({
+    const useLocal = asrLocalReady && !preferSystemRef.current && micAvailable();
+    const starter = useLocal
+      ? (cb: Parameters<typeof startOfflineAsr>[0]) => startOfflineAsr(cb) as Promise<SpeechSession | OfflineAsrSession>
+      : (cb: Parameters<typeof startSpeech>[0]) => startSpeech(cb) as Promise<SpeechSession | OfflineAsrSession>;
+
+    void starter({
       lang: 'zh-CN',
       onPartial: (t) => {
         recFinalRef.current = t;
@@ -752,7 +814,15 @@ function SmartRecordPanel({
       })
       .catch((e: unknown) => {
         finishRecognition();
-        const code = (e as Error)?.message === 'unavailable' ? 'unavailable' : 'start-failed';
+        const msg = (e as Error)?.message ?? '';
+        if (msg === 'model-missing') {
+          // 模型被清理了：回到引导下载
+          setAsrLocalReady(false);
+          setAsrAsk(true);
+          return;
+        }
+        // ★v1.4.0 兜底：本地与系统语音都不可用 → 明确提示改用键盘（保证基础录入）
+        const code = msg === 'unavailable' ? 'unavailable' : msg === 'not-allowed' ? 'not-allowed' : 'start-failed';
         toastError(speechErrorText(code, isNativeApp()));
       });
   };
@@ -1010,6 +1080,69 @@ function SmartRecordPanel({
                 onNext={() => showNext(items)}
               />
             )}
+          </div>
+        ) : null}
+
+        {/* ★v1.4.0 首次使用语音：下载离线识别模型（本机运算，不经过任何云端） */}
+        {asrAsk || asrDl ? (
+          <div className="shrink-0 border-t border-line bg-surface-2/60 p-3.5">
+            <p className="text-sm font-semibold">首次使用语音：下载离线识别模型</p>
+            <p className="mt-1 text-[11px] leading-5 text-ink-3">
+              纳物的语音转文字在本机完成，不依赖云端、服务端停机也能用。
+              需一次性下载中文模型（约 {ASR_MODEL_MB}MB），下载后永久离线可用。
+            </p>
+            {asrDl ? (
+              <>
+                <div className="mt-2.5 h-[6px] w-full overflow-hidden rounded-full bg-surface">
+                  <div
+                    className="h-full rounded-full bg-accent transition-all duration-150"
+                    style={{ width: `${Math.max(2, asrDl.pct)}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-[11px] tabular-nums text-ink-3">
+                  {asrDl.pct >= 0
+                    ? `下载中 ${asrDl.pct}% · ${(asrDl.received / 1048576).toFixed(1)}${
+                        asrDl.total > 0 ? ` / ${(asrDl.total / 1048576).toFixed(1)}` : ''
+                      } MB`
+                    : `已下载 ${(asrDl.received / 1048576).toFixed(1)} MB`}
+                </p>
+                <p className="mt-1 text-[11px] leading-4 text-ink-3">下载期间请保持网络连接，可继续用键盘记账</p>
+              </>
+            ) : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {asrDl ? null : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void downloadAsr()}
+                    className="h-9 flex-1 rounded-btn bg-accent px-3 text-[12px] font-semibold text-white active:opacity-90"
+                  >
+                    下载并启用离线语音
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAsrAsk(false);
+                      preferSystemRef.current = true;
+                      startRecognitionNow();
+                    }}
+                    className="h-9 rounded-btn border border-line bg-surface px-3 text-[12px] text-ink-2 active:bg-surface-2"
+                  >
+                    先用系统语音
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAsrAsk(false);
+                      setVoiceMode(false);
+                    }}
+                    className="h-9 rounded-btn border border-line bg-surface px-3 text-[12px] text-ink-2 active:bg-surface-2"
+                  >
+                    键盘输入
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ) : null}
 
