@@ -826,8 +826,29 @@ html[data-shell='pc'][data-skin-preview='1'] .nw-skinbar {
    只在桌面壳生效（由 MainShell 的 DesktopShell 渲染并套这两个类）；
    手机端 / App 不经过这里，仍是整页跳转，样式零影响。
    ============================================================ */
+/* ★v1.6.2 毛玻璃遮罩：半透明 + 背景模糊，透出底层页面内容。
+   旧版是 rgba(12,18,16,0.32) 的纯色压暗 —— 抽屉右侧整片空白灰块，
+   和底层内容断层感很强（用户："空旷突兀"）。现在只改遮罩层本身：
+   左侧菜单栏在遮罩之外（mask 的 left 取内容区起点），布局与面板宽度一律不动。 */
+.nw-glass-mask {
+  background: rgba(20, 26, 23, 0.18);
+  -webkit-backdrop-filter: blur(14px) saturate(118%);
+  backdrop-filter: blur(14px) saturate(118%);
+}
+/* 暗色底：压得更深一点，否则模糊后仍偏亮、与深色面板抢注意力 */
+html[data-theme='dark'] .nw-glass-mask {
+  background: rgba(0, 0, 0, 0.34);
+}
+/* 不支持 backdrop-filter 的老内核：退化为较浅的半透明（不要回到死灰） */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .nw-glass-mask {
+    background: rgba(20, 26, 23, 0.4);
+  }
+  html[data-theme='dark'] .nw-glass-mask {
+    background: rgba(0, 0, 0, 0.52);
+  }
+}
 .nw-drawer-mask {
-  background: rgba(12, 18, 16, 0.32);
   animation: nw-drawer-fade 200ms ease both;
 }
 .nw-drawer-enter {

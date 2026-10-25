@@ -15,7 +15,7 @@ import {
   type BrandItem,
 } from '../lib/brandIcon';
 import { GLYPH_GROUPS, glyphBySlug, searchGlyphs, type GlyphItem } from '../lib/simpleBrand';
-import { compressDataUrlUnder, IMAGE_MAX_KB } from '../lib/imageCompress';
+import { compressPhoto, IMAGE_PHOTO_DIM } from '../lib/imageCompress';
 import { currentServer, toastError } from '../store';
 import { SYSTEM_ICON_GROUPS } from '../lib/systemIcons';
 import { get } from '../net/httpClient';
@@ -162,7 +162,8 @@ function bundledDirectSrc(chain: string[]): string | null {
   return first && first.startsWith('/brand-icons/') ? first : null;
 }
 
-function useCachedIconSrc(chain: string[]): { src: string | null; done: boolean } {
+/** 图标缓存读取（★v1.6.2 导出：置物墙的图片渲染复用同一条缓存链）。 */
+export function useCachedIconSrc(chain: string[]): { src: string | null; done: boolean } {
   const direct = bundledDirectSrc(chain);
   const key = chain.map((c) => normIconKey(c)).join('|');
   const [state, setState] = useState<{ src: string | null; done: boolean }>(() => {
@@ -714,7 +715,7 @@ export default function IconPicker({
   /**
    * 点选商品图片（v1.0.20 兜底链）：原图代理 → Bing 缩略直链 → 缩略经代理，
    * 抓取上限放宽到 8MB（原图 500KB+ 曾被 400KB 限制拦截报「抓取失败」）；
-   * 到手即中心方裁 ≤512 → 压缩 ≤100KB → 存 img: dataURL。
+   * 到手即中心方裁 ≤1024 → 压缩 ≤160KB → 存 img: dataURL（★v1.6.2 提高，见 imageCompress）。
    */
   const pickProductImage = async (raw: string, thumb?: string): Promise<void> => {
     const BIG = 8_000_000;
@@ -732,8 +733,9 @@ export default function IconPicker({
         toastError('图片抓取失败，换一张试试');
         return;
       }
-      const square = await cropSquareDataUrl(data, 512);
-      const slim = await compressDataUrlUnder(square, IMAGE_MAX_KB, 512);
+      // ★v1.6.2：方裁边长 512 → 1024（分享海报要原图，512 放大必然发虚）
+      const square = await cropSquareDataUrl(data, IMAGE_PHOTO_DIM);
+      const slim = await compressPhoto(square);
       void haptic('select');
       onChange(toImgIcon(slim));
       void warmIconCache([absIconUrl(imgProxyUrl(raw), base)], base);

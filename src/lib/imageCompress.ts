@@ -10,8 +10,25 @@
  * - 用户上传 / 网络搜来的图，入库与备份前一律压缩到 **≤100KB**。
  */
 
-/** 单图体积上限（KB）。 */
+/** 图标类图（订阅图标、品牌标、列表缩略图）的上限（KB）。 */
 export const IMAGE_MAX_KB = 100;
+
+/**
+ * ★v1.6.2 物品照片专用预算（与图标分开）。
+ *
+ * 背景：图标 512px/100KB 是为了「备份瘦身」，但物品照片要进**分享海报**——
+ * 海报画布 1800px 宽，512px 的照片被放大 3 倍多，用户看到的就是「图片模糊」。
+ * 因此物品照片单独给 1024px / 160KB：手机上够清晰，备份仍受控
+ * （100 件全带照片也只有 16MB，且只有照片走这个额度，图标仍是几字节引用码）。
+ */
+export const IMAGE_PHOTO_KB = 160;
+/** 物品照片最长边（方形裁切后的边长）。 */
+export const IMAGE_PHOTO_DIM = 1024;
+
+/** 物品照片入库：方形已裁好，只做体积压缩（失败原样返回）。 */
+export async function compressPhoto(dataUrl: string): Promise<string> {
+  return compressDataUrlUnder(dataUrl, IMAGE_PHOTO_KB, IMAGE_PHOTO_DIM);
+}
 
 /** dataURL 字符数 ≈ 字节数 × 1.37（base64），留余量按 1.4 估。 */
 function approxKb(dataUrl: string): number {

@@ -4,6 +4,7 @@ import PageShell from '../components/layout/PageShell';
 import PageField from '../components/ui/PageField';
 import { useDataStore, useUiStore, toastSuccess, toastError } from '../store';
 import { CATEGORY_ICON_GROUPS, getCategoryIcon } from '../lib/categoryIcons';
+import { useMaskDismiss } from '../lib/maskDismiss';
 import type { Category, CategoryKind } from '../types/entities';
 
 /** P24 分类管理：物品/订阅/记账三组分类的增删改 + 同组内上下移排序。
@@ -33,6 +34,8 @@ function CategoryFormSheet({
   onClose: () => void;
 }) {
   const categories = useDataStore((s) => s.categories);
+  /** ★v1.6.2 遮罩点击：只在点面板外空白处才关闭，选字拖出边界不再误关。 */
+  const maskDismiss = useMaskDismiss(onClose);
   const addCategory = useDataStore((s) => s.addCategory);
   const updateCategory = useDataStore((s) => s.updateCategory);
 
@@ -64,7 +67,7 @@ function CategoryFormSheet({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={onClose}>
+    <div className="nw-glass-mask fixed inset-0 z-40 flex items-end" {...maskDismiss}>
       <div
         className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4"
         onClick={(e) => e.stopPropagation()}

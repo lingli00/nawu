@@ -4,6 +4,7 @@ import { BadgeCheck, Ban, RotateCcw, Undo2, XCircle } from 'lucide-react';
 import { useDataStore, toastSuccess, toastError } from '../store';
 import { useBackGuard } from '../lib/backGuard';
 import { haptic } from '../lib/haptics';
+import { useMaskDismiss } from '../lib/maskDismiss';
 import { monthLabel } from '../lib/date';
 import type { Bill, Subscription } from '../types/entities';
 
@@ -36,8 +37,10 @@ function SheetFrame({
   children: React.ReactNode;
 }) {
   useBackGuard(true, onClose);
+  /** ★v1.6.2 遮罩点击：只在点面板外空白处关闭。 */
+  const maskDismiss = useMaskDismiss(onClose);
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
+    <div className="nw-glass-mask fixed inset-0 z-50 flex items-end" {...maskDismiss}>
       <div
         className="sheet-enter mx-auto max-h-[86vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]"
         onClick={(e) => e.stopPropagation()}

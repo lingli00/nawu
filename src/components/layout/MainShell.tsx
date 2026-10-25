@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Home, Plus, ScrollText, Smartphone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { APP_VERSION } from '../../lib/appVersion';
+import { useMaskDismiss } from '../../lib/maskDismiss';
 import { haptic } from '../../lib/haptics';
 import { getSkin, type Skin } from '../../lib/skin';
 import { checkAppUpdate } from '../../api/appUpdate';
@@ -257,6 +258,12 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
   const sideWidth = narrow ? 56 : 240;
   const contentLeft = skin === 'glass' && !narrow ? sideWidth + 12 : sideWidth;
 
+  /**
+   * ★v1.6.2 遮罩点击：只有「按下与抬起都在遮罩空白处」才关闭。
+   * 面板内拖拽选文字、粘贴、指针临时移出边界都不会误关（详见 lib/maskDismiss.ts）。
+   */
+  const maskDismiss = useMaskDismiss(() => nav('/me'));
+
   /** 抽屉页：Esc 关闭（走回 /me，不依赖历史栈，直接访问链接也不会退出站点）。 */
   useEffect(() => {
     if (!drawerPage) return;
@@ -343,9 +350,9 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
            * 遮罩只铺内容区（左侧栏仍可点），面板 32rem、整高、左圆角。
            */
           <div
-            className="nw-drawer-mask fixed inset-0 z-40 flex justify-end"
+            className="nw-drawer-mask nw-glass-mask fixed inset-0 z-40 flex justify-end"
             style={{ left: contentLeft }}
-            onClick={() => nav('/me')}
+            {...maskDismiss}
           >
             <div
               className="nw-drawer-enter ml-auto flex h-full w-full flex-col overflow-y-auto bg-surface"

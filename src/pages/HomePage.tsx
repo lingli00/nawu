@@ -44,7 +44,7 @@ import { formatMoney, symbolOf, round } from '../lib/money';
 import { searchGoods } from '../lib/itemMatch';
 import { fmtDate, monthKey, today } from '../lib/date';
 import { drawGoodsCard, shareOrDownload } from '../lib/shareCard';
-import { compressDataUrlUnder, IMAGE_MAX_KB } from '../lib/imageCompress';
+import { compressPhoto, IMAGE_PHOTO_DIM } from '../lib/imageCompress';
 import { getCategoryIcon } from '../lib/categoryIcons';
 import type { Goods, GoodsImage } from '../types/entities';
 import logger from '../lib/log';
@@ -348,7 +348,7 @@ function CropSheet({
     dragRef.current = null;
   };
 
-  /** 确认裁剪：视口 → 原图逆映射，裁出方形区域，输出 ≤512px JPEG 并压到 ≤100KB（备份瘦身铁律）。 */
+  /** 确认裁剪：视口 → 原图逆映射，裁出方形区域，输出 ≤1024px JPEG 并压到 ≤160KB（★v1.6.2 提高，供分享海报用）。 */
   const confirmCrop = (): void => {
     const img = imgRef.current;
     const d = dimsRef.current;
@@ -363,14 +363,15 @@ function CropSheet({
     const sh = sw;
     const sx0 = Math.min(Math.max(-topLeftX / unit, 0), Math.max(d.w - sw, 0));
     const sy0 = Math.min(Math.max(-topLeftY / unit, 0), Math.max(d.h - sh, 0));
-    const out = Math.min(512, Math.round(Math.max(sw, 1)));
+    // ★v1.6.2：512 → 1024（分享卡放大 2 倍出图，512 源必然糊）
+    const out = Math.min(IMAGE_PHOTO_DIM, Math.round(Math.max(sw, 1)));
     const canvas = document.createElement('canvas');
     canvas.width = out;
     canvas.height = out;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(img, sx0, sy0, sw, sh, 0, 0, out, out);
-    void compressDataUrlUnder(canvas.toDataURL('image/jpeg', 0.85), IMAGE_MAX_KB, 512).then(onConfirm);
+    void compressPhoto(canvas.toDataURL('image/jpeg', 0.9)).then(onConfirm);
   };
 
   const corner = 'pointer-events-none absolute h-6 w-6 border-white/90';

@@ -42,7 +42,7 @@ import { useDataStore, useUiStore, toastSuccess, toastError } from '../store';
 import { useBackGuard } from '../lib/backGuard';
 import { haptic } from '../lib/haptics';
 import { addDays, today } from '../lib/date';
-import { compressDataUrlUnder } from '../lib/imageCompress';
+import { compressPhoto } from '../lib/imageCompress';
 import IconPicker, { IconPreview } from './IconPicker';
 import { Sheet } from './ui/Sheet';
 import type { Cooldown, Judgement, TimeRec, WishItem } from '../types/entities';
@@ -477,10 +477,10 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
         <ImagePickOverlay
           value={image}
           onPick={async (v) => {
-            // img: dataURL 可能偏大（备份瘦身铁律：进数据的图 ≤100KB）
+            // img: dataURL 走「照片」预算（≤1024px / ≤160KB，★v1.6.2 提高以支撑分享原图）
             if (v.startsWith('img:')) {
-              const slim = await compressDataUrlUnder(v);
-              setImage(slim ?? v);
+              const slim = await compressPhoto(v.slice(4));
+              setImage(slim ? 'img:' + slim : v);
             } else {
               setImage(v);
             }
@@ -794,9 +794,10 @@ export function QuickCooldownSheet({ presetName, onClose }: { presetName?: strin
         <ImagePickOverlay
           value={image}
           onPick={async (v) => {
+            // ★v1.6.2 同上：照片走 1024px / 160KB 预算
             if (v.startsWith('img:')) {
-              const slim = await compressDataUrlUnder(v);
-              setImage(slim ?? v);
+              const slim = await compressPhoto(v.slice(4));
+              setImage(slim ? 'img:' + slim : v);
             } else {
               setImage(v);
             }

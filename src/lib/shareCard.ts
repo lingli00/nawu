@@ -1,11 +1,10 @@
 import type { Goods } from '../types/entities';
 import { Capacitor } from '@capacitor/core';
 import { currentServer } from '../store';
-import { iconCacheLookup } from './iconCache';
+import { fetchIconAsDataUrl, iconCacheLookup } from './iconCache';
 import { glyphBySlug } from './simpleBrand';
-import { isValidDate } from './date';
 import { goodsIconValue } from './goodsIcon';
-import { dailyCost, goodsStatusLabel, holdDays, totalInvest } from '../domain/goods';
+import { dailyCost, holdDays, totalInvest } from '../domain/goods';
 import logger from './log';
 
 /** 兼容旧调用方（置物墙）——物品 image → icon 字符串的唯一实现在 lib/goodsIcon。 */
@@ -147,59 +146,6 @@ function drawFit(
   ctx.restore();
 }
 
-/** brand: 内置品牌 glyph 直绘（path 缩放居中，品牌色；v1.0.19 引用码渲染）。返回是否画了。 */
-function drawBrandGlyph(
-  ctx: CanvasRenderingContext2D,
-  icon: string,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-): boolean {
-  const item = glyphBySlug(icon.slice(6).trim());
-  if (!item) return false;
-  const scale = Math.min((w * 0.84) / 24, (h * 0.84) / 24);
-  if (!(scale > 0)) return false;
-  const dw = 24 * scale;
-  const dh = 24 * scale;
-  ctx.save();
-  ctx.translate(x + (w - dw) / 2, y + (h - dh) / 2);
-  ctx.scale(scale, scale);
-  ctx.fillStyle = `#${item.hex}`;
-  ctx.fill(new Path2D(item.path));
-  ctx.restore();
-  return true;
-}
-
-/** 无真图时的兜底：柔和底色 + 名称首字。 */
-function drawInitialFallback(
-  ctx: CanvasRenderingContext2D,
-  name: string,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r = 0,
-): void {
-  if (r > 0) {
-    ctx.fillStyle = C.accentSoft;
-    roundRect(ctx, x, y, w, h, r);
-    ctx.fill();
-  }
-  const rad = Math.min(w, h) * 0.24;
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(x + w / 2, y + h / 2, rad, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = C.accent;
-  ctx.font = `700 ${Math.round(rad)}px system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText((name || '物').charAt(0), x + w / 2, y + h / 2 + rad * 0.04);
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-}
-
 /** 按当前 font 把长文本截断到 maxW（二分 + 省略号）。 */
 function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
   if (maxW <= 0) return '';
@@ -214,264 +160,325 @@ function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxW: number): s
   return `${text.slice(0, lo)}…`;
 }
 
+/* ---------------- ★v1.6.2 高清分享卡（整体重做） ---------------- */
+
 /**
- * 单物品海报（v1.0.17 重排版）。
+ * 输出倍率：画布物理像素 = 逻辑尺寸 × R。
  *
- * 版式：品牌头 → **整幅图区**（照片铺满、logo 居中）→ 名称 / 备注 / 标签胶囊
- * → 2×2 数据卡（总投入·日均·陪伴·购入）→ 页脚。
- * 数据口径与详情页一致，全部走 `domain/goods.ts` 的纯函数。
+ * 旧版 900×1200 直接出图，手机 @2x/@3x 屏上看就是「糊」—— 一张 900px 宽的图
+ * 铺满 1080px 的屏幕必然被放大。现在按 2 倍出图（1800×2250），
+ * 文字与描边全部按逻辑坐标画、由 ctx.scale 放大，边缘依然锐利。
  */
-export async function drawGoodsCard(g: Goods, categoryName: string | null): Promise<string> {
-  const W = 900;
-  const H = 1200;
-  const PAD = 64;
-  const CW = W - PAD * 2;
-  const cv = document.createElement('canvas');
-  cv.width = W;
-  cv.height = H;
-  const ctx = cv.getContext('2d');
-  if (!ctx) throw new Error('画布不可用');
+const R = 2;
+/** 整墙长图倍率（图更多、更高，1.5 倍已足够清晰，同时控制体积）。 */
+const RW = 1.5;
 
-  const note = (g.note ?? '').trim();
-  // 有备注时图区收一点，保证整版构图重心不变
-  const cardY = 116;
-  const cardH = note ? 540 : 580;
-  const cardX = PAD;
-  const cardW = CW;
+/** 货币符号（与页面一致：CNY→¥ / USD→$）。 */
+function symbolOf(currency?: string): string {
+  return currency === 'USD' ? '$' : '¥';
+}
 
-  // 底 + 顶部品牌条
-  ctx.fillStyle = C.paper;
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = C.accent;
-  ctx.fillRect(0, 0, W, 10);
-  ctx.fillStyle = C.ink;
-  ctx.font = '700 40px system-ui, sans-serif';
-  ctx.fillText('纳物', PAD, 92);
-  ctx.fillStyle = C.ink3;
-  ctx.font = '400 24px system-ui, sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillText('值得的花销，值得记录', W - PAD, 92);
-  ctx.textAlign = 'left';
-
-  // ── 图区：整幅卡片，照片 cover 铺满 / logo contain 居中 ──
-  ctx.fillStyle = '#ffffff';
-  roundRect(ctx, cardX, cardY, cardW, cardH, 32);
-  ctx.fill();
-  const iconVal = goodsIconValue(g);
-  let drawn = false;
-  if (iconVal.startsWith('brand:')) {
-    drawn = drawBrandGlyph(ctx, iconVal, cardX, cardY, cardW, cardH);
-  } else {
-    const src = await resolveIconSrc(iconVal);
-    if (src) {
-      const img = await loadImage(src);
-      if (img) {
-        drawFit(ctx, img, cardX, cardY, cardW, cardH, 32, iconFitMode(iconVal));
-        drawn = true;
-      }
-    }
-  }
-  if (!drawn) drawInitialFallback(ctx, g.name, cardX, cardY, cardW, cardH, 32);
-  ctx.strokeStyle = C.line;
-  ctx.lineWidth = 2;
-  roundRect(ctx, cardX, cardY, cardW, cardH, 32);
-  ctx.stroke();
-
-  // ── 名称 ──
-  let y = cardY + cardH + 74;
-  ctx.fillStyle = C.ink;
-  ctx.font = '700 54px system-ui, sans-serif';
-  ctx.fillText(ellipsize(ctx, g.name || '未命名物品', CW), PAD, y);
-
-  // ── 备注（一行） ──
-  if (note) {
-    y += 42;
-    ctx.fillStyle = C.ink3;
-    ctx.font = '400 24px system-ui, sans-serif';
-    ctx.fillText(ellipsize(ctx, note, CW), PAD, y);
-  }
-
-  // ── 胶囊行：分类 / 状态 / 标签 ──
-  const chipTop = y + 30;
-  const chipH = 52;
-  let cx = PAD;
-  ctx.font = '500 24px system-ui, sans-serif';
-  const putChip = (text: string, bg: string, fg: string): boolean => {
-    const w = ctx.measureText(text).width + 40;
-    if (cx + w > W - PAD) return false;
-    ctx.fillStyle = bg;
-    roundRect(ctx, cx, chipTop, w, chipH, chipH / 2);
-    ctx.fill();
-    ctx.fillStyle = fg;
-    ctx.fillText(text, cx + 20, chipTop + chipH / 2 + 9);
-    cx += w + 12;
-    return true;
-  };
-  if (categoryName) putChip(categoryName, C.accentSoft, C.accent);
-  putChip(goodsStatusLabel(g.status), '#eae7e0', g.status === 'retired' ? C.ink3 : '#4c5b53');
-  for (const t of (g.tags ?? []).slice(0, 3)) {
-    if (!putChip(`#${t}`, '#f0eee8', C.ink3)) break;
-  }
-
-  // ── 2×2 数据卡 ──
-  const gap = 20;
-  const cellW = (CW - gap) / 2;
-  const cellH = 104;
-  const gridY = chipTop + chipH + 42;
-  const cells: Array<[string, string]> = [
-    ['总投入', `¥${fmtMoney(totalInvest(g))}`],
-    ['日均成本', `¥${fmtMoney(dailyCost(g), true)}`],
-    ['已陪伴', `${holdDays(g)} 天`],
-    ['购入于', isValidDate(g.buyDate) ? g.buyDate : '—'],
-  ];
-  cells.forEach(([label, val], i) => {
-    const x = PAD + (i % 2) * (cellW + gap);
-    const cy = gridY + Math.floor(i / 2) * (cellH + gap);
-    ctx.fillStyle = '#ffffff';
-    roundRect(ctx, x, cy, cellW, cellH, 24);
-    ctx.fill();
-    ctx.strokeStyle = C.line;
-    ctx.lineWidth = 2;
-    roundRect(ctx, x, cy, cellW, cellH, 24);
-    ctx.stroke();
-    ctx.fillStyle = C.ink3;
-    ctx.font = '400 22px system-ui, sans-serif';
-    ctx.fillText(label, x + 24, cy + 40);
-    ctx.fillStyle = C.ink;
-    ctx.font = '700 36px system-ui, sans-serif';
-    ctx.fillText(ellipsize(ctx, val, cellW - 48), x + 24, cy + 82);
-  });
-
-  // ── 页脚 ──
-  ctx.fillStyle = C.ink3;
-  ctx.font = '400 22px system-ui, sans-serif';
-  ctx.fillText(`由「纳物」生成 · ${new Date().toLocaleDateString('zh-CN')}`, PAD, H - 44);
-  ctx.textAlign = 'right';
-  ctx.fillText('NaWu', W - PAD, H - 44);
-  ctx.textAlign = 'left';
-
-  return cv.toDataURL('image/png');
+/** 照片类（要 cover 铺满、要抓原图）判定，与 iconFitMode 同源。 */
+function isPhotoIcon(icon: string | undefined): boolean {
+  const v = (icon ?? '').trim();
+  if (v.startsWith('img:')) return true;
+  if (!v.startsWith('url:')) return false;
+  const u = v.slice(4).toLowerCase();
+  return u.includes('/api/img/') || u.includes('bing.net') || u.includes('tse');
 }
 
 /**
- * 置物墙整墙海报（v1.0.11；v1.0.17 重排版）。
- * 900 宽三列网格，高度随物品数自适应；单卡 = 图区（照片 cover 铺满）+ 名称 + 价格/日均。
+ * 分享生图用的「尽量高清」取图。
+ *
+ * 为什么不能只用图标缓存：iconCache 是为列表渲染存的（单条 ≤400KB），
+ * 而商品图入库前经过「方裁 512 + 压到 ≤100KB」，拿来画 772px 的图区只能放大 → 发虚。
+ * 所以照片类**先按原图抓一次**（走服务端图片代理，字节上限放到 12MB），
+ * 抓不到才回落缓存 / 直链。抓到的原图在本会话内缓存，反复分享不再重复请求。
+ */
+const shareImageCache = new Map<string, HTMLImageElement | null>();
+
+async function loadShareImage(iconVal: string | undefined): Promise<HTMLImageElement | null> {
+  const v = (iconVal ?? '').trim();
+  if (!v || v.startsWith('brand:')) return null;
+  const cached = shareImageCache.get(v);
+  if (cached !== undefined) return cached;
+
+  let img: HTMLImageElement | null = null;
+  if (isPhotoIcon(v)) {
+    const src = iconSrcOf(v);
+    if (src && !src.startsWith('data:')) {
+      const big = await fetchIconAsDataUrl(src, 12_000_000);
+      if (big) img = await loadImage(big, 10_000);
+    }
+  }
+  if (!img) {
+    const src = await resolveIconSrc(v);
+    if (src) img = await loadImage(src);
+  }
+  shareImageCache.set(v, img);
+  return img;
+}
+
+/** 竖向渐变压深（白字可读，但不要把整张图压成灰）。 */
+function scrim(
+  ctx: CanvasRenderingContext2D,
+  _x: number,
+  y: number,
+  w: number,
+  h: number,
+  from: string,
+  to: string,
+): void {
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, from);
+  g.addColorStop(1, to);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, y, w, h);
+}
+
+/**
+ * 单物品分享卡（★v1.6.2 重新设计）。
+ *
+ * 版式就三件事：**图占满 / 字最少 / 没有宽大边框**。
+ * - 照片类：照片**满版铺满整张卡**（0 边距）。旧版是白卡 + 46px 内边距 + 2px 描边，
+ *   图片实际只占一半面积，四周一圈泛白，正是用户说的「多余宽大泛白边框」。
+ * - 图标类（品牌 logo / 系统图标）：柔色底 + 居中标的，底部走深色文字，
+ *   不再出现「一坨白卡套一个 72px 小图标」。
+ * - 数据从 2×2 四宫格收敛成**一行**（分类 · 价格 · 日均 · 陪伴），信息不丢、版面不挤。
+ */
+export async function drawGoodsCard(g: Goods, categoryName: string | null): Promise<string> {
+  const W = 900;
+  const H = 1125; // 4:5，与置物墙格子同比例
+  const PAD = 48;
+  const cw = W - PAD * 2;
+
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(W * R);
+  cv.height = Math.round(H * R);
+  const ctx = cv.getContext('2d');
+  if (!ctx) throw new Error('画布不可用');
+  ctx.scale(R, R);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const iconVal = goodsIconValue(g);
+  const photo = await loadShareImage(iconVal);
+  const glyph = iconVal.startsWith('brand:') ? glyphBySlug(iconVal.slice(6).trim()) : null;
+  /** 照片型且图够大 → cover 满版；其余（logo / 小图 / 系统图标）→ 柔底居中。 */
+  const fullBleed = Boolean(photo) && iconFitMode(iconVal) === 'cover';
+
+  if (fullBleed && photo) {
+    drawFit(ctx, photo, 0, 0, W, H, 0, 'cover');
+    // 底部压深承载文字；顶部再加一道很淡的压深，避免浅色照片上品牌字看不见
+    scrim(ctx, 0, H * 0.48, W, H * 0.52, 'rgba(10,14,12,0)', 'rgba(10,14,12,0.92)');
+    scrim(ctx, 0, 0, W, 132, 'rgba(10,14,12,0.34)', 'rgba(10,14,12,0)');
+  } else {
+    // 图标型：柔底铺满 + 居中呈现（不加任何卡片底 / 描边 / 内边距）
+    ctx.fillStyle = C.paper;
+    ctx.fillRect(0, 0, W, H);
+    const bh = H * 0.76;
+    ctx.fillStyle = C.accentSoft;
+    ctx.fillRect(0, 0, W, bh);
+    let drawn = false;
+    if (glyph) {
+      const scale = Math.min((W * 0.34) / 24, (bh * 0.34) / 24);
+      if (scale > 0) {
+        const dw = 24 * scale;
+        ctx.save();
+        ctx.translate((W - dw) / 2, (bh - dw) / 2);
+        ctx.scale(scale, scale);
+        ctx.fillStyle = `#${glyph.hex}`;
+        ctx.fill(new Path2D(glyph.path));
+        ctx.restore();
+        drawn = true;
+      }
+    } else if (photo) {
+      drawFit(ctx, photo, 0, 0, W, bh, 0, 'contain');
+      drawn = true;
+    }
+    if (!drawn) {
+      // 系统图标 / 无图：大字首字直接落在柔底上（不再画白色圆底，避免又是一块白斑）
+      ctx.fillStyle = C.accent;
+      ctx.font = '700 220px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((g.name || '物').charAt(0), W / 2, bh / 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+    }
+    // 图标区与文字区之间一条极轻的分隔（顶替原来的卡片描边）
+    ctx.fillStyle = C.line;
+    ctx.fillRect(0, bh, W, 1);
+  }
+
+  const onPhoto = fullBleed;
+  const ink = onPhoto ? '#ffffff' : C.ink;
+  const sub = onPhoto ? 'rgba(255,255,255,0.84)' : C.ink3;
+
+  // 名称
+  ctx.fillStyle = ink;
+  ctx.font = '700 46px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillText(ellipsize(ctx, g.name || '未命名物品', cw), PAD, H - 148);
+
+  // 一行数据：分类 · 价格 · 日均 · 陪伴
+  const sym = symbolOf(g.currency);
+  const metaParts = [
+    categoryName ?? '',
+    `${sym}${fmtMoney(Number(g.price ?? 0))}`,
+    `日均 ${sym}${fmtMoney(dailyCost(g), true)}`,
+    `陪伴 ${holdDays(g)} 天`,
+  ].filter(Boolean);
+  ctx.fillStyle = sub;
+  ctx.font = '500 24px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillText(ellipsize(ctx, metaParts.join(' · '), cw), PAD, H - 100);
+
+  // 品牌水印（右下，压得很轻，不抢主体）
+  ctx.fillStyle = onPhoto ? 'rgba(255,255,255,0.5)' : 'rgba(38,48,44,0.32)';
+  ctx.font = '600 20px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('纳物 NaWu', W - PAD, H - 44);
+  ctx.textAlign = 'left';
+
+  return cv.toDataURL('image/jpeg', 0.94);
+}
+
+/**
+ * 置物墙整墙长图（★v1.6.2 重新设计）。
+ *
+ * 三列，图片是主体：每格 = 4:5 图 + 一行「名称 / 价格 + 极轻分类」。
+ * 不再给每格套白色卡片 + 描边 + 内边距（旧版一层白卡再一层白图区，
+ * 图片实际只占六成面积，四角全是泛白边）。
  */
 export async function drawWallSheet(items: Array<{ g: Goods; categoryName: string | null }>): Promise<string> {
   const W = 900;
   const COLS = 3;
-  const GAP = 20;
-  const PAD = 48;
+  const GAP = 22;
+  const PAD = 40;
   const colW = (W - PAD * 2 - GAP * (COLS - 1)) / COLS;
-  const imgH = Math.round(colW * 0.82);
-  const cardH = imgH + 108;
+  const imgH = Math.round(colW * 1.25); // 4:5
+  const captionH = 64;
+  const cardH = imgH + captionH;
   const rows = Math.max(1, Math.ceil(items.length / COLS));
-  const headH = 216;
-  const footH = 92;
+  const headH = 168;
+  const footH = 76;
   const H = headH + rows * (cardH + GAP) - GAP + footH;
 
   const cv = document.createElement('canvas');
-  cv.width = W;
-  cv.height = H;
+  cv.width = Math.round(W * RW);
+  cv.height = Math.round(H * RW);
   const ctx = cv.getContext('2d');
   if (!ctx) throw new Error('画布不可用');
+  ctx.scale(RW, RW);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
-  // 底 + 品牌条
   ctx.fillStyle = C.paper;
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = C.accent;
-  ctx.fillRect(0, 0, W, 12);
 
-  // 头部
+  // 头部：标题 + 一行总账
+  ctx.fillStyle = C.accent;
+  ctx.fillRect(PAD, 56, 6, 44);
   ctx.fillStyle = C.ink;
-  ctx.font = '700 52px system-ui, sans-serif';
-  ctx.fillText('纳物 · 置物墙', PAD, 116);
+  ctx.font = '700 42px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillText('置物墙', PAD + 22, 92);
   const total = items.reduce((acc, it) => acc + totalInvest(it.g), 0);
+  const sym = symbolOf(items[0]?.g.currency);
   ctx.fillStyle = C.ink3;
-  ctx.font = '400 26px system-ui, sans-serif';
+  ctx.font = '500 22px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
   ctx.fillText(
-    `${items.length} 件在役 · 总投入 ¥${fmtMoney(total)} · 日均 ¥${fmtMoney(
+    `${items.length} 件在役 · 总投入 ${sym}${fmtMoney(total)} · 日均 ${sym}${fmtMoney(
       items.reduce((acc, it) => acc + dailyCost(it.g), 0),
       true,
     )}`,
-    PAD,
-    160,
+    PAD + 22,
+    130,
   );
-  ctx.font = '400 22px system-ui, sans-serif';
-  ctx.fillText('NaWu · 值得的花销，值得记录', PAD, 196);
 
-  // 卡片网格
   for (let i = 0; i < items.length; i += 1) {
+    const one = items[i];
+    const g = one.g;
     const cx = PAD + (i % COLS) * (colW + GAP);
     const cy = headH + Math.floor(i / COLS) * (cardH + GAP);
-    ctx.fillStyle = '#ffffff';
-    roundRect(ctx, cx, cy, colW, cardH, 24);
-    ctx.fill();
-    ctx.strokeStyle = C.line;
-    ctx.lineWidth = 2;
-    roundRect(ctx, cx, cy, colW, cardH, 24);
-    ctx.stroke();
 
-    // 图区：照片铺满，logo 居中
-    ctx.fillStyle = '#ffffff';
-    const ix = cx + 14;
-    const iy = cy + 14;
-    const iw = colW - 28;
-    const ih = imgH;
-    const iconVal = goodsIconValue(items[i].g);
-    let ok = false;
-    if (iconVal.startsWith('brand:')) {
-      ok = drawBrandGlyph(ctx, iconVal, ix, iy, iw, ih);
-    } else {
-      const src = await resolveIconSrc(iconVal);
-      if (src) {
-        const img = await loadImage(src);
-        if (img) {
-          drawFit(ctx, img, ix, iy, iw, ih, 16, iconFitMode(iconVal));
-          ok = true;
-        }
-      }
+    const iconVal = goodsIconValue(g);
+    const photo = await loadShareImage(iconVal);
+    const glyph = iconVal.startsWith('brand:') ? glyphBySlug(iconVal.slice(6).trim()) : null;
+    const cover = Boolean(photo) && iconFitMode(iconVal) === 'cover';
+
+    if (!cover) {
+      // 图标型：柔底（圆角），避免 logo 直接悬在纸面上没有边界感
+      ctx.fillStyle = C.accentSoft;
+      roundRect(ctx, cx, cy, colW, imgH, 20);
+      ctx.fill();
     }
-    if (!ok) drawInitialFallback(ctx, items[i].g.name, ix, iy, iw, ih, 16);
+    let ok = false;
+    if (glyph) {
+      const scale = Math.min((colW * 0.5) / 24, (imgH * 0.5) / 24);
+      if (scale > 0) {
+        const dw = 24 * scale;
+        ctx.save();
+        ctx.translate(cx + (colW - dw) / 2, cy + (imgH - dw) / 2);
+        ctx.scale(scale, scale);
+        ctx.fillStyle = `#${glyph.hex}`;
+        ctx.fill(new Path2D(glyph.path));
+        ctx.restore();
+        ok = true;
+      }
+    } else if (photo) {
+      drawFit(ctx, photo, cx, cy, colW, imgH, 20, cover ? 'cover' : 'contain');
+      ok = true;
+    }
+    if (!ok) {
+      ctx.fillStyle = C.accent;
+      ctx.font = `700 ${Math.round(colW * 0.34)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((g.name || '物').charAt(0), cx + colW / 2, cy + imgH / 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+    }
 
-    // 名称
-    const name = items[i].g.name || '未命名';
-    ctx.fillStyle = C.ink;
-    ctx.font = '600 24px system-ui, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(ellipsize(ctx, name, colW - 28), cx + 14, cy + imgH + 44);
-    // 价格 + 日均
-    ctx.fillStyle = C.accent;
-    ctx.font = '700 26px system-ui, sans-serif';
-    const price = `¥${fmtMoney(totalInvest(items[i].g))}`;
-    ctx.fillText(ellipsize(ctx, price, (colW - 28) * 0.55), cx + 14, cy + imgH + 82);
-    ctx.fillStyle = C.ink3;
-    ctx.font = '400 20px system-ui, sans-serif';
-    const per = `日均 ¥${fmtMoney(dailyCost(items[i].g), true)}`;
+    // 一行说明：名称（左）+ 价格（右）
+    const baseY = cy + imgH + 30;
+    const price = `${symbolOf(g.currency)}${fmtMoney(totalInvest(g))}`;
+    ctx.font = '700 22px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+    const priceW = Math.min(colW * 0.42, ctx.measureText(price).width + 4);
     ctx.textAlign = 'right';
-    ctx.fillText(ellipsize(ctx, per, (colW - 28) * 0.5), cx + colW - 14, cy + imgH + 82);
+    ctx.fillStyle = C.accent;
+    ctx.fillText(price, cx + colW, baseY);
     ctx.textAlign = 'left';
+    ctx.fillStyle = C.ink;
+    ctx.font = '500 22px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(ellipsize(ctx, g.name || '未命名', colW - priceW - 10), cx, baseY);
+    if (one.categoryName) {
+      // 分类只做极轻的副行，字号压到 18，不抢图
+      ctx.fillStyle = C.ink3;
+      ctx.font = '400 18px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.fillText(ellipsize(ctx, one.categoryName, colW), cx, baseY + 26);
+    }
   }
 
   // 页脚
   ctx.fillStyle = C.ink3;
-  ctx.font = '400 20px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(`由「纳物」生成 · ${new Date().toLocaleDateString('zh-CN')}`, W / 2, H - 30);
+  ctx.font = '400 18px system-ui, sans-serif';
+  ctx.fillText(`由「纳物」生成 · ${new Date().toLocaleDateString('zh-CN')}`, PAD, H - 34);
+  ctx.textAlign = 'right';
+  ctx.fillText('NaWu', W - PAD, H - 34);
   ctx.textAlign = 'left';
 
-  return cv.toDataURL('image/png');
+  return cv.toDataURL('image/jpeg', 0.94);
 }
 
-/** 保存/分享策略（v1.0.16 重写）：
+/** 保存/分享策略（v1.0.16 重写；★v1.6.2 按 dataURL 的真实类型给 MIME）：
  *  原生 App → 直接写入系统相册「纳物」相册（MediaStore，无需任何存储权限）；
  *  网页端 → navigator.share 优先，失败回退 <a download>。
- *  ★旧实现 `<a download>` 在 App WebView 里既不弹下载也不进相册——
- *  用户看到「已保存」但相册永远是空的，本版根治。 */
+ *  分享卡现在是 JPEG（高清照片卡），若仍硬编码 image/png，部分系统分享面板
+ *  会按错误类型处理（存成扩展名 png 的 JPEG / 个别相册识别失败）。 */
 export async function shareOrDownload(
   dataUrl: string,
   fileName: string,
 ): Promise<'shared' | 'saved' | 'downloaded'> {
+  const mime = /^data:([a-z0-9/+.-]+)[;,]/i.exec(dataUrl)?.[1] ?? 'image/png';
   if (Capacitor.isNativePlatform()) {
     try {
       const { Media } = await import('@capacitor-community/media');
@@ -488,7 +495,7 @@ export async function shareOrDownload(
         const { albums } = await Media.getAlbums();
         albumId = albums.find((a) => a.name === ALBUM_NAME)?.identifier ?? '';
       }
-      const base = fileName.replace(/\.png$/i, '');
+      const base = fileName.replace(/\.(png|jpe?g)$/i, '');
       await Media.savePhoto({ path: dataUrl, albumIdentifier: albumId || undefined, fileName: base });
       return 'saved';
     } catch (e) {
@@ -498,7 +505,7 @@ export async function shareOrDownload(
   }
   try {
     const blob = await (await fetch(dataUrl)).blob();
-    const file = new File([blob], fileName, { type: 'image/png' });
+    const file = new File([blob], fileName, { type: mime });
     const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean; share?: (d: { files: File[] }) => Promise<void> };
     if (nav.canShare?.({ files: [file] }) && nav.share) {
       await nav.share({ files: [file] });

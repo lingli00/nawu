@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Download, Upload } from 'lucide-react';
 import PageShell from '../components/layout/PageShell';
+import { useMaskDismiss } from '../lib/maskDismiss';
 import PageField from '../components/ui/PageField';
 import { useAuthStore, useServerStore, useSettingsStore, useUiStore, toastError, toastSuccess, fetchBackupList, restoreBackup, uploadBackup, deleteRemoteBackup, importBackupPayload, currentServer } from '../store';
 import type { BackupRow } from '../types/api';
@@ -422,6 +423,8 @@ function ExportPasswordDialog(props: {
   onConfirm: (password: string) => void;
 }) {
   const pwdRef = useRef<HTMLInputElement>(null);
+  /** ★v1.6.2 遮罩点击：输密码时指针移出边界不再误关（选字/粘贴安全）。 */
+  const maskDismiss = useMaskDismiss(props.onClose);
 
   const submit = () => {
     if (props.busy) return;
@@ -429,7 +432,7 @@ function ExportPasswordDialog(props: {
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={props.onClose}>
+    <div className="nw-glass-mask fixed inset-0 z-40 flex items-end" {...maskDismiss}>
       <div
         className="sheet-enter mx-auto w-full max-w-xl rounded-t-3xl bg-surface p-4"
         onClick={(e) => e.stopPropagation()}
@@ -492,6 +495,8 @@ function ImportPasswordDialog(props: {
   onConfirm: (password: string) => void;
 }) {
   const pwdRef = useRef<HTMLInputElement>(null);
+  /** ★v1.6.2 遮罩点击：输密码时指针移出边界不再误关（选字/粘贴安全）。 */
+  const maskDismiss = useMaskDismiss(props.onClose);
 
   const submit = () => {
     if (props.busy) return;
@@ -499,7 +504,7 @@ function ImportPasswordDialog(props: {
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={props.onClose}>
+    <div className="nw-glass-mask fixed inset-0 z-40 flex items-end" {...maskDismiss}>
       <div
         className="sheet-enter mx-auto w-full max-w-xl rounded-t-3xl bg-surface p-4"
         onClick={(e) => e.stopPropagation()}
@@ -565,9 +570,10 @@ function ImportConfirmDialog(props: {
 }) {
   const p = props.preview;
   const timeText = p.exportedAt ? fmtTimestamp(p.exportedAt) : '未知时间';
+  const maskDismiss = useMaskDismiss(props.onClose);
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={props.onClose}>
+    <div className="nw-glass-mask fixed inset-0 z-40 flex items-end" {...maskDismiss}>
       <div
         className="sheet-enter mx-auto w-full max-w-xl rounded-t-3xl bg-surface p-4"
         onClick={(e) => e.stopPropagation()}

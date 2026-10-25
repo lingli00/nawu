@@ -7,6 +7,7 @@ import { useAuthStore, useDataStore, useUiStore, currentServer, toastSuccess, to
 import { getRules, saveRules } from '../api/user';
 import { parseEnvelope, pullLearnedRulesFromCloud } from '../api/ruleSync';
 import { toJudgement } from '../lib/emoji';
+import { useMaskDismiss } from '../lib/maskDismiss';
 import type { Category, Judgement } from '../types/entities';
 
 /**
@@ -73,6 +74,8 @@ function RuleFormSheet({
   onSubmit: (rule: ParseRule) => void;
 }) {
   const isEdit = Boolean(editing);
+  /** ★v1.6.2 同上：遮罩只在真正点空白处关闭。 */
+  const maskDismiss = useMaskDismiss(onClose);
   // ★关键词输入非受控（Android WebView IME 铁律）：defaultValue + ref 读 DOM 真值，
   // 受控 value/onChange 在 IME 组合输入下 state 与界面脱节（登录页恶性 bug 同源）。
   const keywordRef = useRef<HTMLInputElement | null>(null);
@@ -96,7 +99,7 @@ function RuleFormSheet({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={onClose}>
+    <div className="nw-glass-mask fixed inset-0 z-40 flex items-end" {...maskDismiss}>
       <div
         className="sheet-enter mx-auto max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-4"
         onClick={(e) => e.stopPropagation()}

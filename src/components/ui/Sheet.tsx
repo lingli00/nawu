@@ -4,6 +4,7 @@ import { ChevronLeft, X } from 'lucide-react';
 import { useBackGuard } from '../../lib/backGuard';
 import { haptic } from '../../lib/haptics';
 import { useMediaQuery } from '../../lib/useMediaQuery';
+import { useMaskDismiss } from '../../lib/maskDismiss';
 
 /**
  * P1-10 · 显式弹层容器（替代全局 CSS hack）。
@@ -48,6 +49,11 @@ export function Sheet({
   className?: string;
 }): JSX.Element {
   const wide = useMediaQuery('(min-width: 1024px)');
+  /**
+   * ★v1.6.2 遮罩点击：只在「按下 + 抬起都在遮罩空白处」时关闭。
+   * 面板内长按拖拽选文字 / 粘贴 / 指针拖出面板边界，都不再误关（选字丢内容是老 bug）。
+   */
+  const maskDismiss = useMaskDismiss(onClose);
   const drawer = (side === 'bottom' || side === 'page') && wide;
   const page = side === 'page' && !wide;
   if (guard) useBackGuard(true, onClose);
@@ -113,10 +119,10 @@ export function Sheet({
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-50 flex bg-black/40 ${
+      className={`nw-glass-mask fixed inset-0 z-50 flex ${
         drawer ? 'items-stretch justify-end' : side === 'center' ? 'items-center justify-center p-6' : 'items-end'
       }`}
-      onClick={onClose}
+      {...maskDismiss}
     >
       <div
         className={
