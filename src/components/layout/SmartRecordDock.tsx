@@ -33,6 +33,14 @@ import {
   type OfflineAsrSession,
 } from '../../lib/offlineAsr';
 import { round } from '../../lib/money';
+/**
+ * ★v1.6.4 光标保护（勿删）：
+ * 输入框自适应高度必须走 `autoGrowTextarea`，它在改高度前后会保存/恢复光标。
+ * 直接写 `el.style.height = ...` 会让 Android WebView 在光标位于文本中间时
+ * 把 selection 重排到末尾（用户反馈的「改一个字光标就飞走」）。
+ * 详见 lib/caretGuard.ts 文件头。
+ */
+import { autoGrowTextarea } from '../../lib/caretGuard';
 import SmartRecordCard, { type RecordCardState } from './SmartRecordCard';
 import TradeRecordCard, { type TradeCardState } from './TradeRecordCard';
 import RetireSellCard, { type RetireCardState } from './RetireSellCard';
@@ -1361,6 +1369,13 @@ function SmartRecordPanel({
                 )}
               </button>
             ) : (
+              /*
+               * ★v1.6.4 光标铁律（改这里之前先读 lib/caretGuard.ts 文件头）：
+               * · 非受控（defaultValue），值只由 DOM 自己持有；
+               * · **禁止**给这个 textarea 加 key、禁止用条件渲染/三元把它换掉、
+               *   禁止把它包进会重挂载的子树 —— 一旦 DOM 被销毁重建，光标必丢；
+               * · 任何「改高度 / 改 value / 格式化」都必须经 autoGrowTextarea（含光标恢复）。
+               */
               <textarea
                 ref={inputRef}
                 rows={1}
@@ -1371,9 +1386,9 @@ function SmartRecordPanel({
                 onInput={(e) => {
                   // ★v1.3.8：中文输入法组合期不改高度——高度抖动会让部分
                   // WebView 重启组词、光标表现异常；compositionend 再补一次撑高
-                  if (!(e.nativeEvent as InputEvent).isComposing) autoGrowTextarea(e.currentTarget);
+                  if (!(e.nativeEvent as InputEvent).isComposing) growInput(e.currentTarget);
                 }}
-                onCompositionEnd={(e) => autoGrowTextarea(e.currentTarget)}
+                onCompositionEnd={(e) => growInput(e.currentTarget)}
                 onKeyDown={(e) => {
                   // 回车发送；Shift+回车换行；中文输入法组合中的回车不算（否则选词就发出去了）
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -1569,13 +1584,18 @@ function retireInitialOf(d: RetireDraft, g?: Goods): RetireCardState {
 }
 
 /**
- * 输入框自动撑高（★v1.3.7）。
- *
- * textarea 的 scrollHeight 只在 height:auto 时才是内容真实高度，
- * 所以先把 height 归零再按 scrollHeight 设值；上限由 CSS 的 max-h-40 兜住，
- * 超过就内部纵向滚动——横向永远不需要滑动。
+ * 旧的 `autoGrowTextarea` 曾定义在这里（直接改 style.height，不保存光标）。
+ * ★v1.6.4 已整体上移到 lib/caretGuard.ts —— 那里先记光标、改完立刻恢复、
+ * 并在 requestAnimationFrame 里再确认一次。**禁止在本文件重新写一份裸的
+ * 高度自适应**，否则「光标跳末尾」会立刻复发。
  */
-function autoGrowTextarea(el: HTMLTextAreaElement): void {
-  el.style.height = 'auto';
-  el.style.height = `${el.scrollHeight}px`;
+
+/**
+ * 输入框自动撑高（★光标安全 · v1.6.4）。
+ *
+ * 为什么不能直接用 scrollHeight 赋值：见 lib/caretGuard.ts 文件头（含原生层成因）。
+ * 这里保留一层具名封装，是为了让后续维护者一眼看到「这里做的是光标安全的自适应」。
+ */
+function growInput(el: HTMLTextAreaElement): void {
+  autoGrowTextarea(el);
 }

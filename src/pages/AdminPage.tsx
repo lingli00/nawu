@@ -1551,7 +1551,7 @@ function DbTab({
   );
 }
 
-/** ★v1.4.2 更新通道清单（/nawu-update/app-manifest.json 的最小子集）。 */
+/** ★v1.4.2 更新通道清单（v1.6.4 起在站点根：`/app-manifest.json` 的最小子集）。 */
 interface ChannelInfo {
   version: string;
   publishedAt: string;
@@ -1591,13 +1591,14 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
   const [lastAutoCheck, setLastAutoCheck] = useState('');
   const [srcUrl, setSrcUrl] = useState('');
   const [srcAuto, setSrcAuto] = useState(true);
-  /** ★v1.4.2 更新通道信息（官网静态目录 /nawu-update/app-manifest.json）。 */
+  /** ★v1.4.2 更新通道信息（v1.6.4 起：站点根 /app-manifest.json）。 */
   const [channelInfo, setChannelInfo] = useState<ChannelInfo | null>(null);
   const [channelLoading, setChannelLoading] = useState(false);
   const loadChannel = async (): Promise<void> => {
     setChannelLoading(true);
     try {
-      const res = await fetch(`${window.location.origin}/nawu-update/app-manifest.json`, { cache: 'no-store' });
+      // ★v1.6.4：渠道已从 /nawu-update/ 子目录搬到站点根，路径必须跟着改
+      const res = await fetch(`${window.location.origin}/app-manifest.json`, { cache: 'no-store' });
       if (!res.ok) throw new Error(String(res.status));
       setChannelInfo((await res.json()) as ChannelInfo);
     } catch {
@@ -2034,11 +2035,11 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
                 : ' · 无增量包'}
             </p>
             <p className="mt-1 break-all text-[11px] text-ink-3">
-              通道地址：{`${window.location.origin}/nawu-update/app-manifest.json`}
+              通道地址：{`${window.location.origin}/app-manifest.json`}
             </p>
           </>
         ) : (
-          <p className="mt-2 text-[11px] text-ink-3">{channelLoading ? '正在读取通道清单…' : '通道清单不可达（检查 /nawu-update/ 目录与静态服务）'}</p>
+          <p className="mt-2 text-[11px] text-ink-3">{channelLoading ? '正在读取通道清单…' : '通道清单不可达（检查站点根目录的 app-manifest.json 与静态服务）'}</p>
         )}
       </div>
 
@@ -2052,7 +2053,7 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
           <input
             value={srcUrl}
             onChange={(e) => setSrcUrl(e.target.value)}
-            placeholder={info?.source.effective ?? 'http://127.0.0.1:2233/nawu-update/'}
+            placeholder={info?.source.effective ?? 'https://x.133388.xyz/'}
             className={`${inputCls} flex-1`}
           />
           <label className="flex items-center gap-1.5 text-xs text-ink-2">

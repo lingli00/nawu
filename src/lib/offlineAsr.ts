@@ -25,8 +25,14 @@
  * - 网页版同源，无跨域；
  * - App 内页面源是 https://localhost，跨域但接口带 `Access-Control-Allow-Origin: *`；
  * - 单文件直读 + Content-Length，客户端据此显示下载进度。
+ *
+ * ★v1.6.4：旧地址 `http://106.53.204.29/asr-model.php` 随公共分发目录一起下线，
+ * 改指自己正在运行的服务端站点根（与更新渠道同一个站点、同一个 https）。
+ * ⚠️ 该接口读的是 `storage/asr/vosk-model-small-cn-0.22.tar.gz`（约 42MB），
+ * 这个文件不随纯净包分发，**部署时要单独上传**，否则接口返回 404
+ * （页面拿到的是品牌 404 页，前端报「模型下载失败」）。
  */
-export const ASR_MODEL_URL = 'http://106.53.204.29/asr-model.php';
+export const ASR_MODEL_URL = 'https://x.133388.xyz/asr-model.php';
 
 import { ASR_SAMPLE_RATE, resamplePcm, rms } from './pcm';
 /** 引擎脚本路径（public/vosk/vosk.js，随包分发）。 */

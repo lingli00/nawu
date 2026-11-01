@@ -19,9 +19,13 @@ beforeEach(() => {
 });
 
 describe('模型与引擎配置', () => {
-  it('模型托管在自有服务器，且是单一接口（带 CORS）', () => {
-    expect(ASR_MODEL_URL.startsWith('http://106.53.204.29/')).toBe(true);
+  it('模型托管在自有服务器（v1.6.4 起：自己正在运行的服务端站点根），且是单一接口（带 CORS）', () => {
+    // 旧公共主机 106.53.204.29 已下线，模型下载随之失效 —— 改指站点根
+    expect(ASR_MODEL_URL).toBe('https://x.133388.xyz/asr-model.php');
     expect(ASR_MODEL_URL).not.toContain('cdn');
+    expect(ASR_MODEL_URL).not.toContain('106.53.204.29');
+    // 必须走 https：站点 80 端口对全部请求 301
+    expect(ASR_MODEL_URL.startsWith('https://')).toBe(true);
   });
 
   it('引擎随包分发（不依赖外网 CDN）', () => {
