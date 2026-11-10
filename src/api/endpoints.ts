@@ -44,6 +44,14 @@ export const EP = {
   aiInbox: '/api/ai/inbox',
   aiInboxApply: '/api/ai/inbox/apply',
   aiKeys: '/api/ai/keys',
+  // ★v1.6.6 通用数据平面
+  aiSchema: '/api/ai/schema',
+  aiCollections: '/api/ai/collections',
+  aiQuery: '/api/ai/query',
+  aiMutate: '/api/ai/mutate',
+  aiCategories: '/api/ai/categories',
+  aiOptions: '/api/ai/options',
+  aiActions: '/api/ai/actions',
 } as const;
 
 /**
