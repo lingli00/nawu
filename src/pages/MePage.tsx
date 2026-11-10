@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, CircleUser, Cloud, LayoutGrid, Monitor, Settings, Server, Tags, ChevronRight } from 'lucide-react';
+import { Brain, CircleUser, Cloud, LayoutGrid, Monitor, Settings, Server, Sparkles, Tags, ChevronRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAppStore, useAuthStore, useServerStore, useUiStore, currentServer, toastSuccess } from '../store';
 import { getProfile } from '../api/user';
@@ -23,6 +23,7 @@ const ENTRIES: Array<{ to: string; Icon: LucideIcon; label: string; desc: string
   { to: '/backup', Icon: Cloud, label: '备份与恢复', desc: '云备份 / 覆盖恢复' },
   { to: '/categories', Icon: Tags, label: '分类管理', desc: '自定义分类' },
   { to: '/rules', Icon: Brain, label: '识别规则', desc: '教 AI 识记账：关键词 → 分类' },
+  { to: '/ai', Icon: Sparkles, label: 'AI 接入', desc: '生成 API Key · 接入 Muse / 任意 AI' },
   { to: '/servers', Icon: Server, label: '服务器管理', desc: '多服务器添加与切换' },
   { to: '/settings', Icon: Settings, label: '设置', desc: '主题 · AI · 同步 · 货币' },
 ];

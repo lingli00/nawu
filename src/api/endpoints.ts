@@ -35,6 +35,15 @@ export const EP = {
   syncPush: '/api/sync/push',
   syncPull: '/api/sync/pull',
   syncDelete: '/api/sync/delete',
+
+  // ★v1.6.5 AI 接入（Muse / 任意智能体）
+  aiContext: '/api/ai/context',
+  aiParse: '/api/ai/parse',
+  aiCommit: '/api/ai/commit',
+  aiAsk: '/api/ai/ask',
+  aiInbox: '/api/ai/inbox',
+  aiInboxApply: '/api/ai/inbox/apply',
+  aiKeys: '/api/ai/keys',
 } as const;
 
 /**

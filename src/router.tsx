@@ -10,6 +10,7 @@ import ReportPage from './pages/ReportPage';
 import LedgerPage from './pages/LedgerPage';
 import ManualRecordSheet from './pages/ManualRecordSheet';
 import MePage from './pages/MePage';
+import AiAccessPage from './pages/AiAccessPage';
 import WallPage from './pages/WallPage';
 import BackupPage from './pages/BackupPage';
 import SettingsPage from './pages/SettingsPage';
@@ -54,7 +55,7 @@ export const AppRoutes: AppRoute[] = [
   { path: '/ledger', element: <LedgerPage /> },
   // ★v1.3.1：独立「AI 记一笔」页全链路移除，旧链重定向回首页
   //（对话式记录在任意页经加号「对话记一笔」/右滑手势唤起 SmartRecordDock）
-  { path: '/ai', element: <Navigate to="/home" replace /> },
+  { path: '/ai', element: <AiAccessPage /> },
   { path: '/ai/confirm', element: <Navigate to="/home" replace /> },
   { path: '/record', element: <ManualRecordSheet /> },
   { path: '/record/:id', element: <ManualRecordSheet /> },
