@@ -14,6 +14,7 @@ import { haptic } from '../lib/haptics';
 import { checkAppUpdate, fetchChannelManifest, lastUpdateLog, type AppUpdateTarget } from '../api/appUpdate';
 import { runAppUpdate, fmtSize, type UpdateProgress } from '../api/appUpdateFlow';
 import { chatComplete } from '../net/aiClient';
+import { syncNow, useSyncStore } from '../sync/engine';
 import type { ThemeMode } from '../types/entities';
 
 const THEMES: Array<{ value: ThemeMode; label: string }> = [
@@ -31,6 +32,11 @@ export default function SettingsPage() {
   const setThemeMode = useAppStore((s) => s.setThemeMode);
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
+  /* ★v1.7.0 多端同步状态 */
+  const syncStatus = useSyncStore((s) => s.status);
+  const syncLastAt = useSyncStore((s) => s.lastSyncAt);
+  const syncPending = useSyncStore((s) => s.pending);
+  const syncError = useSyncStore((s) => s.error);
 
   const [aiEndpoint, setAiEndpoint] = useState(settings.aiEndpoint ?? '');
   const [aiKey, setAiKey] = useState(settings.aiKey ?? '');
@@ -282,6 +288,40 @@ export default function SettingsPage() {
           className="mt-3 h-10 w-full rounded-btn border border-line text-sm text-ink-2"
         >
           打开备份与恢复 ›
+        </button>
+      </section>
+
+      {/* ★v1.7.0 多端同步 */}
+      <section className="mt-3 rounded-card border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold">多端同步</h2>
+        <div className="mt-3 flex items-center justify-between">
+          <div className="min-w-0 pr-3">
+            <p className="text-sm">
+              {syncStatus === 'syncing'
+                ? '同步中…'
+                : syncStatus === 'error'
+                  ? '同步失败'
+                  : syncStatus === 'off'
+                    ? '未启用（登录后自动开启）'
+                    : '已开启'}
+            </p>
+            <p className="text-[11px] text-ink-3">
+              登录后，物品 / 生活流 / 订阅等数据自动在手机、电脑、网页之间同步（新写的内容几秒内送达其他设备）。
+              AI 接口地址与 Key 不随账号漫游。
+            </p>
+          </div>
+        </div>
+        <p className="mt-2 text-[11px] text-ink-3">
+          上次同步：{syncLastAt ? fmtTimestamp(new Date(syncLastAt).toISOString()) : '从未'}
+          {syncPending > 0 ? ` · 待推送 ${syncPending} 条` : ''}
+          {syncStatus === 'error' && syncError ? ` · ${syncError}` : ''}
+        </p>
+        <button
+          onClick={() => void syncNow('manual')}
+          disabled={syncStatus === 'syncing' || syncStatus === 'off'}
+          className="mt-3 h-10 w-full rounded-btn border border-line text-sm text-ink-2 disabled:opacity-50"
+        >
+          {syncStatus === 'syncing' ? '同步中…' : '立即同步'}
         </button>
       </section>
 

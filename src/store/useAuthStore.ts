@@ -10,6 +10,27 @@ import type { ServerConfig, Session, SessionState } from '../types/entities';
 import { currentServer, useServerStore } from './useServerStore';
 
 /**
+ * 同步引擎启停（★v1.7.0 动态 import，避免 useAuthStore ⇄ sync/engine 静态循环依赖）。
+ */
+async function startSyncEngineSafe(): Promise<void> {
+  try {
+    const m = await import('../sync/engine');
+    m.startSyncEngine();
+  } catch (e) {
+    logger.warn('auth', '同步引擎启动失败', e);
+  }
+}
+
+async function stopSyncEngineSafe(): Promise<void> {
+  try {
+    const m = await import('../sync/engine');
+    m.stopSyncEngine();
+  } catch (e) {
+    logger.warn('auth', '同步引擎停止失败', e);
+  }
+}
+
+/**
  * 登录态 store。
  *
  * ★v1.3.3 多服务器独立登录态：
@@ -131,10 +152,12 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
     await setKV(K_USER, next);
     if (!next?.token) {
       set({ session: null, sessionState: 'unknown', sessionServerId: nextId ?? null, error: '' });
+      void stopSyncEngineSafe();
       return;
     }
     set({ session: next, sessionState: 'valid', sessionServerId: nextId ?? null, error: '' });
     void get().verify();
+    void startSyncEngineSafe();
   },
 
   login: async (email, password) => {
@@ -145,6 +168,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
       await persistSession(session, server?.id ?? null);
       set({ session, sessionState: 'valid', sessionServerId: server?.id ?? null, busy: false, error: '' });
       if (server) await useServerStore.getState().markConnected(server.id, true);
+      void startSyncEngineSafe();
     } catch (e) {
       set({ busy: false, error: humanMessage(e) });
       throw e;
@@ -163,6 +187,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
       await persistSession(session, server?.id ?? null);
       set({ session, sessionState: 'valid', sessionServerId: server?.id ?? null, busy: false, error: '' });
       if (server) await useServerStore.getState().markConnected(server.id, true);
+      void startSyncEngineSafe();
     } catch (e) {
       set({ busy: false, error: humanMessage(e) });
       throw e;
@@ -233,12 +258,14 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
     } finally {
       await persistSession(null, get().sessionServerId ?? currentServer()?.id ?? null);
       set({ session: null, sessionState: 'unknown', sessionServerId: currentServer()?.id ?? null, error: '' });
+      void stopSyncEngineSafe();
     }
   },
 
   markExpired: async () => {
     await persistSession(null, get().sessionServerId ?? currentServer()?.id ?? null);
     set({ session: null, sessionState: 'expired' });
+    void stopSyncEngineSafe();
   },
 
   clearLocalSession: async () => {

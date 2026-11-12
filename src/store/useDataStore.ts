@@ -21,6 +21,7 @@ import type {
 } from '../types/entities';
 import { loadAllCollections, saveAllCollections, saveCollection, saveCollectionNow } from '../storage/repo';
 import { sellProfit } from '../domain/goods';
+import { markNeedSeedForCurrentServer, noteCollectionMutation } from '../sync/note';
 import { useSettingsStore } from './useSettingsStore';
 
 /**
@@ -28,6 +29,7 @@ import { useSettingsStore } from './useSettingsStore';
  *
  * 写策略：内存立即更新 → `repo.saveCollection`（debounce 300ms 落盘）。
  * 每次变更 `changedSinceBackup += 1`，供 `domain/backupPolicy` 做自动备份节流。
+ * ★v1.7.0：每次变更同时进入同步 outbox（noteCollectionMutation，未登录时自动跳过）。
  */
 
 /** 撤销栈最大长度。 */
@@ -127,16 +129,18 @@ export const useDataStore = create<DataState>()((set, get) => {
     set((s) => ({ changedSinceBackup: s.changedSinceBackup + n }));
   };
 
-  /** 更新内存 + 落盘。 */
+  /** 更新内存 + 落盘 + 入同步队列。 */
   const commit = async (
     collection: CollectionName,
     rows: unknown[],
     opts: { label?: string; prev?: unknown[]; bump?: boolean } = {},
   ): Promise<void> => {
+    const before = (get()[collection] as unknown as unknown[]) ?? [];
     if (opts.label && opts.prev) pushUndo(opts.label, collection, opts.prev);
     set({ [collection]: rows } as unknown as Partial<DataState>);
     await saveCollection(collection, rows);
     if (opts.bump !== false) bumpChanged();
+    void noteCollectionMutation(collection, before, rows);
   };
 
   return {
@@ -170,6 +174,8 @@ export const useDataStore = create<DataState>()((set, get) => {
       }
       set({ ...patch, undoStack: [], changedSinceBackup: 0 } as unknown as Partial<DataState>);
       await saveAllCollections(next);
+      // ★v1.7.0：恢复备份后本机内容可能与服务端同步库不同，标记需要全量 seed
+      void markNeedSeedForCurrentServer();
     },
 
     resetChanged: () => set({ changedSinceBackup: 0 }),
@@ -178,9 +184,11 @@ export const useDataStore = create<DataState>()((set, get) => {
       const stack = get().undoStack;
       const entry = stack[stack.length - 1];
       if (!entry) return false;
+      const beforeRows = (get()[entry.collection] as unknown as unknown[]) ?? [];
       set({ undoStack: stack.slice(0, -1) });
       set({ [entry.collection]: entry.rows } as unknown as Partial<DataState>);
       await saveCollectionNow(entry.collection, entry.rows);
+      void noteCollectionMutation(entry.collection, beforeRows, entry.rows as unknown as unknown[]);
       return true;
     },
 

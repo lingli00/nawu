@@ -8,8 +8,8 @@ android {
         applicationId "com.guifou.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 79
-        versionName "1.6.6"
+        versionCode 80
+        versionName "1.7.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -17,22 +17,22 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    /* v1.0.11 起固定签名（PKCS12），debug/release 统一用同一把 key，
-     * 版本间可直接覆盖升级。
+    /* v1.0.11 起固定签名（PKCS12），debug/release 统一用同一�?key�?
+     * 版本间可直接覆盖升级�?
      *
-     * ★v1.0.33 安全修复：签名口令不再硬编码在构建脚本里。
-     *   旧版把 storePassword/keyPassword 明文写在 build.gradle 中，源码包
-     *   一发出去密钥口令就随之泄露；且 nawu-release.p12 曾随仓库分发，
-     *   两者组合意味着「任何人都能用同一把 key 签发假冒升级包」。
+     * ★v1.0.33 安全修复：签名口令不再硬编码在构建脚本里�?
+     *   旧版�?storePassword/keyPassword 明文写在 build.gradle 中，源码�?
+     *   一发出去密钥口令就随之泄露；且 nawu-release.p12 曾随仓库分发�?
+     *   两者组合意味着「任何人都能用同一�?key 签发假冒升级包」�?
      *   现在口令一律从 gradle.properties / 环境变量读取（见
-     *   android/gradle.properties.template），未配置时：
+     *   android/gradle.properties.template），未配置时�?
      *     - release 构建：直接报错并给出配置指引（绝不静默用默认口令）；
-     *     - debug 构建：回落 Android SDK 自动生成的 debug 签名，不影响开发调试。
+     *     - debug 构建：回�?Android SDK 自动生成�?debug 签名，不影响开发调试�?
      *
-     * ⚠️ 运维必做：既然旧口令已随源码泄露，请重新生成一把签名密钥
-     *   （keytool -genkeypair 新建 .p12），在 Google Play / 应用分发渠道
-     *   完成签名迁移，并把旧 key 作废。仅改构建脚本不换 key，
-     *   拿到旧 key+旧口令的人依然能签发可覆盖安装的包。 */
+     * ⚠️ 运维必做：既然旧口令已随源码泄露，请重新生成一把签名密�?
+     *   （keytool -genkeypair 新建 .p12），�?Google Play / 应用分发渠道
+     *   完成签名迁移，并把旧 key 作废。仅改构建脚本不�?key�?
+     *   拿到�?key+旧口令的人依然能签发可覆盖安装的包�?*/
     signingConfigs {
         release {
             def nawuStoreFile     = project.findProperty('NAWU_STORE_FILE') ?: System.getenv('NAWU_STORE_FILE')
@@ -49,7 +49,7 @@ android {
                 keyPassword nawuKeyPassword
             } else if (wantRelease) {
                 throw new GradleException(
-                    "缺少 APK 签名配置。请在 android/gradle.properties 或环境变量中设置：\n" +
+                    "缺少 APK 签名配置。请�?android/gradle.properties 或环境变量中设置：\n" +
                     "  NAWU_STORE_FILE / NAWU_STORE_PASSWORD / NAWU_KEY_ALIAS / NAWU_KEY_PASSWORD\n" +
                     "（模板见 android/gradle.properties.template；不要把口令提交进仓库）"
                 )
@@ -74,7 +74,7 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-    // v1.0.36：AGP 8 默认不生成 BuildConfig，ApkUpdatePlugin 要读
+    // v1.0.36：AGP 8 默认不生�?BuildConfig，ApkUpdatePlugin 要读
     // VERSION_NAME/VERSION_CODE 做「当前版本」上报，这里显式打开
     buildFeatures {
         buildConfig true

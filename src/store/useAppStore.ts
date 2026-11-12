@@ -77,8 +77,17 @@ export const useAppStore = create<AppStoreState>()((set) => ({
         void useAuthStore.getState().switchServer(nextId);
       });
 
-      // 7. 登录态校验（后台进行，不阻塞进入首页）
-      void useAuthStore.getState().hydrateSession();
+      // 7. 登录态校验（后台进行，不阻塞进入首页）；已登录则顺带启动多端同步引擎
+      void useAuthStore
+        .getState()
+        .hydrateSession()
+        .then(() => {
+          if (!useAuthStore.getState().session?.token) return;
+          return import('../sync/engine').then((m) => m.startSyncEngine());
+        })
+        .catch(() => {
+          /* 引擎启动失败不影响主流程 */
+        });
 
       set({ hydrated: true, bootError: '' });
     } catch (e) {
