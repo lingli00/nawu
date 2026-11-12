@@ -123,13 +123,15 @@ export async function markNeedSeed(serverId: string): Promise<void> {
   await setKV(needSeedKey(serverId), nowISO());
 }
 
-export async function consumeNeedSeed(serverId: string): Promise<boolean> {
+/** 读取 seed 标记（不消费 —— seed 失败要保留，下一轮重试）。 */
+export async function peekNeedSeed(serverId: string): Promise<boolean> {
   const v = await getKV<string>(needSeedKey(serverId), null);
-  if (v) {
-    await setKV(needSeedKey(serverId), null);
-    return true;
-  }
-  return false;
+  return Boolean(v);
+}
+
+/** seed 成功后清除标记。 */
+export async function clearNeedSeed(serverId: string): Promise<void> {
+  await setKV(needSeedKey(serverId), null);
 }
 
 /* ---------------- 事件回调（engine 注册调度器，避免循环依赖） ---------------- */

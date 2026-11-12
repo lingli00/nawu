@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { fetchSyncCursor, pullSync, pushSync } from '../api/sync';
+import { pullSync, pushSync } from '../api/sync';
 import { humanMessage } from '../lib/error';
 import logger from '../lib/log';
 import { saveCollection } from '../storage/repo';
@@ -10,9 +10,10 @@ import { useDataStore } from '../store/useDataStore';
 import { currentServer } from '../store/useServerStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import {
-  consumeNeedSeed,
+  clearNeedSeed,
   getCursor,
   getMeta,
+  peekNeedSeed,
   readOutbox,
   removeEntries,
   setCursor,
@@ -215,32 +216,56 @@ async function registerNativeResume(): Promise<void> {
   }
 }
 
-/** 一轮完整同步：seed（如需）→ 推 outbox → 拉取合并。 */
+/** 一轮完整同步（★v1.7.1 修复重排）：
+ *
+ * 旧版缺陷：首次同步必须 seedAll 完整成功才解锁 pull —— 任何一次失败后
+ * 游标永远为 null，每轮都重头全量推送，pull 永远执行不到，
+ * 云端其他设备的数据（如电脑端新增的订阅）永远拉不下来。
+ *
+ * 新顺序：
+ *   ① 恢复备份标记（needSeed）→ 先推本机全部（服务端 LWW 裁决），失败保留标记下轮重试；
+ *   ② 首次（无游标）→ 游标占位 0，立即解锁 pull 通道；
+ *   ③ 推 outbox（本机待推变更）；
+ *   ④ 拉取合并（首次从 0 = 远端全量快照），收集远端已有的记录键；
+ *   ⑤ 首次 → 只把「本地有、远端没有」的差集推上云（不重复推远端已有的）。
+ */
 async function runSync(server: ServerConfig): Promise<void> {
   const sid = server.id;
 
   // 0. 刷新 pending 展示
   patchStore({ pending: (await readOutbox(sid)).length });
 
-  // 1. 首次同步（无游标）或恢复备份后：把本机全量推一遍（服务端可能没有这些记录）
-  const needSeed = await consumeNeedSeed(sid);
-  let cursor = await getCursor(sid);
-  if (cursor === null || needSeed) {
+  // 1. 恢复备份：先推本机全部（先推后拉，本机快照才不会被远端旧数据顶掉）
+  if (await peekNeedSeed(sid)) {
     await seedAll(server);
-    cursor = await fetchSyncCursor(server);
-    await setCursor(sid, cursor);
+    await clearNeedSeed(sid);
   }
 
-  // 2. 推送 outbox（最多 20 轮 × 200 条，剩余下轮继续）
+  // 2. 首次同步：游标占位 0（立即解锁 pull，绝不让 seed 阻塞拉取）
+  let cursor = await getCursor(sid);
+  const firstSync = cursor === null;
+  if (cursor === null) cursor = 0;
+  if (firstSync) await setCursor(sid, 0);
+
+  // 3. 推送 outbox（最多 20 轮 × 200 条，剩余下轮继续）
   await pushOutbox(server);
 
-  // 3. 拉取并合并（循环直到没有更多）
+  // 4. 拉取并合并（循环直到没有更多），同时收集远端已有的记录键
+  const remoteKeys = new Set<string>();
   for (let round = 0; round < PULL_MAX_ROUNDS; round += 1) {
     const res = await pullSync(server, cursor);
-    if (res.changes.length > 0) await applyRemoteChanges(server.id, res.changes);
+    if (res.changes.length > 0) {
+      await applyRemoteChanges(server.id, res.changes);
+      for (const c of res.changes) remoteKeys.add(`${c.collection}:${c.recordId}`);
+    }
     cursor = res.cursor;
     await setCursor(sid, cursor);
     if (!res.hasMore) break;
+  }
+
+  // 5. 首次同步：把「本地有、远端没有」的差集推上云
+  if (firstSync) {
+    await seedMissing(server, remoteKeys);
   }
 
   patchStore({ pending: (await readOutbox(sid)).length });
@@ -278,6 +303,36 @@ async function seedAll(server: ServerConfig): Promise<void> {
     applied += res.applied;
   }
   logger.debug('sync', `全量 seed 完成：${changes.length} 条（服务端 applied ${applied}）`);
+}
+
+/** 首次同步差集（★v1.7.1）：只推「本地有、远端没有」的记录，远端已有的交给 pull 合并。
+ *  比旧版「无脑全量推」快得多，也不会因 seed 失败而阻塞拉取。 */
+async function seedMissing(server: ServerConfig, remoteKeys: Set<string>): Promise<void> {
+  const ds = useDataStore.getState();
+  const { COLLECTIONS } = await import('../types/entities');
+  const changes: Array<{ collection: string; recordId: string; op: 'upsert'; data: unknown; updatedAt: number }> = [];
+  for (const name of COLLECTIONS) {
+    const rows = (ds[name] as unknown as SyncableRecord[]) ?? [];
+    for (const r of rows) {
+      if (!r || typeof r.id !== 'string') continue;
+      if (remoteKeys.has(`${name}:${r.id}`)) continue; // 远端已有：不重复推
+      changes.push({
+        collection: name,
+        recordId: r.id,
+        op: 'upsert',
+        data: r,
+        updatedAt: recordUpdatedAt(r) || Date.now(),
+      });
+    }
+  }
+  if (changes.length === 0) return;
+
+  let applied = 0;
+  for (let i = 0; i < changes.length; i += PUSH_CHUNK) {
+    const res = await pushSync(server, changes.slice(i, i + PUSH_CHUNK));
+    applied += res.applied;
+  }
+  logger.debug('sync', `差集 seed 完成：${changes.length} 条（服务端 applied ${applied}）`);
 }
 
 /** 推送 outbox（成功即移除；服务端 ignored 表示云端已有更新版本，同样移除）。 */

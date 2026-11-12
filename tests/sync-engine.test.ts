@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * 5. **diff 稳定**：键序不同但内容相同的记录不算变更。
  */
 
-import { enqueueAndNotify, enqueueDeleteAndNotify, findPending, removeEntries, readOutbox, getCursor, setCursor, markNeedSeed, consumeNeedSeed } from '../src/sync/outbox';
+import { enqueueAndNotify, enqueueDeleteAndNotify, findPending, removeEntries, readOutbox, getCursor, setCursor, markNeedSeed, peekNeedSeed, clearNeedSeed } from '../src/sync/outbox';
 import {
   diffCollection,
   mergeRoamingSettings,
@@ -164,9 +164,10 @@ describe('outbox', () => {
     await setCursor(SID, 42);
     expect(await getCursor(SID)).toBe(42);
 
-    expect(await consumeNeedSeed(SID)).toBe(false);
+    expect(await peekNeedSeed(SID)).toBe(false);
     await markNeedSeed(SID);
-    expect(await consumeNeedSeed(SID)).toBe(true);
-    expect(await consumeNeedSeed(SID)).toBe(false);
+    expect(await peekNeedSeed(SID)).toBe(true);
+    await clearNeedSeed(SID);
+    expect(await peekNeedSeed(SID)).toBe(false);
   });
 });

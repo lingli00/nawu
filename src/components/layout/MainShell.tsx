@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Home, Plus, ScrollText, Smartphone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -18,6 +18,7 @@ import {
 } from '../../lib/updatePrompt';
 import { Download, X } from 'lucide-react';
 import RecordMenu from '../RecordMenu';
+import PullToRefresh from '../ui/PullToRefresh';
 import SkinBar from '../SkinBar';
 import { BrandMark } from '../BrandMark';
 import SmartRecordDock from './SmartRecordDock';
@@ -481,6 +482,19 @@ function MobileShell({
   const rawIdx = TABS.findIndex((t) => t.to === pathname);
   const idx = rawIdx < 0 ? 0 : rawIdx;
 
+  /** ★v1.7.1 下拉刷新：四大 Tab 页顶部下拉 → 触发一次同步（未登录时引擎自动短路）。 */
+  const handlePullRefresh = useCallback(async (): Promise<void> => {
+    try {
+      const m = await import('../../sync/engine');
+      await Promise.race([
+        m.syncNow('pull-refresh'),
+        new Promise<void>((r) => window.setTimeout(r, 6000)),
+      ]);
+    } catch {
+      /* 失败由引擎状态与 Toast 呈现，这里不打扰 */
+    }
+  }, []);
+
   /* ---------- 滑动引导（v1.3.2）：新用户首次进入四大页时出现一次 ---------- */
 
   const [guideOpen, setGuideOpen] = useState(false);
@@ -639,11 +653,14 @@ function MobileShell({
               // 非当前页不参与无障碍树与点击（视觉上仍在，滑动时看得到）
               style={i === idx ? undefined : { pointerEvents: 'none' }}
             >
-              {tabPane && (i === idx || mounted.has(i))
-                ? tabPane(t.to)
-                : i === idx
-                  ? children
-                  : null}
+              {/* ★v1.7.1 下拉刷新：包住每个 Tab 页内容（组件内只在「滚动到顶 + 纵向」手势时触发） */}
+              <PullToRefresh onRefresh={handlePullRefresh}>
+                {tabPane && (i === idx || mounted.has(i))
+                  ? tabPane(t.to)
+                  : i === idx
+                    ? children
+                    : null}
+              </PullToRefresh>
             </section>
           ))}
         </div>

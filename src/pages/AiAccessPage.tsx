@@ -333,7 +333,9 @@ export default function AiAccessPage() {
         <div className="relative">
           <div className="flex items-center gap-1.5 text-accent">
             <Sparkles size={14} strokeWidth={2} />
-            <span className="text-caption font-medium">全量数据 API · v1.6.6</span>
+            <span className="text-caption font-medium">
+              全量数据 API{schema?.version ? ` · v${schema.version}` : ''}
+            </span>
           </div>
           <h2 className="mt-1.5 text-h2">让 AI 替你打理纳物</h2>
           <p className="mt-1 text-caption leading-relaxed text-ink-2">

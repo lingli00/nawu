@@ -64,14 +64,3 @@ export async function pullSync(server: ServerConfig | null, since: number, limit
     hasMore: data.hasMore === true,
   };
 }
-
-/** 新设备首拉锚点：该账号当前最大游标。 */
-export async function fetchSyncCursor(server: ServerConfig | null): Promise<number> {
-  if (!server) throw new ApiError('invalid_url', '未配置服务器');
-  const res = await get<SyncOkResp & { cursor?: number }>(server, '/api/user/sync/cursor');
-  const data = res.data;
-  if (!data || data.ok !== true) {
-    throw new ApiError('http', data?.error ?? '同步游标获取失败', res.status, data);
-  }
-  return typeof data.cursor === 'number' ? data.cursor : 0;
-}
