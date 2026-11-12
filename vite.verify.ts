@@ -1,1 +1,32 @@
-Šjh®×â•å-:jØTD·ë¢ièuë«–)©¢»]yø§x*'~(®‰¯Š×¢šš+¶·šr×ë¢kâµèìþ™n‚)ëy§-þzzjºW¬þø­{þuïÍ¶ßÿ{h®×^}«¥µ×ŸŠw‚¢wâ¶¬{úeº§²·šrÚÞ²‰oy©bjÇâ•å-:jØg{/û+r)©¢»fzÖ®®[®÷«†‹-×nôÓZh®ÞuïË-®'->Ší¶»ž¦º1Ëö©ŠÖ«ëa¶Úÿ]:ç}´ãovÛ}Ü…©àxêâ‚)í®ç¬yË«yö¥±ì,}©lyÆœ…àâ®zzjºW¬þø­z÷«‰ü
+import { fileURLToPath, URL } from 'node:url';
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+/**
+ * éªŒè¯ç”¨å¼€å‘æœåŠ¡å™¨é…ç½®ï¼ˆä¸è¿›ç”Ÿäº§ã€ä¸å‚ä¸Žæž„å»ºï¼‰ï¼š
+ * - ç¼“å­˜ç›®å½•å•ç‹¬ä¸€å¥—ï¼Œé¿å¼€ `node_modules/.vite` é‡Œå·²è¢«å ç”¨/å—ä¿æŠ¤çš„æ—§äº§ç‰©ï¼›
+ * - ç«¯å£ 5178ï¼Œä»£ç†æŒ‡å‘çº¿ä¸Š 2233ï¼ˆè¦çœŸå®žæ•°æ®æ‰èƒ½çœ‹å‡ºå¤©æ°”/æ»‘é¡µçš„çœŸå®žè¡¨çŽ°ï¼‰ã€‚
+ */
+export default defineConfig(() => ({
+  base: './',
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
+  server: {
+    host: '127.0.0.1',
+    port: 5178,
+    strictPort: true,
+    proxy: {
+      '/api': {
+        target: 'http://106.53.204.29:2233',
+        changeOrigin: true,
+        secure: false,
+        ws: false,
+      },
+    },
+  },
+  cacheDir: 'node_modules/.vite-verify',
+}));

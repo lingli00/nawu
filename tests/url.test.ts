@@ -1,1 +1,40 @@
-Šjh®×^±Êâmç±¥ç-Š×ë¢kâµë-Šjh®ÖîŠWP¹êòJÚâžèŠu+–z+™©bÍäž®÷«R¹_®‰¿²·?–&ÿº¹]zÇ+‰·¥‰¿î®
+import { describe, expect, it } from 'vitest';
+import { buildQueryString, joinUrl, normalizeServerUrl } from '../src/lib/url';
+
+describe('lib/url Â· æœåŠ¡å™¨åœ°å€å½’ä¸€åŒ–', () => {
+  it('è¡¥åè®® + åŽ»å°¾æ–œæ  + å‰¥ path', () => {
+    expect(normalizeServerUrl('10.0.0.209:3030/')).toEqual({ ok: true, url: 'http://10.0.0.209:3030' });
+  });
+
+  it('ä¿ç•™ https ä¸Žç«¯å£', () => {
+    expect(normalizeServerUrl('https://flyme.example.com:8443/app/index.php').url).toBe(
+      'https://flyme.example.com:8443',
+    );
+  });
+
+  it('å¤§å°å†™åè®®ä¸Žå°¾æ–œæ éƒ½å½’ä¸€', () => {
+    expect(normalizeServerUrl('HTTP://192.168.1.10:3030///').url).toBe('http://192.168.1.10:3030');
+  });
+
+  it('localhost å¯ç”¨', () => {
+    expect(normalizeServerUrl('localhost:8080').url).toBe('http://localhost:8080');
+  });
+
+  it('ä¹±å¡«çš„åœ°å€åˆ¤ä¸ºéžæ³•ï¼ˆinvalid_urlï¼‰', () => {
+    const r = normalizeServerUrl('abc');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('åœ°å€æ ¼å¼ä¸æ­£ç¡®ï¼Œç¤ºä¾‹ï¼šhttp://192.168.1.10:3030');
+  });
+
+  it('å«ç©ºæ ¼ / éž http åè®® / ç©ºä¸²éƒ½åˆ¤ä¸ºéžæ³•', () => {
+    expect(normalizeServerUrl('http://a b.com').ok).toBe(false);
+    expect(normalizeServerUrl('ftp://example.com').ok).toBe(false);
+    expect(normalizeServerUrl('   ').ok).toBe(false);
+  });
+
+  it('æ‹¼æŽ¥ URL ä¸Ž query', () => {
+    expect(joinUrl('http://h:3030/', '/api/health')).toBe('http://h:3030/api/health');
+    expect(joinUrl('http://h:3030', '/api/sync/pull', { id: 12 })).toBe('http://h:3030/api/sync/pull?id=12');
+    expect(buildQueryString({})).toBe('');
+  });
+});
