@@ -346,7 +346,7 @@ export default function WeatherLine({ className = '' }: { className?: string }):
           type="button"
           onClick={() => setOpen(true)}
           title={`${loc.full} · 按网络 IP 定位${wx ? ` · 今日 ${wx.tMin}~${wx.tMax}° · 降水概率 ${wx.pop}% · 紫外线 ${wx.uv}` : ''}（点击查看定位详情）`}
-          className="flex w-full max-w-full items-center gap-2 rounded-2xl bg-accent-soft px-3 py-1.5 text-left text-[13px] font-medium leading-5 text-ink-2 active:opacity-80 sm:w-auto sm:min-w-[15rem] sm:max-w-[24rem]"
+          className="flex w-full max-w-full items-center gap-2 rounded-2xl bg-accent-soft px-3 py-1.5 text-left text-sm font-medium leading-5 text-ink-2 active:opacity-80 sm:w-auto sm:min-w-[15rem] sm:max-w-[24rem]"
         >
           {advice ? (
             <advice.Icon size={14} strokeWidth={1.9} className="shrink-0 text-accent" aria-hidden />
@@ -374,14 +374,14 @@ export default function WeatherLine({ className = '' }: { className?: string }):
           <p className="text-xs leading-5 text-ink-2">
             当前：<b className="font-semibold text-ink">{loc.full}</b>
           </p>
-          <p className="mt-1 text-[11px] leading-5 text-ink-3">
+          <p className="mt-1 text-micro leading-5 text-ink-3">
             {loc.ip ? `按网络 IP ${loc.ip}${loc.isp ? `（${loc.isp}）` : ''} 定位` : '按当前网络 IP 定位'}
             {loc.accuracy >= 2 && loc.district
               ? `，精确到${loc.district}`
               : '，到地级市（该 IP 段运营商只登记到市）'}
             。定位只用你自己的服务器，不外发。
           </p>
-          {hint ? <p className="mt-2 text-[11px] text-accent">{hint}</p> : null}
+          {hint ? <p className="mt-2 text-micro text-accent">{hint}</p> : null}
           <div className="mt-3 space-y-2">
             <button
               onClick={refresh}
@@ -391,7 +391,7 @@ export default function WeatherLine({ className = '' }: { className?: string }):
               <RefreshCw size={15} strokeWidth={2} aria-hidden className={busy ? 'animate-spin' : ''} />
               {busy ? '重新定位中…' : '按当前 IP 重新定位'}
             </button>
-            <p className="text-center text-[11px] leading-5 text-ink-3">
+            <p className="text-center text-micro leading-5 text-ink-3">
               换了 Wi-Fi 或流量后点一下即可更新，位置不会上传给第三方。
             </p>
           </div>

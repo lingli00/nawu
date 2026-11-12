@@ -170,7 +170,7 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
               <Icon size={17} />
             </span>
             <p className="text-sm font-semibold">{label}</p>
-            <p className="mt-0.5 truncate text-[11px] text-ink-3">{sub}</p>
+            <p className="mt-0.5 truncate text-micro text-ink-3">{sub}</p>
           </button>
         ))}
       </div>
@@ -197,7 +197,7 @@ export default function RecordMenu({ onClose }: { onClose: () => void }) {
             </span>
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium">{label}</span>
-              <span className="block truncate text-[11px] text-ink-3">{sub}</span>
+              <span className="block truncate text-micro text-ink-3">{sub}</span>
             </span>
           </button>
         ))}

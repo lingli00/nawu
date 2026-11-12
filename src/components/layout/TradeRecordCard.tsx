@@ -196,13 +196,13 @@ export default function TradeRecordCard({
       <div className="mb-2.5 flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
           二手买卖
-          <span className="rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent">
+          <span className="rounded-full bg-accent-soft px-1.5 py-0.5 text-mini font-medium text-accent">
             买入 + 卖出
           </span>
         </h3>
         {locked ? (
           <span
-            className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white"
+            className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-micro font-semibold text-white"
             style={{ background: 'var(--gui)' }}
             role="status"
           >
@@ -212,17 +212,17 @@ export default function TradeRecordCard({
         ) : null}
       </div>
       {locked && done ? (
-        <p className="mb-2.5 rounded-btn bg-surface px-2.5 py-1.5 text-[11px] leading-4 text-ink-2">{done}</p>
+        <p className="mb-2.5 rounded-btn bg-surface px-2.5 py-1.5 text-micro leading-4 text-ink-2">{done}</p>
       ) : null}
 
       {/* —— 入库信息 —— */}
-      <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-ink-3">
+      <p className="mb-1.5 flex items-center gap-1 text-micro font-medium text-ink-3">
         <Tag size={11} strokeWidth={2} aria-hidden />
         入库信息
       </p>
       <div className="space-y-2">
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">名称</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">名称</span>
           <input
             ref={nameRef}
             disabled={locked}
@@ -242,7 +242,7 @@ export default function TradeRecordCard({
           ) : null}
         </label>
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">小类</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">小类</span>
           <select
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
@@ -257,7 +257,7 @@ export default function TradeRecordCard({
           </select>
         </label>
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">买入</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">买入</span>
           <span className="text-sm text-ink-3">¥</span>
           <NumCell
             init={buyPrice}
@@ -269,7 +269,7 @@ export default function TradeRecordCard({
           />
         </label>
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">时间</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">时间</span>
           <input
             disabled={locked}
             type="date"
@@ -284,7 +284,7 @@ export default function TradeRecordCard({
       <button
         type="button"
         onClick={() => setSellOpen((v) => !v)}
-        className="mt-3 flex w-full items-center justify-between rounded-btn bg-surface-2 px-2.5 py-1.5 text-[11px] font-medium text-ink-2 active:opacity-80"
+        className="mt-3 flex w-full items-center justify-between rounded-btn bg-surface-2 px-2.5 py-1.5 text-micro font-medium text-ink-2 active:opacity-80"
         aria-expanded={sellOpen}
         aria-controls="trade-sell-body"
       >
@@ -302,7 +302,7 @@ export default function TradeRecordCard({
 
       <div id="trade-sell-body" className={sellOpen ? 'mt-2 space-y-2' : 'hidden'}>
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">售价</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">售价</span>
           <span className="text-sm text-ink-3">¥</span>
           <NumCell
             init={sellPrice}
@@ -316,8 +316,8 @@ export default function TradeRecordCard({
 
         {/* 手续费：用户只填费率，金额自动算 */}
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">费率</span>
-          <span className="shrink-0 text-[11px] text-ink-3">千分之</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">费率</span>
+          <span className="shrink-0 text-micro text-ink-3">千分之</span>
           <NumCell
             init={rate}
             onValue={setRate}
@@ -326,13 +326,13 @@ export default function TradeRecordCard({
             ariaLabel="手续费费率（千分之）"
             className={inputCls}
           />
-          <span className="tnum w-20 shrink-0 text-right text-[11px] text-ink-2">
+          <span className="tnum w-20 shrink-0 text-right text-micro text-ink-2">
             手续费 {formatMoney(feeAmount, 'CNY')}
           </span>
         </label>
 
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">快递费</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">快递费</span>
           <span className="text-sm text-ink-3">¥</span>
           <NumCell
             init={shipping}
@@ -345,7 +345,7 @@ export default function TradeRecordCard({
         </label>
 
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">杂费</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">杂费</span>
           <span className="text-sm text-ink-3">¥</span>
           <NumCell
             init={extra}
@@ -359,7 +359,7 @@ export default function TradeRecordCard({
       </div>
 
       <label className="mt-2 flex items-center gap-2">
-        <span className="w-12 shrink-0 text-[11px] text-ink-3">备注</span>
+        <span className="w-12 shrink-0 text-micro text-ink-3">备注</span>
         <input
           ref={noteRef}
           disabled={locked}
@@ -371,7 +371,7 @@ export default function TradeRecordCard({
 
       {/* —— 结算条：确认前就告诉用户赚多少 —— */}
       <div className="mt-2.5 flex items-center justify-between rounded-btn bg-surface-2 px-2.5 py-2">
-        <span className="text-[11px] text-ink-3">
+        <span className="text-micro text-ink-3">
           净赚 = 售价 − 买入 − 手续费 − 快递 − 杂费
         </span>
         <span
@@ -383,7 +383,7 @@ export default function TradeRecordCard({
         </span>
       </div>
       {locked ? null : (
-        <p className="mt-1.5 text-[11px] leading-4 text-ink-3">
+        <p className="mt-1.5 text-micro leading-4 text-ink-3">
           提交后先入物品库（带买入金额），再自动标记为「已退役（已售出）」；净赚记入生活流收入。
         </p>
       )}

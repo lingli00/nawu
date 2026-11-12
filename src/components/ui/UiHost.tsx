@@ -16,8 +16,13 @@ export function UiHost(): JSX.Element {
 
   return (
     <>
-      {/* Toast 区（顶部，3.5s 自动消失，可点「撤销」） */}
-      <div className="fixed left-0 right-0 top-0 z-[80] flex flex-col items-center gap-2 pt-safe">
+      {/* Toast 区（顶部，3.5s 自动消失，可点「撤销」）。
+          ★DESIGN-SYSTEM v1：补 aria-live —— Toast 是异步插入的纯视觉浮层，
+          屏幕阅读器需要 live region 才能播报；polite 不打断当前朗读。 */}
+      <div
+        aria-live="polite"
+        className="fixed left-0 right-0 top-0 z-[80] flex flex-col items-center gap-2 pt-safe"
+      >
         {toasts.map((t) => (
           <ToastView
             key={t.id}
@@ -106,9 +111,9 @@ function DialogView({
           {request.detail ? (
             <div className="mt-2.5">
               {request.detailLabel ? (
-                <p className="mb-1 text-[11px] font-medium text-ink-3">{request.detailLabel}</p>
+                <p className="mb-1 text-micro font-medium text-ink-3">{request.detailLabel}</p>
               ) : null}
-              <pre className="max-h-[38vh] overflow-auto overscroll-contain whitespace-pre-wrap break-all rounded-btn border border-line bg-paper p-2 text-[11px] leading-relaxed text-ink-2">
+              <pre className="max-h-[38vh] overflow-auto overscroll-contain whitespace-pre-wrap break-all rounded-btn border border-line bg-paper p-2 text-micro leading-relaxed text-ink-2">
                 {request.detail}
               </pre>
             </div>

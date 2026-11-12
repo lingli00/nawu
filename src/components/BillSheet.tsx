@@ -20,7 +20,7 @@ import type { Bill, Subscription } from '../types/entities';
  */
 
 const STATUS_META: Record<Bill['status'], { label: string; color: string }> = {
-  pending: { label: '待确认', color: 'var(--xu, #d97706)' },
+  pending: { label: '待确认', color: 'var(--xu)' },
   paid: { label: '已支付', color: 'var(--gui)' },
   skipped: { label: '已跳过', color: 'var(--ink-3)' },
   failed: { label: '失败', color: 'var(--fou)' },
@@ -132,7 +132,7 @@ export default function BillSheet({ onClose }: { onClose: () => void }) {
                     <li key={b.id} className="px-3.5 py-3">
                       <div className="flex items-center gap-2.5">
                         <span
-                          className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                          className="shrink-0 rounded-full px-2 py-0.5 text-micro font-medium"
                           style={{ background: `color-mix(in srgb, ${meta.color} 14%, transparent)`, color: meta.color }}
                         >
                           {meta.label}
@@ -140,10 +140,10 @@ export default function BillSheet({ onClose }: { onClose: () => void }) {
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm">
                             {sub?.name ?? '已删订阅'}
-                            <span className="ml-1.5 text-[11px] text-ink-3">{b.dueDate.slice(5)}</span>
+                            <span className="ml-1.5 text-micro text-ink-3">{b.dueDate.slice(5)}</span>
                           </p>
                           {b.refund ? (
-                            <p className="text-[11px]" style={{ color: 'var(--gui)' }}>
+                            <p className="text-micro" style={{ color: 'var(--gui)' }}>
                               已退 ¥{b.refund}
                             </p>
                           ) : null}
@@ -211,7 +211,7 @@ export default function BillSheet({ onClose }: { onClose: () => void }) {
               </ul>
             </section>
           ))}
-          <p className="px-1 text-[11px] leading-4 text-ink-3/70">
+          <p className="px-1 text-micro leading-4 text-ink-3/70">
             口径：订阅成本只统计「已支付」（扣除退款）；「已跳过 / 失败」不进支出。
           </p>
         </div>
@@ -235,7 +235,7 @@ function OpBtn({
   return (
     <button
       onClick={onClick}
-      className={`flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] transition-all active:scale-95 ${
+      className={`flex h-7 items-center gap-1 rounded-full px-2.5 text-micro transition-all active:scale-95 ${
         primary ? 'bg-accent text-white' : 'border border-line bg-surface-2 text-ink-2'
       }`}
     >

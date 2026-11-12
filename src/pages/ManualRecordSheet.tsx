@@ -150,7 +150,7 @@ export default function ManualRecordSheet({
             <span className="text-xl font-bold" style={{ color: j.color }}>
               {j.label}
             </span>
-            <span className="mt-0.5 text-[11px] text-ink-3">{j.desc}</span>
+            <span className="mt-0.5 text-micro text-ink-3">{j.desc}</span>
           </button>
         ))}
         <button
@@ -160,7 +160,7 @@ export default function ManualRecordSheet({
           }`}
         >
           <span className="text-xl font-bold text-ink-2">稍后</span>
-          <span className="mt-0.5 text-[11px] text-ink-3">先放冷静池</span>
+          <span className="mt-0.5 text-micro text-ink-3">先放冷静池</span>
         </button>
       </div>
 

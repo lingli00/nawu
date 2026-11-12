@@ -71,18 +71,18 @@ export default function SmartIconRow({
         ) : null}
         <div className="min-w-0 flex-1">
           {showBadge ? (
-            <p className="flex items-center gap-1.5 text-[11px] leading-4 text-ink-3">
+            <p className="flex items-center gap-1.5 text-micro leading-4 text-ink-3">
               <span className="shrink-0">✨ 已智能匹配 · {matched!.label}</span>
               <button
                 type="button"
                 onClick={onChangeTap}
-                className="shrink-0 rounded-full border border-line px-2 py-0.5 text-[11px] text-accent active:scale-95"
+                className="shrink-0 rounded-full border border-line px-2 py-0.5 text-micro text-accent active:scale-95"
               >
                 更换
               </button>
             </p>
           ) : (
-            <p className="text-[11px] leading-4 text-ink-3">
+            <p className="text-micro leading-4 text-ink-3">
               {kw.length >= 2 ? '输入名称自动匹配图标，也可在下方手动选择' : '在下方选择图标'}
             </p>
           )}

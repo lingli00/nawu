@@ -6,7 +6,7 @@ import { suggestIcons, topSuggestion } from '../src/lib/iconSuggest';
  * 推荐链：随包品牌资产（本地）→ 内置 glyph → 图标代理（联网）→ 分类默认。
  */
 
-const BASE = 'http://10.0.0.209:3030';
+const BASE = 'http://192.168.1.100:3030';
 
 describe('iconSuggest · 订阅/物品名 → 推荐图标', () => {
   it('「B站大会员」→ 本地品牌资产（bilibili.com.png 随包分发）', () => {

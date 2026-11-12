@@ -100,7 +100,7 @@ export default function RetireSellCard({
   const inputCls =
     'w-16 shrink-0 rounded-[6px] border border-line bg-surface px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-accent disabled:opacity-60';
   const chipCls =
-    'inline-flex items-center gap-1 rounded-full border border-dashed border-line px-2.5 py-1 text-[12px] text-ink-2 active:bg-surface-2 disabled:opacity-40';
+    'inline-flex items-center gap-1 rounded-full border border-dashed border-line px-2.5 py-1 text-caption text-ink-2 active:bg-surface-2 disabled:opacity-40';
 
   return (
     <section
@@ -114,7 +114,7 @@ export default function RetireSellCard({
         <h3 className="text-sm font-semibold">退役转卖确认</h3>
         {locked ? (
           <span
-            className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white"
+            className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-micro font-semibold text-white"
             style={{ background: 'var(--gui)' }}
             role="status"
           >
@@ -131,13 +131,13 @@ export default function RetireSellCard({
             「{matchName}」→ 已关联「<span className="font-medium text-ink">{targetName}</span>」
           </>
         ) : (
-          <span className="text-[color:var(--danger,#c0392b)]">没找到与「{matchName}」匹配的物品，请先入库</span>
+          <span className="text-danger">没找到与「{matchName}」匹配的物品，请先入库</span>
         )}
       </p>
 
       {/* 转卖价（可改：语音偶尔把 329 听成 339，这里能直接修） */}
       <div className="mt-2.5">
-        <label className="mb-1 block text-[12px] text-ink-2">转卖价</label>
+        <label className="mb-1 block text-caption text-ink-2">转卖价</label>
         <div className={rowCls}>
           <span className="shrink-0 text-sm text-ink-2">¥</span>
           <input
@@ -156,8 +156,8 @@ export default function RetireSellCard({
       {/* 费用：填了才显示，不填就只剩一个「＋」入口 */}
       <div className="mt-2.5 space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-[12px] font-medium text-ink-2">卖出费用</span>
-          <span className="text-[11px] text-ink-2">填写才会计入净赚</span>
+          <span className="text-caption font-medium text-ink-2">卖出费用</span>
+          <span className="text-micro text-ink-2">填写才会计入净赚</span>
         </div>
 
         {open.shipping ? (
@@ -203,7 +203,7 @@ export default function RetireSellCard({
               placeholder="0"
             />
             <span className="shrink-0 text-sm text-ink-2">%</span>
-            <span className="ml-auto shrink-0 text-[12px] tabular-nums text-ink-2">= {formatMoney(feeAmount, currency)}</span>
+            <span className="ml-auto shrink-0 text-caption tabular-nums text-ink-2">= {formatMoney(feeAmount, currency)}</span>
             <button
               type="button"
               disabled={locked}
@@ -273,15 +273,15 @@ export default function RetireSellCard({
       </div>
 
       {/* 净赚预演：确认前就把账算清 */}
-      <div className="mt-2.5 rounded-btn bg-surface-2 px-2.5 py-2 text-[12px] leading-5 text-ink-2">
+      <div className="mt-2.5 rounded-btn bg-surface-2 px-2.5 py-2 text-caption leading-5 text-ink-2">
         <div className="flex items-center justify-between">
           <span>净赚</span>
-          <span className={`text-sm font-semibold tabular-nums ${netProfit > 0 ? 'text-[color:var(--ui-green,#1f8b4c)]' : 'text-ink-2'}`}>
+          <span className={`text-sm font-semibold tabular-nums ${netProfit > 0 ? 'text-success' : 'text-ink-2'}`}>
             {netProfit > 0 ? '+' : ''}
             {formatMoney(netProfit, currency)}
           </span>
         </div>
-        <div className="mt-0.5 text-[11px] text-ink-2">
+        <div className="mt-0.5 text-micro text-ink-2">
           转卖价 {formatMoney(priceNum, currency)} − 手续费 {formatMoney(feeAmount, currency)} − 运费 {formatMoney(shipNum, currency)}
           {' − 杂费 '}
           {formatMoney(extraNum, currency)} − 买入 {formatMoney(buyPrice || 0, currency)}
@@ -289,7 +289,7 @@ export default function RetireSellCard({
       </div>
 
       {locked && done ? (
-        <p className="mt-2 rounded-btn bg-surface px-2.5 py-1.5 text-[11px] leading-4 text-ink-2">{done}</p>
+        <p className="mt-2 rounded-btn bg-surface px-2.5 py-1.5 text-micro leading-4 text-ink-2">{done}</p>
       ) : null}
 
       <div className="mt-3 flex gap-2">

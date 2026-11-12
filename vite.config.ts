@@ -26,11 +26,11 @@ try {
  * 2. `server.proxy['/api']` —— 浏览器 dev 环境唯一的跨域解法（后端零 CORS，见架构 §6.1）。
  *    浏览器侧请求的是 `http://localhost:5173/api/...`（同源），由 Vite 转发到 PHP，
  *    因此**不会触发预检**，天然绕开后端 `OPTIONS → 404` 的问题。
- *    代理目标由 `.env.local` 的 `VITE_DEV_PROXY_TARGET` 指定，默认 `http://10.0.0.209:3030`。
+ *    代理目标由 `.env.local` 的 `VITE_DEV_PROXY_TARGET` 指定，默认 `http://192.168.1.100:3030`。
  * 3. 真机（Capacitor）不需要代理：请求走原生 `CapacitorHttp`，不受同源策略限制。
  */
 export default defineConfig(() => {
-  const proxyTarget = process.env.VITE_DEV_PROXY_TARGET || 'http://10.0.0.209:3030';
+  const proxyTarget = process.env.VITE_DEV_PROXY_TARGET || 'http://192.168.1.100:3030';
 
   return {
     base: './',

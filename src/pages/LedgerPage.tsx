@@ -283,7 +283,7 @@ export default function LedgerPage() {
       <section key={g.date}>
         <div className="flex items-baseline justify-between px-1 py-1.5">
           <h3 className="text-xs font-semibold text-ink-2">{relativeDayLabel(g.date)}</h3>
-          <p className="text-[11px] text-ink-3">
+          <p className="text-micro text-ink-3">
             {g.income > 0 ? `收 ${formatMoney(g.income, currency)} · ` : ''}支 {formatMoney(g.expense, currency)}
           </p>
         </div>
@@ -311,7 +311,7 @@ export default function LedgerPage() {
                     <SmartNoteIcon note={r.note} />
                     {r.note ? <span className="text-ink-3"> · {r.note}</span> : null}
                   </p>
-                  <p className="text-[11px] text-ink-3">
+                  <p className="text-micro text-ink-3">
                     {r.type === 'income' ? '收入' : '支出'} · {r.judgement === 'gui' ? '值得' : r.judgement === 'xu' ? '必要' : '本可避免'}
                   </p>
                 </button>
@@ -357,7 +357,7 @@ export default function LedgerPage() {
         <section key={m}>
           <div className="flex items-baseline justify-between px-1 py-1.5">
             <h3 className="text-xs font-semibold text-ink-2">{monthLabel(m)}</h3>
-            <p className="text-[11px] text-ink-3">
+            <p className="text-micro text-ink-3">
               {sumIncome(rows) > 0 ? `收 ${formatMoney(sumIncome(rows), currency)} · ` : ''}支 {formatMoney(sumExpense(rows), currency)}
             </p>
           </div>
@@ -443,10 +443,10 @@ export default function LedgerPage() {
         </div>
         <div className="mt-1.5 flex items-end justify-between">
           <div>
-            <p className="text-[11px] text-ink-3">今日支出</p>
+            <p className="text-micro text-ink-3">今日支出</p>
             <p className="text-2xl font-bold leading-8">{formatMoney(todayExpense, currency)}</p>
           </div>
-          <p className="pb-1 text-[11px] text-ink-3">同期收入 {formatMoney(todayIncome, currency)}</p>
+          <p className="pb-1 text-micro text-ink-3">同期收入 {formatMoney(todayIncome, currency)}</p>
         </div>
         {/* 归 / 需 / 否 三色分布条 */}
         <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-surface-2">
@@ -454,7 +454,7 @@ export default function LedgerPage() {
             <span key={j} style={{ width: `${jPct(j)}%`, background: JUDGEMENT_COLOR[j], transition: 'width .3s' }} />
           ))}
         </div>
-        <div className="mt-2 flex justify-between text-[11px] text-ink-3">
+        <div className="mt-2 flex justify-between text-micro text-ink-3">
           {(['gui', 'xu', 'fou'] as Judgement[]).map((j) => (
             <span key={j} className="flex items-center gap-1">
               <i className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: JUDGEMENT_COLOR[j] }} />
@@ -466,7 +466,7 @@ export default function LedgerPage() {
         {todayExpense === 0 ? (
           /* ★v1.0.35：固定占位语换成每日一言（按日期轮换，全端一致） */
           <p className="mt-2.5 rounded-btn bg-surface-2 px-3 py-2 text-xs text-ink-3">
-            <span className="mr-1.5 rounded-full bg-surface px-1.5 py-0.5 text-[10px] font-medium text-accent">每日一言</span>
+            <span className="mr-1.5 rounded-full bg-surface px-1.5 py-0.5 text-mini font-medium text-accent">每日一言</span>
             {dailyQuote().text}
             {dailyQuote().from ? <span className="ml-1.5 opacity-80">—— {dailyQuote().from}</span> : null}
           </p>
@@ -500,7 +500,7 @@ export default function LedgerPage() {
                 <p className="text-xs font-medium">{title}</p>
               </div>
               <p className="mt-1.5 truncate text-sm font-semibold">{main}</p>
-              <p className="mt-0.5 truncate text-[11px] text-ink-3">{sub}</p>
+              <p className="mt-0.5 truncate text-micro text-ink-3">{sub}</p>
             </button>
           );
         })}
@@ -531,7 +531,7 @@ export default function LedgerPage() {
         </button>
         <div className="text-center">
           <p className="text-sm font-semibold">{windowLabel}</p>
-          <p className="text-[11px] text-ink-3">
+          <p className="text-micro text-ink-3">
             支出 {formatMoney(expense, currency)} · 收入 {formatMoney(income, currency)}
           </p>
         </div>
@@ -541,7 +541,7 @@ export default function LedgerPage() {
             value={day}
             onChange={(e) => e.target.value && setDay(e.target.value)}
             aria-label="选择日期"
-            className="h-8 w-32 rounded-btn border border-line bg-surface-2 px-1.5 text-[11px] text-ink-2 outline-none focus:border-accent"
+            className="h-8 w-32 rounded-btn border border-line bg-surface-2 px-1.5 text-micro text-ink-2 outline-none focus:border-accent"
           />
         ) : (
           <button onClick={() => step(1)} className="h-8 w-8 rounded-btn text-ink-2" aria-label="下一期">

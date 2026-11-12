@@ -1104,7 +1104,7 @@ function SmartRecordPanel({
                           onClick={() => void copyMsg(m.text)}
                           aria-label="复制原文"
                           title="复制原文"
-                          className="flex h-7 items-center gap-1 rounded-full px-2 text-[11px] text-ink-3 active:bg-surface-2"
+                          className="flex h-7 items-center gap-1 rounded-full px-2 text-micro text-ink-3 active:bg-surface-2"
                         >
                           <Copy size={12} strokeWidth={1.8} aria-hidden />
                           复制
@@ -1114,7 +1114,7 @@ function SmartRecordPanel({
                           onClick={() => startEdit(m)}
                           aria-label="编辑这条"
                           title="编辑后重新识别"
-                          className="flex h-7 items-center gap-1 rounded-full px-2 text-[11px] text-ink-3 active:bg-surface-2"
+                          className="flex h-7 items-center gap-1 rounded-full px-2 text-micro text-ink-3 active:bg-surface-2"
                         >
                           <Pencil size={12} strokeWidth={1.8} aria-hidden />
                           编辑
@@ -1133,11 +1133,11 @@ function SmartRecordPanel({
             正在编辑的内容；提交/取消编辑后自动恢复。 */}
         {editingId !== null ? (
           <div className="flex shrink-0 items-center justify-between border-t border-line bg-surface-2/60 px-3 py-2">
-            <span className="text-[11px] text-ink-2">卡片已暂时收起，编辑完成后自动恢复</span>
+            <span className="text-micro text-ink-2">卡片已暂时收起，编辑完成后自动恢复</span>
             <button
               type="button"
               onClick={() => setEditingId(null)}
-              className="rounded-full border border-line px-2.5 py-1 text-[11px] text-ink-2 active:bg-surface"
+              className="rounded-full border border-line px-2.5 py-1 text-micro text-ink-2 active:bg-surface"
             >
               完成编辑
             </button>
@@ -1207,7 +1207,7 @@ function SmartRecordPanel({
         {asrAsk || asrDl ? (
           <div className="shrink-0 border-t border-line bg-surface-2/60 p-3.5">
             <p className="text-sm font-semibold">首次使用语音：下载离线识别模型</p>
-            <p className="mt-1 text-[11px] leading-5 text-ink-3">
+            <p className="mt-1 text-micro leading-5 text-ink-3">
               纳物的语音转文字在本机完成，不依赖云端、服务端停机也能用。
               需一次性下载中文模型（约 {ASR_MODEL_MB}MB），下载后永久离线可用。
             </p>
@@ -1219,14 +1219,14 @@ function SmartRecordPanel({
                     style={{ width: `${Math.max(2, asrDl.pct)}%` }}
                   />
                 </div>
-                <p className="mt-1 text-[11px] tabular-nums text-ink-3">
+                <p className="mt-1 text-micro tabular-nums text-ink-3">
                   {asrDl.pct >= 0
                     ? `下载中 ${asrDl.pct}% · ${(asrDl.received / 1048576).toFixed(1)}${
                         asrDl.total > 0 ? ` / ${(asrDl.total / 1048576).toFixed(1)}` : ''
                       } MB`
                     : `已下载 ${(asrDl.received / 1048576).toFixed(1)} MB`}
                 </p>
-                <p className="mt-1 text-[11px] leading-4 text-ink-3">下载期间请保持网络连接，可继续用键盘记账</p>
+                <p className="mt-1 text-micro leading-4 text-ink-3">下载期间请保持网络连接，可继续用键盘记账</p>
               </>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1235,7 +1235,7 @@ function SmartRecordPanel({
                   <button
                     type="button"
                     onClick={() => void downloadAsr()}
-                    className="h-9 flex-1 rounded-btn bg-accent px-3 text-[12px] font-semibold text-white active:opacity-90"
+                    className="h-9 flex-1 rounded-btn bg-accent px-3 text-caption font-semibold text-white active:opacity-90"
                   >
                     下载并启用离线语音
                   </button>
@@ -1246,7 +1246,7 @@ function SmartRecordPanel({
                       preferSystemRef.current = true;
                       startRecognitionNow();
                     }}
-                    className="h-9 rounded-btn border border-line bg-surface px-3 text-[12px] text-ink-2 active:bg-surface-2"
+                    className="h-9 rounded-btn border border-line bg-surface px-3 text-caption text-ink-2 active:bg-surface-2"
                   >
                     先用系统语音
                   </button>
@@ -1256,7 +1256,7 @@ function SmartRecordPanel({
                       setAsrAsk(false);
                       setVoiceMode(false);
                     }}
-                    className="h-9 rounded-btn border border-line bg-surface px-3 text-[12px] text-ink-2 active:bg-surface-2"
+                    className="h-9 rounded-btn border border-line bg-surface px-3 text-caption text-ink-2 active:bg-surface-2"
                   >
                     键盘输入
                   </button>
@@ -1450,7 +1450,7 @@ function SmartRecordPanel({
               />
             </div>
           ) : null}
-          {busy ? <p className="mt-1.5 text-center text-[11px] text-ink-3">识别中…</p> : null}
+          {busy ? <p className="mt-1.5 text-center text-micro text-ink-3">识别中…</p> : null}
         </div>
       </aside>
     </>,
@@ -1490,7 +1490,7 @@ function SimpleCard({
         <h3 className="text-sm font-semibold">{title}</h3>
         {locked ? (
           <span
-            className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white"
+            className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-micro font-semibold text-white"
             style={{ background: 'var(--gui)' }}
             role="status"
           >
@@ -1505,7 +1505,7 @@ function SimpleCard({
         </p>
       ))}
       {locked && done ? (
-        <p className="mt-2 rounded-btn bg-surface px-2.5 py-1.5 text-[11px] leading-4 text-ink-2">{done}</p>
+        <p className="mt-2 rounded-btn bg-surface px-2.5 py-1.5 text-micro leading-4 text-ink-2">{done}</p>
       ) : null}
       <div className="mt-3 flex gap-2">
         {locked ? (

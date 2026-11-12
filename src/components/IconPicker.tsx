@@ -427,7 +427,7 @@ function BrandButton({
       }`}
     >
       <BrandImg base={base} domain={brand.domain} size={24} alt={brand.name} />
-      <span className="w-full truncate px-0.5 text-center text-[11px] text-ink-2">{brand.name}</span>
+      <span className="w-full truncate px-0.5 text-center text-micro text-ink-2">{brand.name}</span>
     </button>
   );
 }
@@ -454,14 +454,14 @@ function GlyphButton({
       <span className="flex h-6 items-center justify-center">
         <GlyphImg item={item} size={22} />
       </span>
-      <span className="w-full truncate px-0.5 text-center text-[11px] text-ink-2">{item.name}</span>
+      <span className="w-full truncate px-0.5 text-center text-micro text-ink-2">{item.name}</span>
     </button>
   );
 }
 
 /** 分区标题。 */
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="mb-1.5 text-[11px] font-medium text-ink-3">{children}</p>;
+  return <p className="mb-1.5 text-micro font-medium text-ink-3">{children}</p>;
 }
 
 /* ============================================================================
@@ -890,7 +890,7 @@ export default function IconPicker({
             key={g.key}
             type="button"
             onClick={() => document.getElementById(`sysgrp-${g.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            className="shrink-0 rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-ink-2 active:scale-95"
+            className="shrink-0 rounded-full border border-line bg-surface-2 px-2.5 py-1 text-micro text-ink-2 active:scale-95"
           >
             {g.label}
             <span className="ml-0.5 text-ink-3/70">{g.items.length}</span>
@@ -1079,7 +1079,7 @@ export default function IconPicker({
                     ) : null,
                   )}
                 </div>
-                <p className="text-[11px] text-ink-3">点选自动裁正方形存入本地 · 随备份携带 · 永久离线可用</p>
+                <p className="text-micro text-ink-3">点选自动裁正方形存入本地 · 随备份携带 · 永久离线可用</p>
               </>
             ) : (
               <p className="rounded-card border border-dashed border-line bg-surface-2 p-4 text-center text-xs text-ink-3">
@@ -1152,7 +1152,7 @@ export default function IconPicker({
                   <div className="space-y-3">
                     {libGroups.map((group) => (
                       <div key={group.label}>
-                        <p className="mb-1 text-[11px] text-ink-3/80">{group.label}</p>
+                        <p className="mb-1 text-micro text-ink-3/80">{group.label}</p>
                         <div className="grid grid-cols-8 gap-2">
                           {group.items.map(({ id }) => {
                             const Icon = subIconOf(id);
@@ -1266,7 +1266,7 @@ export default function IconPicker({
                               >
                                 <BrandImg base={base} domain={h.domain!} size={22} />
                                 <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{h.domain}</span>
-                                <span className="text-[11px] text-accent">采用</span>
+                                <span className="text-micro text-accent">采用</span>
                               </button>
                             </li>
                           ))}

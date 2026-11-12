@@ -124,7 +124,7 @@ export default function SubCalendar({ onOpenBills }: { onOpenBills?: () => void 
 
       <div className="mt-2 grid grid-cols-7 gap-y-1 text-center">
         {WEEK.map((w) => (
-          <span key={w} className="pb-1 text-[11px] text-ink-3">
+          <span key={w} className="pb-1 text-micro text-ink-3">
             {w}
           </span>
         ))}
@@ -141,7 +141,7 @@ export default function SubCalendar({ onOpenBills }: { onOpenBills?: () => void 
             <button
               key={c.date}
               onClick={() => setSel(sel === c.date ? null : c.date)}
-              className={`mx-auto flex h-9 w-8 flex-col items-center justify-center rounded-lg text-[11px] transition-all active:scale-95 ${
+              className={`relative mx-auto flex h-9 w-8 flex-col items-center justify-center rounded-lg text-micro transition-all before:absolute before:-inset-y-1 before:-inset-x-1.5 before:content-[''] active:scale-95 ${
                 sel === c.date ? 'bg-accent-soft font-semibold text-accent' : isToday ? 'bg-surface-2 font-semibold text-ink' : 'text-ink-2'
               }`}
             >
@@ -158,7 +158,7 @@ export default function SubCalendar({ onOpenBills }: { onOpenBills?: () => void 
 
       {selected ? (
         selected.bills.length + selected.renews.length === 0 ? (
-          <p className="mt-2 rounded-btn bg-surface-2 px-3 py-2 text-[11px] text-ink-3">
+          <p className="mt-2 rounded-btn bg-surface-2 px-3 py-2 text-micro text-ink-3">
             {(sel ?? '').slice(5)} 没有扣款安排
           </p>
         ) : (
@@ -167,7 +167,7 @@ export default function SubCalendar({ onOpenBills }: { onOpenBills?: () => void 
               <li key={`r-${s.id}`} className="flex items-center justify-between text-xs">
                 <span className="min-w-0 truncate text-ink-2">
                   {s.name}
-                  <span className="ml-1 text-[11px] text-ink-3">续费</span>
+                  <span className="ml-1 text-micro text-ink-3">续费</span>
                 </span>
                 <span className="ml-2 shrink-0 font-medium">{formatMoney(s.amount, s.currency || currency)}</span>
               </li>
@@ -178,7 +178,7 @@ export default function SubCalendar({ onOpenBills }: { onOpenBills?: () => void 
                 <li key={`b-${b.id}`} className="flex items-center justify-between text-xs">
                   <span className="min-w-0 truncate text-ink-2">
                     {s?.name ?? '已删订阅'}
-                    <span className="ml-1 text-[11px]" style={{ color: BILL_COLOR[b.status] }}>
+                    <span className="ml-1 text-micro" style={{ color: BILL_COLOR[b.status] }}>
                       {BILL_LABEL[b.status]}
                     </span>
                   </span>
@@ -188,7 +188,7 @@ export default function SubCalendar({ onOpenBills }: { onOpenBills?: () => void 
             })}
             {onOpenBills ? (
               <li>
-                <button onClick={onOpenBills} className="text-[11px] font-medium text-accent">
+                <button onClick={onOpenBills} className="text-micro font-medium text-accent">
                   去账单里处理 ›
                 </button>
               </li>
@@ -196,7 +196,7 @@ export default function SubCalendar({ onOpenBills }: { onOpenBills?: () => void 
           </ul>
         )
       ) : (
-        <p className="mt-2 text-[11px] text-ink-3">
+        <p className="mt-2 text-micro text-ink-3">
           {monthHasEvent ? '点日期看当天安排' : '本月暂无扣款安排'}
           {active.length ? ` · 最近一次 ${Math.min(...active.map((s) => Math.abs(nextRenewCountdown(s))))} 天内` : ''}
         </p>

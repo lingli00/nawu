@@ -45,7 +45,7 @@ function BootFatal({ msg }: { msg: string }): JSX.Element {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-paper px-6 text-center text-ink">
       <p className="text-base font-medium">启动遇到问题</p>
-      <p className="max-w-md break-all rounded-card bg-surface-2 px-3 py-2 text-left text-[11px] text-ink-2">{msg}</p>
+      <p className="max-w-md break-all rounded-card bg-surface-2 px-3 py-2 text-left text-micro text-ink-2">{msg}</p>
       <button
         type="button"
         onClick={() => location.reload()}

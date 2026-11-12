@@ -141,7 +141,7 @@ function StepCard(props: {
             <span className="mr-1 text-accent">{props.step}</span>
             {props.title}
           </h2>
-          {props.subtitle ? <p className="mt-0.5 truncate text-[11px] text-ink-3">{props.subtitle}</p> : null}
+          {props.subtitle ? <p className="mt-0.5 truncate text-micro text-ink-3">{props.subtitle}</p> : null}
         </div>
         {props.aside}
       </div>
@@ -320,7 +320,7 @@ export default function AiAccessPage() {
           <h1 className="text-h2">AI 接入</h1>
           <p className="truncate text-caption text-ink-3">把纳物的全部数据交给你的 AI</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-micro font-medium ${
           loggedIn ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-ink-3'
         }`}>
           {loggedIn ? (baseUrl ? '已连接' : '未连接服务器') : '未登录'}
@@ -345,7 +345,7 @@ export default function AiAccessPage() {
             {stats.map((s) => (
               <div key={s.label} className="rounded-btn bg-surface px-2 py-2 text-center">
                 <p className="text-num-sm text-ink">{s.value}</p>
-                <p className="mt-0.5 text-[10px] text-ink-3">{s.label}</p>
+                <p className="mt-0.5 text-mini text-ink-3">{s.label}</p>
               </div>
             ))}
           </div>
@@ -367,12 +367,12 @@ export default function AiAccessPage() {
           {/* 1 · API 地址 */}
           <StepCard step="1" icon={<Link2 size={17} strokeWidth={1.9} />} title="复制 API 地址" subtitle="填进你 AI 后台的自定义工具 / HTTP 工具">
             <div className="flex items-center gap-2 rounded-btn border border-line bg-surface-2 px-3 py-2.5">
-              <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-ink">
+              <code className="min-w-0 flex-1 truncate font-mono text-sm text-ink">
                 {baseUrl || '未连接服务器'}
               </code>
               <button
                 onClick={() => void doCopy(baseUrl, 'base')}
-                className="flex h-8 shrink-0 items-center gap-1 rounded-btn border border-line bg-surface px-2.5 text-[11px] font-medium active:bg-surface-2"
+                className="flex h-8 shrink-0 items-center gap-1 rounded-btn border border-line bg-surface px-2.5 text-micro font-medium active:bg-surface-2"
               >
                 {copied === 'base' ? <Check size={13} /> : <Copy size={13} />}
                 复制
@@ -380,8 +380,8 @@ export default function AiAccessPage() {
             </div>
             <div className="mt-2.5 flex items-center gap-2 rounded-btn border border-line px-3 py-2">
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] text-ink-3">接口规范 · 可直接导入 AI 工具</p>
-                <code className="mt-0.5 block break-all font-mono text-[11px] text-ink-2">
+                <p className="text-mini text-ink-3">接口规范 · 可直接导入 AI 工具</p>
+                <code className="mt-0.5 block break-all font-mono text-micro text-ink-2">
                   {openapiUrl || '/api/ai/openapi.json'}
                 </code>
               </div>
@@ -402,7 +402,7 @@ export default function AiAccessPage() {
                 <ExternalLink size={14} />
               </a>
             </div>
-            <p className="mt-2.5 text-[11px] leading-relaxed text-ink-3">
+            <p className="mt-2.5 text-micro leading-relaxed text-ink-3">
               认证方式：<code className="rounded bg-surface-2 px-1 text-ink-2">Authorization: Bearer &lt;Key&gt;</code>
             </p>
           </StepCard>
@@ -425,15 +425,15 @@ export default function AiAccessPage() {
           >
             {freshKey ? (
               <div className="mb-3 rounded-btn border border-accent/30 bg-accent-soft p-3">
-                <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-accent">
+                <div className="mb-1.5 flex items-center gap-1.5 text-micro font-medium text-accent">
                   <ShieldCheck size={13} />
                   新建成功 · 明文只显示这一次
                 </div>
                 <div className="flex items-center gap-2">
-                  <code className="min-w-0 flex-1 break-all font-mono text-[11px] text-ink">{freshKey}</code>
+                  <code className="min-w-0 flex-1 break-all font-mono text-micro text-ink">{freshKey}</code>
                   <button
                     onClick={() => void doCopy(freshKey, 'new')}
-                    className="flex h-8 shrink-0 items-center gap-1 rounded-btn bg-accent px-2.5 text-[11px] font-medium text-white"
+                    className="flex h-8 shrink-0 items-center gap-1 rounded-btn bg-accent px-2.5 text-micro font-medium text-white"
                   >
                     {copied === 'new' ? <Check size={13} /> : <Copy size={13} />}
                     复制
@@ -448,17 +448,17 @@ export default function AiAccessPage() {
                   <li key={k.id} className="rounded-btn border border-line bg-surface-2 p-3">
                     <div className="flex items-center gap-2">
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                      <p className="min-w-0 flex-1 truncate text-[13px] font-medium">{k.name}</p>
+                      <p className="min-w-0 flex-1 truncate text-sm font-medium">{k.name}</p>
                       <button
                         onClick={() => void doRevoke(k.id)}
-                        className="flex h-7 shrink-0 items-center gap-1 rounded-btn border border-line bg-surface px-2 text-[11px] text-danger active:bg-surface-2"
+                        className="flex h-7 shrink-0 items-center gap-1 rounded-btn border border-line bg-surface px-2 text-micro text-danger active:bg-surface-2"
                       >
                         <Trash2 size={12} />
                         撤销
                       </button>
                     </div>
-                    <p className="mt-1.5 break-all font-mono text-[11px] text-ink-2">{k.prefix}</p>
-                    <div className="mt-1.5 grid grid-cols-2 gap-2 border-t border-line-2 pt-1.5 text-[10px] text-ink-3">
+                    <p className="mt-1.5 break-all font-mono text-micro text-ink-2">{k.prefix}</p>
+                    <div className="mt-1.5 grid grid-cols-2 gap-2 border-t border-line-2 pt-1.5 text-mini text-ink-3">
                       <span className="truncate">创建 · {k.createdAt}</span>
                       <span className="truncate text-right">最近使用 · {k.lastUsedAt ?? '未使用'}</span>
                     </div>
@@ -468,7 +468,7 @@ export default function AiAccessPage() {
             ) : (
               <div className="mb-3 rounded-btn border border-dashed border-line bg-surface-2 px-3 py-4 text-center">
                 <p className="text-xs text-ink-2">还没有密钥</p>
-                <p className="mt-0.5 text-[11px] text-ink-3">生成后填进 AI 后台的认证（Bearer）</p>
+                <p className="mt-0.5 text-micro text-ink-3">生成后填进 AI 后台的认证（Bearer）</p>
               </div>
             )}
 
@@ -491,7 +491,7 @@ export default function AiAccessPage() {
             aside={
               <button
                 onClick={() => setInboxOpen((v) => !v)}
-                className="flex h-8 items-center gap-1 rounded-full px-2 text-[11px] text-ink-3 active:bg-surface-2"
+                className="flex h-8 items-center gap-1 rounded-full px-2 text-micro text-ink-3 active:bg-surface-2"
                 aria-expanded={inboxOpen}
               >
                 {inboxOpen ? '收起' : '展开'}
@@ -499,12 +499,12 @@ export default function AiAccessPage() {
               </button>
             }
           >
-            <p className="mb-2.5 text-[11px] leading-relaxed text-ink-3">
+            <p className="mb-2.5 text-micro leading-relaxed text-ink-3">
               AI 写入先落在这里；你逐条确认后才写进本机，合并后 App / 网页 / 多端一致。
             </p>
             {inboxOpen ? (
               <>
-                <div className="mb-2.5 flex items-start gap-2 rounded-btn bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-ink-2">
+                <div className="mb-2.5 flex items-start gap-2 rounded-btn bg-warn-soft px-3 py-2 text-micro leading-relaxed text-ink-2">
                   <ShieldCheck size={14} className="mt-0.5 shrink-0 text-warn" />
                   <span>默认不勾选。先看明细再合并，避免把不想入账的项目误写进生活流。</span>
                 </div>
@@ -514,11 +514,11 @@ export default function AiAccessPage() {
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <button
                         onClick={() => setSelected(selected.size === inbox.events.length ? new Set() : new Set(inbox.events.map((e) => e.id)))}
-                        className="text-[11px] font-medium text-accent"
+                        className="text-micro font-medium text-accent"
                       >
                         {selected.size === inbox.events.length ? '取消全选' : '全选'}
                       </button>
-                      <span className="text-[11px] text-ink-3">已选 {selectedEvents.length} 批 / {selectedRows} 条</span>
+                      <span className="text-micro text-ink-3">已选 {selectedEvents.length} 批 / {selectedRows} 条</span>
                     </div>
 
                     <ul className="max-h-[420px] space-y-2 overflow-y-auto pr-0.5">
@@ -540,33 +540,33 @@ export default function AiAccessPage() {
                               />
                               <div className="min-w-0 flex-1">
                                 <p className="text-xs font-medium">批次 #{ev.id} · {items.length} 条</p>
-                                <p className="mt-0.5 truncate text-[10px] text-ink-3">
+                                <p className="mt-0.5 truncate text-mini text-ink-3">
                                   {shortTime(ev.createdAt)} · 来自 {ev.source || 'AI'}
                                 </p>
                               </div>
-                              <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-3">
+                              <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-mini text-ink-3">
                                 {ev.kind}
                               </span>
                             </label>
                             <ul className="divide-y divide-line-2 border-t border-line-2">
                               {items.map((it, i) => (
                                 <li key={`${it.id}-${i}`} className="flex items-center gap-2 px-3 py-2">
-                                  <span className="shrink-0 rounded-md bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent">
+                                  <span className="shrink-0 rounded-md bg-accent-soft px-1.5 py-0.5 text-mini text-accent">
                                     {it.collectionLabel}
                                   </span>
-                                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink">{it.title}</span>
+                                  <span className="min-w-0 flex-1 truncate text-caption text-ink">{it.title}</span>
                                   {money(it.amount) ? (
-                                    <span className="shrink-0 text-[12px] font-medium text-ink">{money(it.amount)}</span>
+                                    <span className="shrink-0 text-caption font-medium text-ink">{money(it.amount)}</span>
                                   ) : null}
-                                  {it.date ? <span className="shrink-0 text-[10px] text-ink-3">{it.date.slice(5)}</span> : null}
+                                  {it.date ? <span className="shrink-0 text-mini text-ink-3">{it.date.slice(5)}</span> : null}
                                 </li>
                               ))}
                               {items.length === 0 ? (
-                                <li className="px-3 py-2 text-[11px] text-ink-3">（无明细）</li>
+                                <li className="px-3 py-2 text-micro text-ink-3">（无明细）</li>
                               ) : null}
                             </ul>
                             {items[0]?.fields?.length ? (
-                              <p className="truncate border-t border-line-2 px-3 py-1.5 text-[10px] text-ink-3">
+                              <p className="truncate border-t border-line-2 px-3 py-1.5 text-mini text-ink-3">
                                 字段：{items[0].fields.slice(0, 10).join(' · ')}{items[0].fields.length > 10 ? ' …' : ''}
                               </p>
                             ) : null}
@@ -579,14 +579,14 @@ export default function AiAccessPage() {
                       <button
                         onClick={() => void doMerge()}
                         disabled={busy || !selectedEvents.length}
-                        className="h-10 flex-1 rounded-btn bg-accent text-[13px] font-medium text-white active:opacity-90 disabled:opacity-50"
+                        className="h-10 flex-1 rounded-btn bg-accent text-sm font-medium text-white active:opacity-90 disabled:opacity-50"
                       >
                         {selectedEvents.length ? `合并选中 ${selectedRows} 条到本机` : '请先勾选批次'}
                       </button>
                       <button
                         onClick={() => void doDiscard()}
                         disabled={busy || !selectedEvents.length}
-                        className="flex h-10 shrink-0 items-center gap-1 rounded-btn border border-line px-3 text-[12px] text-danger active:bg-surface-2 disabled:opacity-50"
+                        className="flex h-10 shrink-0 items-center gap-1 rounded-btn border border-line px-3 text-caption text-danger active:bg-surface-2 disabled:opacity-50"
                       >
                         <Trash2 size={14} />
                         丢弃
@@ -599,14 +599,14 @@ export default function AiAccessPage() {
                       <Inbox size={20} strokeWidth={1.7} />
                     </span>
                     <p className="text-sm font-medium text-ink-2">暂无待入账</p>
-                    <p className="text-[11px] text-ink-3">AI 写入的记录会先出现在这里，确认后才入账</p>
+                    <p className="text-micro text-ink-3">AI 写入的记录会先出现在这里，确认后才入账</p>
                   </div>
                 )}
               </>
             ) : (
               <button
                 onClick={() => setInboxOpen(true)}
-                className="h-10 w-full rounded-btn border border-line text-[13px] font-medium text-ink-2 active:bg-surface-2"
+                className="h-10 w-full rounded-btn border border-line text-sm font-medium text-ink-2 active:bg-surface-2"
               >
                 {inbox.count ? `展开查看 ${inbox.count} 条明细` : '展开待入账'}
               </button>
@@ -625,7 +625,7 @@ export default function AiAccessPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold"><span className="mr-1 text-accent">4</span>怎么用（4 步）</h2>
-                <p className="mt-0.5 text-[11px] text-ink-3">认证、调用、确认，附可直接复制的示例</p>
+                <p className="mt-0.5 text-micro text-ink-3">认证、调用、确认，附可直接复制的示例</p>
               </div>
               <ChevronDown size={16} className={`shrink-0 text-ink-3 transition-transform ${guideOpen ? 'rotate-180' : ''}`} />
             </button>
@@ -638,8 +638,8 @@ export default function AiAccessPage() {
                     <>让 AI 先调 <code className="rounded bg-surface-2 px-1">GET /api/ai/schema</code> 看能写什么，再用 <code className="rounded bg-surface-2 px-1">POST /api/ai/mutate</code> 写任意字段。</>,
                     <>回到第 3 步核对明细、勾选并合并；查账用 <code className="rounded bg-surface-2 px-1">POST /api/ai/ask</code>。</>,
                   ].map((node, i) => (
-                    <li key={i} className="flex gap-2.5 text-[12px] leading-relaxed text-ink-2">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[10px] font-semibold text-accent">
+                    <li key={i} className="flex gap-2.5 text-caption leading-relaxed text-ink-2">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-mini font-semibold text-accent">
                         {i + 1}
                       </span>
                       <span className="min-w-0 flex-1 break-words">{node}</span>
@@ -649,10 +649,10 @@ export default function AiAccessPage() {
                 {curlSample ? (
                   <div className="mt-3 overflow-hidden rounded-btn border border-line bg-surface-2">
                     <div className="flex items-center justify-between border-b border-line px-3 py-2">
-                      <span className="text-[11px] font-medium text-ink-2">示例 · 写入一件物品（含手续费与图片）</span>
+                      <span className="text-micro font-medium text-ink-2">示例 · 写入一件物品（含手续费与图片）</span>
                       <button
                         onClick={() => void doCopy(curlSample, 'curl')}
-                        className="flex h-7 items-center gap-1 rounded-btn border border-line bg-surface px-2 text-[10px] active:bg-surface-2"
+                        className="flex h-7 items-center gap-1 rounded-btn border border-line bg-surface px-2 text-mini active:bg-surface-2"
                       >
                         {copied === 'curl' ? <Check size={12} /> : <Copy size={12} />}
                         复制
@@ -679,7 +679,7 @@ export default function AiAccessPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold">接口能力</h2>
-                <p className="mt-0.5 text-[11px] text-ink-3">
+                <p className="mt-0.5 text-micro text-ink-3">
                   {schema ? `${schema.collectionNames.length} 个集合 · ${totalFields} 个字段 · ${schema.categories.length} 个分类` : '12 个集合 · 全字段读写'}
                 </p>
               </div>
@@ -689,7 +689,7 @@ export default function AiAccessPage() {
               <div className="border-t border-line-2 px-4 pb-4 pt-3">
                 <button
                   onClick={() => void doCopy(capabilityPrompt(baseUrl, schema), 'prompt')}
-                  className="mb-3 flex h-10 w-full items-center justify-center gap-2 rounded-btn border border-accent/40 bg-accent-soft text-[13px] font-medium text-accent active:opacity-80"
+                  className="mb-3 flex h-10 w-full items-center justify-center gap-2 rounded-btn border border-accent/40 bg-accent-soft text-sm font-medium text-accent active:opacity-80"
                 >
                   {copied === 'prompt' ? <Check size={15} /> : <Copy size={15} />}
                   复制能力说明（粘贴给 AI）
@@ -703,8 +703,8 @@ export default function AiAccessPage() {
                     ['categories', { label: '分类表', fieldCount: 5, description: '' }],
                   ] as Array<[string, { label: string; fieldCount: number; description: string }]>).map(([name, meta]) => (
                     <div key={name} className="rounded-btn border border-line bg-surface-2 px-2.5 py-2">
-                      <p className="truncate text-[12px] font-medium">{meta.label}</p>
-                      <p className="mt-0.5 text-[10px] text-ink-3">
+                      <p className="truncate text-caption font-medium">{meta.label}</p>
+                      <p className="mt-0.5 text-mini text-ink-3">
                         {meta.fieldCount} 字段 · {schema?.counts?.[name] ?? 0} 条
                       </p>
                     </div>
@@ -715,8 +715,8 @@ export default function AiAccessPage() {
                   <div className="flex items-start gap-2">
                     <Tag size={14} className="mt-0.5 shrink-0 text-accent" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-medium">是否归需（可自定义）</p>
-                      <p className="mt-0.5 text-[10px] leading-relaxed text-ink-3">
+                      <p className="text-micro font-medium">是否归需（可自定义）</p>
+                      <p className="mt-0.5 text-mini leading-relaxed text-ink-3">
                         {(schema?.judgementOptions ?? [{ value: 'gui', label: '归 · 值得' }, { value: 'xu', label: '需 · 必要' }, { value: 'fou', label: '否 · 本可避免' }])
                           .map((o) => o.label).join(' / ')}
                         {' · '}可用 POST /api/ai/options 增删选项与判定规则
@@ -726,15 +726,15 @@ export default function AiAccessPage() {
                   <div className="flex items-start gap-2 border-t border-line-2 pt-2">
                     <Layers size={14} className="mt-0.5 shrink-0 text-accent" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-medium">分类可自行添加</p>
-                      <p className="mt-0.5 text-[10px] text-ink-3">POST /api/ai/categories · 生活流 / 物品 / 订阅三类</p>
+                      <p className="text-micro font-medium">分类可自行添加</p>
+                      <p className="mt-0.5 text-mini text-ink-3">POST /api/ai/categories · 生活流 / 物品 / 订阅三类</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2 border-t border-line-2 pt-2">
                     <Zap size={14} className="mt-0.5 shrink-0 text-accent" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-medium">任意新功能</p>
-                      <p className="mt-0.5 text-[10px] text-ink-3">
+                      <p className="text-micro font-medium">任意新功能</p>
+                      <p className="mt-0.5 text-mini text-ink-3">
                         POST /api/ai/actions 注册动作模板 · 当前 {schema?.actions.length ?? 0} 个
                       </p>
                     </div>
@@ -744,12 +744,12 @@ export default function AiAccessPage() {
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {['GET /schema', 'GET /context', 'GET /collections', 'POST /query', 'POST /mutate', 'POST /categories', 'POST /options', 'POST /actions/run', 'POST /commit', 'POST /ask']
                     .map((p) => (
-                      <span key={p} className="rounded-md bg-surface-2 px-1.5 py-1 font-mono text-[10px] text-ink-3">
+                      <span key={p} className="rounded-md bg-surface-2 px-1.5 py-1 font-mono text-mini text-ink-3">
                         {p}
                       </span>
                     ))}
                 </div>
-                <p className="mt-3 flex items-start gap-1.5 text-[10px] leading-relaxed text-ink-3">
+                <p className="mt-3 flex items-start gap-1.5 text-mini leading-relaxed text-ink-3">
                   <Database size={12} className="mt-0.5 shrink-0" />
                   所有集合都允许附加任意自定义字段；写入先落云端待入账，确认后才进本机。
                 </p>

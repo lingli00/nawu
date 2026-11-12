@@ -289,7 +289,7 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
           {!narrow ? (
             <span className="min-w-0">
               <span className="block text-base font-semibold leading-tight">纳物</span>
-              <span className="block text-[11px]" style={{ color: 'var(--side-dim)' }}>
+              <span className="block text-micro" style={{ color: 'var(--side-dim)' }}>
                 NaWu
               </span>
             </span>
@@ -304,8 +304,7 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
               setMenuOpen(true);
             }}
             aria-label="记一笔"
-            className={`flex items-center font-medium transition-transform active:scale-95 ${narrow ? 'h-10 w-10 justify-center rounded-xl' : 'h-10 w-full justify-center gap-2 rounded-xl text-sm'}`}
-            style={{ background: 'var(--accent)', color: '#fff' }}
+            className={`flex items-center bg-accent font-medium text-white transition-transform active:scale-95 ${narrow ? 'h-10 w-10 justify-center rounded-xl' : 'h-10 w-full justify-center gap-2 rounded-xl text-sm'}`}
           >
             <Plus size={18} strokeWidth={2.2} aria-hidden />
             {!narrow ? '记一笔' : null}
@@ -329,7 +328,7 @@ function DesktopShell({ children }: { children: ReactNode }): JSX.Element {
             onClick={() => setShellPref('mobile')}
           />
           {!narrow ? (
-            <p className="px-2 pt-3 text-[11px]" style={{ color: 'var(--side-dim)' }}>
+            <p className="px-2 pt-3 text-micro" style={{ color: 'var(--side-dim)' }}>
               纳物网页版 v{APP_VERSION}
             </p>
           ) : null}
@@ -690,7 +689,7 @@ function MobileShell({
           role="status"
         >
           <span
-            className="flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold text-accent shadow-lg backdrop-blur"
+            className="flex items-center gap-1 rounded-full border px-3 py-1.5 text-micro font-semibold text-accent shadow-lg backdrop-blur"
             style={{
               borderColor: 'color-mix(in srgb, var(--accent) 32%, transparent)',
               background: 'color-mix(in srgb, var(--accent-soft) 88%, var(--surface))',
@@ -730,7 +729,7 @@ function Tab({ to, label, Icon }: { to: string; label: string; Icon: LucideIcon 
       to={to}
       onClick={() => void haptic('select')}
       className={({ isActive }) =>
-        `flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] ${
+        `flex flex-1 flex-col items-center gap-0.5 py-2.5 text-micro ${
           isActive ? 'font-semibold text-accent' : 'text-ink-3'
         }`
       }
@@ -777,7 +776,7 @@ function UpdatePromptBar(): JSX.Element | null {
         style={{ borderColor: 'color-mix(in srgb, var(--accent) 30%, transparent)' }}
       >
         <Download size={15} strokeWidth={2} className="shrink-0 text-accent" aria-hidden />
-        <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
+        <span className="min-w-0 flex-1 truncate text-caption text-ink">
           发现新版本 <span className="font-semibold">v{pendingUpdate.version}</span>
           {pendingUpdate.patch ? '（增量包，下载更快）' : ''}
         </span>
@@ -787,7 +786,7 @@ function UpdatePromptBar(): JSX.Element | null {
             void haptic('select');
             nav('/settings');
           }}
-          className="h-7 shrink-0 rounded-full bg-accent px-3 text-[11px] font-semibold text-white active:opacity-90"
+          className="h-7 shrink-0 rounded-full bg-accent px-3 text-micro font-semibold text-white active:opacity-90"
         >
           去更新
         </button>

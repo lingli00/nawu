@@ -138,7 +138,7 @@ export default function ServerManagePage() {
         </button>
       }
     >
-      <p className="mb-3 px-1 text-[11px] leading-5 text-ink-3">
+      <p className="mb-3 px-1 text-micro leading-5 text-ink-3">
         最多可配置 {MAX_SERVERS} 台服务器；每台的登录状态各自保存——切换服务器会直接恢复该服务器的账号，不用重新登录。
       </p>
 
@@ -181,8 +181,8 @@ export default function ServerManagePage() {
                   <span className="block truncate text-xs font-medium" style={{ color: 'var(--gui)' }}>
                     {hit.url}
                   </span>
-                  {hit.name ? <span className="block truncate text-[11px] text-ink-3">{hit.name}</span> : null}
-                  <span className="block text-[11px] text-ink-3">点击保存为新服务器</span>
+                  {hit.name ? <span className="block truncate text-micro text-ink-3">{hit.name}</span> : null}
+                  <span className="block text-micro text-ink-3">点击保存为新服务器</span>
                 </button>
               </li>
             ))}
@@ -190,7 +190,7 @@ export default function ServerManagePage() {
         )
       ) : null}
       {scan.phase !== 'idle' && !isLanScanRecommended() ? (
-        <p className="mb-3 text-[11px] text-ink-3">
+        <p className="mb-3 text-micro text-ink-3">
           网页环境受浏览器跨域限制，可能扫不到服务端；请使用 App 内的扫描功能。
         </p>
       ) : null}
@@ -239,7 +239,7 @@ export default function ServerManagePage() {
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-semibold">{s.alias || '未命名服务器'}</span>
                     {s.id === currentId ? (
-                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
+                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-micro font-medium text-accent">
                         当前
                       </span>
                     ) : null}
@@ -251,11 +251,11 @@ export default function ServerManagePage() {
                   </div>
                   <p className="mt-0.5 truncate text-xs text-ink-3">{displayUrl(s.url)}</p>
                   {sessions[s.id] ? (
-                    <p className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--gui)' }}>
+                    <p className="mt-0.5 truncate text-micro" style={{ color: 'var(--gui)' }}>
                       已登录 {sessions[s.id]?.email || '账号'}
                     </p>
                   ) : (
-                    <p className="mt-0.5 truncate text-[11px] text-ink-3">未登录（切换后可直接登录）</p>
+                    <p className="mt-0.5 truncate text-micro text-ink-3">未登录（切换后可直接登录）</p>
                   )}
                 </button>
                 <button

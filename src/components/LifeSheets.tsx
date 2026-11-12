@@ -420,7 +420,7 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm">{w.name}</p>
-                  <p className="truncate text-[11px] text-ink-3">
+                  <p className="truncate text-micro text-ink-3">
                     {w.price ? `¥${w.price}` : '未定价'}
                     {w.channel ? ` · ${w.channel}` : w.note ? ` · ${w.note}` : ''}
                   </p>
@@ -429,7 +429,7 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
                       {w.reasons.slice(0, 3).map((r) => (
                         <span
                           key={r}
-                          className="rounded-full px-1.5 py-0.5 text-[11px]"
+                          className="rounded-full px-1.5 py-0.5 text-micro"
                           style={{
                             background: `color-mix(in srgb, ${TINT_WISH} 12%, transparent)`,
                             color: TINT_WISH,
@@ -443,7 +443,7 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
                 </div>
                 <button
                   onClick={() => void toCooldown(w)}
-                  className="shrink-0 rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] text-ink-2 active:scale-95"
+                  className="shrink-0 rounded-full border border-line bg-surface-2 px-2.5 py-1 text-micro text-ink-2 active:scale-95"
                 >
                   转冷静池
                 </button>
@@ -463,13 +463,13 @@ export function WishSheet({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
           {total > 0 ? (
-            <p className="mt-2 px-1 text-[11px] text-ink-3">
+            <p className="mt-2 px-1 text-micro text-ink-3">
               合计 ¥{total.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} —— 都是「想要」，不是「需要」
             </p>
           ) : null}
         </>
       )}
-      <p className="mt-3 px-1 text-[11px] leading-4 text-ink-3/70">
+      <p className="mt-3 px-1 text-micro leading-4 text-ink-3/70">
         小贴士：心动的东西先放冷静期，到期还想要再买——冷静池里一键转成物品建档。
       </p>
 
@@ -594,14 +594,14 @@ export function CooldownSheet({ onClose }: { onClose: () => void }) {
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm">{c.name}</p>
-                  <p className="truncate text-[11px] text-ink-3">
+                  <p className="truncate text-micro text-ink-3">
                     {c.amount ? `¥${c.amount} · ` : ''}
                     {c.reason ? `${c.reason} · ` : ''}到 {c.until.slice(5)}
                   </p>
                 </div>
                 {!expired ? (
                   <span
-                    className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium"
+                    className="shrink-0 rounded-full px-2.5 py-1 text-micro font-medium"
                     style={{
                       background: `color-mix(in srgb, ${TINT_COOL} 13%, transparent)`,
                       color: TINT_COOL,
@@ -612,7 +612,7 @@ export function CooldownSheet({ onClose }: { onClose: () => void }) {
                 ) : (
                   <button
                     onClick={() => toGoods(c)}
-                    className="shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium text-white active:scale-95"
+                    className="shrink-0 rounded-full px-3 py-1.5 text-micro font-medium text-white active:scale-95"
                     style={{ background: TINT_COOL }}
                   >
                     到期 · 转物品
@@ -708,7 +708,7 @@ export function QuickCooldownSheet({ presetName, onClose }: { presetName?: strin
         </span>
         <div className="min-w-0">
           <p className="text-sm font-semibold">先把这笔消费冻起来</p>
-          <p className="text-[11px] text-ink-3">让头脑降降温——到期还想要，再买也不迟</p>
+          <p className="text-micro text-ink-3">让头脑降降温——到期还想要，再买也不迟</p>
         </div>
       </div>
 
@@ -766,7 +766,7 @@ export function QuickCooldownSheet({ presetName, onClose }: { presetName?: strin
               >
                 {o.label}
               </span>
-              <span className="text-[11px] text-ink-3">{o.sub}</span>
+              <span className="text-micro text-ink-3">{o.sub}</span>
             </button>
           ))}
         </div>
@@ -787,7 +787,7 @@ export function QuickCooldownSheet({ presetName, onClose }: { presetName?: strin
         >
           {busy ? '保存中…' : `开启冷静（${opt.label}）`}
         </button>
-        <p className="text-center text-[11px] text-ink-3">这笔不记支出 —— 冻一冻，到期还想要，再去买也不迟</p>
+        <p className="text-center text-micro text-ink-3">这笔不记支出 —— 冻一冻，到期还想要，再去买也不迟</p>
       </div>
 
       {imgOpen ? (
@@ -888,7 +888,7 @@ export function MoodSheet({ onClose }: { onClose: () => void }) {
             </button>
           ))}
         </div>
-        <p className="mt-1 text-center text-[11px] text-ink-3">{face.label}</p>
+        <p className="mt-1 text-center text-micro text-ink-3">{face.label}</p>
         {/* 双钮：粉碎（否）/ 归入心底 */}
         <div className="mt-2.5 flex gap-2">
           <button
@@ -922,7 +922,7 @@ export function MoodSheet({ onClose }: { onClose: () => void }) {
                 <li key={m.id} className="flex items-start gap-2.5 rounded-btn border border-line bg-surface px-3 py-2">
                   <f.Icon size={16} style={{ color: f.tint }} className="mt-0.5 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] text-ink-3">
+                    <p className="text-micro text-ink-3">
                       {m.feeling} · {m.date.slice(5)}
                       {m.crushed ? <span className="ml-1.5" style={{ color: TINT_CRUSH }}>粉碎</span> : null}
                     </p>
@@ -1121,7 +1121,7 @@ export function TimeSheet({ onClose }: { onClose: () => void }) {
                     {m.label}
                   </span>
                 </span>
-                <span className="text-[11px] text-ink-3">{m.sub}</span>
+                <span className="text-micro text-ink-3">{m.sub}</span>
               </button>
             );
           })}
@@ -1131,7 +1131,7 @@ export function TimeSheet({ onClose }: { onClose: () => void }) {
         <div className="mt-3">
           <div className="flex items-center justify-between">
             <SectionTitle Icon={Hash} text="做了什么（Tag）" tint="var(--accent)" />
-            <span className="text-[11px] text-ink-3">可多选</span>
+            <span className="text-micro text-ink-3">可多选</span>
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {TIME_TAGS.map(({ key, Icon }) => (
@@ -1195,7 +1195,7 @@ export function TimeSheet({ onClose }: { onClose: () => void }) {
                     {t.durationMin}′
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[11px] text-ink-3">
+                    <p className="truncate text-micro text-ink-3">
                       {m.label} · {t.date.slice(5)}
                       {t.tags?.length ? ` · ${t.tags.join('、')}` : ''}
                     </p>

@@ -292,7 +292,7 @@ export default function RulePage() {
                   <span className="min-w-0 flex-1 truncate text-sm">
                     <span className="font-medium">{r.keyword}</span>
                     <span className="text-ink-3"> → {r.category}</span>
-                    <span className="ml-1.5 rounded-btn bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">
+                    <span className="ml-1.5 rounded-btn bg-accent-soft px-1.5 py-0.5 text-micro font-medium text-accent">
                       {JUDGEMENT_LABEL[r.judgement]}
                     </span>
                   </span>
@@ -322,10 +322,10 @@ export default function RulePage() {
           >
             {saving ? '保存中…' : dirty ? '保存到服务器 *' : '保存到服务器'}
           </button>
-          {dirty ? <p className="mt-2 text-center text-[11px] text-ink-3">有未保存的修改（标 * 号）</p> : null}
+          {dirty ? <p className="mt-2 text-center text-micro text-ink-3">有未保存的修改（标 * 号）</p> : null}
 
           {/* ★v1.3.3：本地/云端两套规则的表述合并成一句话，不再给「本地学习规则」入口 */}
-          <p className="mt-3 px-1 text-[11px] leading-5 text-ink-3">
+          <p className="mt-3 px-1 text-micro leading-5 text-ink-3">
             在「对话记一笔」里改过分类的说法会自动学成规则并同步到本账号
             {learnedCount > 0 ? `（已学会 ${learnedCount} 条）` : ''}，换手机登录同一账号即可继续命中；
             没学准的可以在这里手动新增或编辑覆盖。

@@ -3,7 +3,7 @@ import { buildQueryString, joinUrl, normalizeServerUrl } from '../src/lib/url';
 
 describe('lib/url · 服务器地址归一化', () => {
   it('补协议 + 去尾斜杠 + 剥 path', () => {
-    expect(normalizeServerUrl('10.0.0.209:3030/')).toEqual({ ok: true, url: 'http://10.0.0.209:3030' });
+    expect(normalizeServerUrl('192.168.1.100:3030/')).toEqual({ ok: true, url: 'http://192.168.1.100:3030' });
   });
 
   it('保留 https 与端口', () => {

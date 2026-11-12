@@ -187,7 +187,7 @@ export default function ServerSetupPage() {
                         <span className="block truncate text-xs font-medium" style={{ color: 'var(--gui)' }}>
                           {hit.url}
                         </span>
-                        {hit.name ? <span className="block truncate text-[11px] text-ink-3">{hit.name}</span> : null}
+                        {hit.name ? <span className="block truncate text-micro text-ink-3">{hit.name}</span> : null}
                       </button>
                     </li>
                   ))}
@@ -196,7 +196,7 @@ export default function ServerSetupPage() {
             )
           ) : null}
           {scan.phase !== 'idle' && !isLanScanRecommended() ? (
-            <p className="mt-2 text-[11px] text-ink-3">
+            <p className="mt-2 text-micro text-ink-3">
               网页环境受浏览器跨域限制，可能扫不到服务端；请使用 App 内的扫描功能。
             </p>
           ) : null}

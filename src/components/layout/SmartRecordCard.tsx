@@ -122,7 +122,7 @@ export default function SmartRecordCard({
         <h3 className={`text-sm font-semibold ${locked ? 'text-ink-2' : ''}`}>识别记录预览</h3>
         {locked ? (
           <span
-            className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-white"
+            className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-micro font-semibold text-white"
             style={{ background: 'var(--gui)' }}
             role="status"
           >
@@ -132,19 +132,19 @@ export default function SmartRecordCard({
         ) : null}
       </div>
       {locked && done ? (
-        <p className="mb-2.5 rounded-btn bg-surface px-2.5 py-1.5 text-[11px] leading-4 text-ink-2">{done}</p>
+        <p className="mb-2.5 rounded-btn bg-surface px-2.5 py-1.5 text-micro leading-4 text-ink-2">{done}</p>
       ) : null}
 
       {/* 大类选择器（可点击切换） */}
       <div className="mb-2.5 flex items-center gap-1.5">
-        <span className="text-[11px] text-ink-3">大类</span>
+        <span className="text-micro text-ink-3">大类</span>
         {KIND_CHIPS.map(({ kind: k, label }) => (
           <button
             key={k}
             type="button"
             onClick={() => switchKind(k)}
             disabled={locked}
-            className={`rounded-full border px-2.5 py-0.5 text-[11px] leading-5 transition-colors disabled:opacity-60 ${
+            className={`rounded-full border px-2.5 py-0.5 text-micro leading-5 transition-colors disabled:opacity-60 ${
               kind === k ? 'border-accent bg-accent text-white' : 'border-line-2 text-ink-2 active:bg-surface-2'
             }`}
           >
@@ -156,7 +156,7 @@ export default function SmartRecordCard({
       <div className="space-y-2">
         {/* 小类下拉 */}
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">小类</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">小类</span>
           <select
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
@@ -173,7 +173,7 @@ export default function SmartRecordCard({
 
         {/* 名称（★v1.3.0：右侧附智能匹配图标预览——命中品牌时亮，纯预览不落库） */}
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">名称</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">名称</span>
           <input
             ref={nameRef}
             disabled={locked}
@@ -195,7 +195,7 @@ export default function SmartRecordCard({
 
         {/* 金额 */}
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">金额</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">金额</span>
           <span className="text-sm text-ink-3">¥</span>
           <input
             ref={amountRef}
@@ -210,7 +210,7 @@ export default function SmartRecordCard({
 
         {/* 时间 */}
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">时间</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">时间</span>
           <input
             ref={dateRef}
             disabled={locked}
@@ -222,7 +222,7 @@ export default function SmartRecordCard({
 
         {/* 备注（自动填充原文，可改） */}
         <label className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-[11px] text-ink-3">备注</span>
+          <span className="w-12 shrink-0 text-micro text-ink-3">备注</span>
           <input
             ref={noteRef}
             disabled={locked}
@@ -234,7 +234,7 @@ export default function SmartRecordCard({
       </div>
 
       {locked ? null : (
-        <p className="mt-2 text-[11px] leading-4 text-ink-3">
+        <p className="mt-2 text-micro leading-4 text-ink-3">
           改动大类或小类后确认，系统会自动学会这条归类规则并同步到云端。
         </p>
       )}

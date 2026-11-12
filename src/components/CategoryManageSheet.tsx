@@ -85,7 +85,7 @@ function CategoryFormMini({
             <div className="max-h-52 space-y-2 overflow-y-auto rounded-btn border border-line bg-surface-2 p-2">
               {CATEGORY_ICON_GROUPS.map((g) => (
                 <div key={g.group}>
-                  <p className="px-0.5 text-[11px] text-ink-3">{g.group}</p>
+                  <p className="px-0.5 text-micro text-ink-3">{g.group}</p>
                   <div className="mt-1 grid grid-cols-8 gap-1.5">
                     {g.icons.map((d) => {
                       const RowIcon = d.Icon;
@@ -215,7 +215,7 @@ export default function CategoryManageSheet({
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm">{c.name}</p>
-                        <p className="text-[11px] text-ink-3">
+                        <p className="text-micro text-ink-3">
                           {countOf(c)} {unit}
                         </p>
                       </div>

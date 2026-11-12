@@ -313,13 +313,13 @@ export default function SubListPage({
             <p className="flex items-center gap-1.5 truncate text-sm font-medium">
               {s.name}
               {s.type === 'lifetime' ? (
-                <span className="shrink-0 rounded-full bg-surface-2 px-2 text-[11px] leading-4 text-ink-3">买断</span>
+                <span className="shrink-0 rounded-full bg-surface-2 px-2 text-micro leading-4 text-ink-3">买断</span>
               ) : null}
               {isArchived(s) ? (
-                <span className="shrink-0 rounded-full bg-surface-2 px-2 text-[11px] leading-4 text-ink-3">已停用</span>
+                <span className="shrink-0 rounded-full bg-surface-2 px-2 text-micro leading-4 text-ink-3">已停用</span>
               ) : null}
             </p>
-            <p className="text-[11px] text-ink-3">
+            <p className="text-micro text-ink-3">
               {catName ? `${catName} · ` : ''}{formatMoney(s.amount, s.currency)}/{PERIOD_LABEL[s.period]}
             </p>
           </div>
@@ -335,7 +335,7 @@ export default function SubListPage({
                 e.stopPropagation();
                 void toggleArchive(s);
               }}
-              className="text-[11px] text-ink-3"
+              className="text-micro text-ink-3"
             >
               {isArchived(s) ? '恢复' : '停用'}
             </button>
@@ -359,7 +359,7 @@ export default function SubListPage({
                 const b = pendingBills.find((x) => x.subId === s.id)!;
                 void markBillPaid(b.id).then(() => toastSuccess('已标记支付'));
               }}
-              className="h-7 rounded-xl bg-accent-soft px-2.5 text-[11px] font-medium text-accent"
+              className="h-7 rounded-xl bg-accent-soft px-2.5 text-micro font-medium text-accent"
             >
               标记已付 {formatMoney(pendingAmount(pendingBills, s.id), currency)}
             </button>
@@ -375,10 +375,10 @@ export default function SubListPage({
       <div className="mb-3 rounded-card border border-line bg-surface p-4">
         <div className="flex items-center justify-between">
           <p className="text-xs text-ink-3">累计花费（含初始校准）</p>
-          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-ink-3">有效 {active.length} 项</span>
+          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-micro text-ink-3">有效 {active.length} 项</span>
         </div>
         <p className="mt-1 text-3xl font-bold leading-10">{formatMoney(totalSpent, currency)}</p>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-3">
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-micro text-ink-3">
           <span>本月已付 <b className="text-ink-2">{formatMoney(paidThisMonth, currency)}</b></span>
           <span>本月待续费 <b className="text-ink-2">{formatMoney(dueThisMonth, currency)}</b></span>
         </div>
@@ -402,12 +402,12 @@ export default function SubListPage({
           </span>
           <span className="flex items-center gap-2">
             {pendingBills.length ? (
-              <b className="text-[11px]" style={{ color: 'var(--xu)' }}>
+              <b className="text-micro" style={{ color: 'var(--xu)' }}>
                 待确认 {pendingBills.length}
               </b>
             ) : null}
             {failedBills.length ? (
-              <b className="text-[11px]" style={{ color: 'var(--fou)' }}>
+              <b className="text-micro" style={{ color: 'var(--fou)' }}>
                 失败 {failedBills.length}
               </b>
             ) : null}
@@ -424,7 +424,7 @@ export default function SubListPage({
               <CalendarDays size={13} className="mr-1 inline-block align-[-2px]" />
             未来 30 天 · {renewSoon.length} 项
             </p>
-            <p className="text-[11px] text-ink-3">
+            <p className="text-micro text-ink-3">
               合计 {formatMoney(renewSoon.reduce((a, x) => a + x.sub.amount, 0), currency)}
             </p>
           </div>
@@ -438,7 +438,7 @@ export default function SubListPage({
               </li>
             ))}
             {renewSoon.length > 3 ? (
-              <li className="text-[11px] text-ink-3">…还有 {renewSoon.length - 3} 项，见下方列表</li>
+              <li className="text-micro text-ink-3">…还有 {renewSoon.length - 3} 项，见下方列表</li>
             ) : null}
           </ul>
         </div>

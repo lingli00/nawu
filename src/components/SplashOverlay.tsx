@@ -60,8 +60,11 @@ const EXHALE_AT = 1350;
 const EXHALE_MS = 520;
 const UNMOUNT_MS = 1950;
 
-/** 三色判断点（归 / 需 / 否，与 src/domain/stats.ts 一致）。 */
-const DOT_COLORS = ['#3f8f6a', '#4a7fb5', '#c2603f'];
+/** 三色判断点（归 / 需 / 否，与 src/domain/stats.ts 一致）。
+ *  ★DESIGN-SYSTEM v1：改走全局令牌——弹层 portal 到 body，继承 html 的
+ *  data-theme 变量；--gui/--xu/--fou 在深浅两套里取值一致，观感不变，
+ *  但从此跟随令牌体系（品牌资产区 DOT 常量不再游离在外）。 */
+const DOT_COLORS = ['var(--gui)', 'var(--xu)', 'var(--fou)'];
 
 /** 品牌开屏：port 到 body 的最高层，播完自卸。 */
 export default function SplashOverlay(): JSX.Element | null {

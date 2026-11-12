@@ -67,14 +67,16 @@ function WallTile({
       >
         <GoodsPhoto g={g} alt={g.name} fallback={fallback} />
 
-        {/* 悬浮层：渐变只压在图片底部，不额外占高度；默认透明，悬浮/轻点才出来 */}
+        {/* 悬浮层：渐变只压在图片底部，不额外占高度；默认透明，悬浮/轻点才出来。
+            ⚠️ 透明度只能用 5 的倍数（默认 opacity scale）：写成 from-black/78 这类
+            非 scale 值 Tailwind **不会报错但整条规则不生成**，遮罩层会静默消失。 */}
         <div
-          className={`pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 via-black/38 to-transparent px-2.5 pb-2 pt-10 transition-opacity duration-200 ${
+          className={`pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/40 to-transparent px-2.5 pb-2 pt-10 transition-opacity duration-200 ${
             shown ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
           }`}
         >
-          <p className="truncate text-[12px] font-semibold leading-4 text-white">{g.name || '未命名物品'}</p>
-          <p className="tnum mt-0.5 truncate text-[11px] leading-4 text-white/80">
+          <p className="truncate text-caption font-semibold leading-4 text-white">{g.name || '未命名物品'}</p>
+          <p className="tnum mt-0.5 truncate text-micro leading-4 text-white/80">
             {price} · 陪伴 {days} 天
             {categoryName ? ` · ${categoryName}` : ''}
           </p>
@@ -205,7 +207,7 @@ export default function WallPage(): JSX.Element {
                 );
               })}
             </ul>
-            <p className="mt-3 text-center text-[11px] leading-5 text-ink-3">
+            <p className="mt-3 text-center text-micro leading-5 text-ink-3">
               轻点图片查看名称与花费 · 「分享全部」导出时文字会完整出现
             </p>
           </>

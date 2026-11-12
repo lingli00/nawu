@@ -146,8 +146,8 @@ export default function MePage() {
                   <e.Icon size={20} strokeWidth={1.8} aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium dt:text-[15px]">{e.label}</span>
-                  <span className="block text-[11px] text-ink-3">{e.desc}</span>
+                  <span className="block text-sm font-medium dt:text-h3">{e.label}</span>
+                  <span className="block text-micro text-ink-3">{e.desc}</span>
                 </span>
                 <span className="text-ink-3">›</span>
               </button>
@@ -170,7 +170,7 @@ export default function MePage() {
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium">电脑版网页</span>
-              <span className="block text-[11px] text-ink-3">切换到宽屏侧边栏布局（侧边栏底部可切回）</span>
+              <span className="block text-micro text-ink-3">切换到宽屏侧边栏布局（侧边栏底部可切回）</span>
             </span>
             <span className="text-ink-3">›</span>
           </button>
@@ -188,7 +188,7 @@ export default function MePage() {
         </button>
       ) : null}
 
-      <p className="pb-2 text-center text-[11px] text-ink-3 dt:col-span-2">
+      <p className="pb-2 text-center text-micro text-ink-3 dt:col-span-2">
         纳物 · {isNative() ? 'App' : '网页版'} v{APP_VERSION}
       </p>
     </div>

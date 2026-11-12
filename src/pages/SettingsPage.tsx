@@ -220,7 +220,7 @@ export default function SettingsPage() {
       {/* AI 助手 */}
       <section className="mt-3 rounded-card border border-line bg-surface p-4">
         <h2 className="text-sm font-semibold">AI 助手（可选）</h2>
-        <p className="mt-1 text-[11px] leading-5 text-ink-3">
+        <p className="mt-1 text-micro leading-5 text-ink-3">
           填 OpenAI 兼容接口直连第三方；留空则只使用本地识别规则。Key 只保存在本机。
           配置后用于两处：① AI 记一笔（一句话 / 识图记账解析）② 报表页「AI 分析」（按当前粒度生成消费洞察）。
         </p>
@@ -274,13 +274,13 @@ export default function SettingsPage() {
         <div className="mt-3 flex items-center justify-between">
           <div className="min-w-0 pr-3">
             <p className="text-sm">自动备份</p>
-            <p className="text-[11px] text-ink-3">
+            <p className="text-micro text-ink-3">
               登录后满足条件（24 小时节流 + 变更达标）静默备份。服务器只保留最近 3 份。
             </p>
           </div>
           <Toggle on={settings.autoSync} label="自动备份" onClick={() => void update({ autoSync: !settings.autoSync })} />
         </div>
-        <p className="mt-2 text-[11px] text-ink-3">
+        <p className="mt-2 text-micro text-ink-3">
           上次备份：{settings.lastBackupAt ? fmtTimestamp(settings.lastBackupAt) : '从未'}
         </p>
         <button
@@ -305,13 +305,13 @@ export default function SettingsPage() {
                     ? '未启用（登录后自动开启）'
                     : '已开启'}
             </p>
-            <p className="text-[11px] text-ink-3">
+            <p className="text-micro text-ink-3">
               登录后，物品 / 生活流 / 订阅等数据自动在手机、电脑、网页之间同步（新写的内容几秒内送达其他设备）。
               AI 接口地址与 Key 不随账号漫游。
             </p>
           </div>
         </div>
-        <p className="mt-2 text-[11px] text-ink-3">
+        <p className="mt-2 text-micro text-ink-3">
           上次同步：{syncLastAt ? fmtTimestamp(new Date(syncLastAt).toISOString()) : '从未'}
           {syncPending > 0 ? ` · 待推送 ${syncPending} 条` : ''}
           {syncStatus === 'error' && syncError ? ` · ${syncError}` : ''}
@@ -332,7 +332,7 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div className="min-w-0 pr-3">
               <p className="text-sm">震动反馈</p>
-              <p className="text-[11px] text-ink-3">保存成功、切换 Tab、点选图标时轻微震动；失败时给出失败反馈。</p>
+              <p className="text-micro text-ink-3">保存成功、切换 Tab、点选图标时轻微震动；失败时给出失败反馈。</p>
             </div>
             <Toggle
               on={settings.vibrate !== false}
@@ -347,7 +347,7 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div className="min-w-0 pr-3">
               <p className="text-sm">开屏动画</p>
-              <p className="text-[11px] text-ink-3">
+              <p className="text-micro text-ink-3">
                 打开应用时播放品牌开屏页（网页端每次浏览会话只播一次）。
               </p>
             </div>
@@ -380,11 +380,11 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold">语音识别</h2>
-            <p className="mt-0.5 text-[11px] text-ink-3">离线转写在本机完成，服务端停机也能用</p>
+            <p className="mt-0.5 text-micro text-ink-3">离线转写在本机完成，服务端停机也能用</p>
           </div>
           <Toggle on={keepAsr} onClick={() => void toggleKeepAsr()} label="语音模型常驻内存" />
         </div>
-        <p className="mt-2 text-[11px] leading-5 text-ink-3">
+        <p className="mt-2 text-micro leading-5 text-ink-3">
           <b className="text-ink-2">语音模型常驻内存，加速识别</b>
           <br />
           开启：首次使用语音时加载一次模型（约 3~4 秒）后常驻内存，之后每次语音<b>秒启动</b>；
@@ -408,7 +408,7 @@ export default function SettingsPage() {
               setAsrResident(false);
               toastSuccess('已释放常驻模型占用的内存');
             }}
-            className="mt-2.5 h-9 rounded-btn border border-line bg-surface px-3 text-[12px] text-ink-2 active:bg-surface-2"
+            className="mt-2.5 h-9 rounded-btn border border-line bg-surface px-3 text-caption text-ink-2 active:bg-surface-2"
           >
             模型当前常驻 · 立即释放内存
           </button>
@@ -421,17 +421,17 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold">应用更新</h2>
             {updateTarget && !updating ? (
-              <span className="rounded-full bg-danger-soft px-2 py-0.5 text-[10px] font-medium text-danger">有新版本</span>
+              <span className="rounded-full bg-danger-soft px-2 py-0.5 text-mini font-medium text-danger">有新版本</span>
             ) : null}
           </div>
-          <p className="mt-1 text-[11px] text-ink-3">
+          <p className="mt-1 text-micro text-ink-3">
             当前版本 v{APP_VERSION}
             {updateTarget
               ? ` · 更新来源：${updateTarget.source === 'channel' ? '官方频道' : '你的服务器'}`
               : ' · 更新来源：官方频道（不可达时回退你的服务器）'}
           </p>
           {/* ★v1.4.1 频道诊断：一眼看出「已是最新」还是「频道没连上」 */}
-          <p className="mt-0.5 text-[10px] text-ink-3" data-testid="channel-probe">
+          <p className="mt-0.5 text-mini text-ink-3" data-testid="channel-probe">
             官方频道：
             {channel === null
               ? '检测中…'
@@ -445,18 +445,18 @@ export default function SettingsPage() {
             <div className="mt-3 rounded-btn border border-line bg-surface-2 p-3">
               <div className="flex items-baseline justify-between">
                 <p className="text-sm font-semibold">v{APP_VERSION} → v{updateTarget.version}</p>
-                <span className="text-[11px] text-ink-3">
+                <span className="text-micro text-ink-3">
                   {updateTarget.patch ? `增量 ${fmtSize(updateTarget.patch.size)}` : `完整包 ${fmtSize(updateTarget.apkSize)}`}
                 </span>
               </div>
               {updateTarget.publishedAt ? (
-                <p className="mt-0.5 text-[11px] text-ink-3">发布于 {fmtTimestamp(updateTarget.publishedAt)}</p>
+                <p className="mt-0.5 text-micro text-ink-3">发布于 {fmtTimestamp(updateTarget.publishedAt)}</p>
               ) : null}
               {updateTarget.notes ? (
-                <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-ink-2">{updateTarget.notes}</p>
+                <p className="mt-1 whitespace-pre-wrap text-caption leading-relaxed text-ink-2">{updateTarget.notes}</p>
               ) : null}
               {updateTarget.patch ? (
-                <p className="mt-1 text-[10px] text-ink-3">支持增量更新：只下载差异部分，合并后自动校验；失败会自动改用完整安装包。</p>
+                <p className="mt-1 text-mini text-ink-3">支持增量更新：只下载差异部分，合并后自动校验；失败会自动改用完整安装包。</p>
               ) : null}
               <button
                 onClick={() => void runUpdate()}
@@ -471,7 +471,7 @@ export default function SettingsPage() {
           {/* 更新进度 */}
           {updating && progress ? (
             <div className="mt-3">
-              <div className="flex items-center justify-between text-[11px] text-ink-2">
+              <div className="flex items-center justify-between text-micro text-ink-2">
                 <span>{progress.text}</span>
                 {progress.total > 0 ? <span>{updatePct()}%</span> : null}
               </div>
@@ -481,13 +481,13 @@ export default function SettingsPage() {
                   style={{ width: `${updatePct()}%` }}
                 />
               </div>
-              <p className="mt-1 text-[10px] text-ink-3">更新过程请保持应用在前台，完成后按系统提示安装。</p>
+              <p className="mt-1 text-mini text-ink-3">更新过程请保持应用在前台，完成后按系统提示安装。</p>
             </div>
           ) : null}
 
           {/* ★v1.4.2 更新来源日志：本次走的是官网还是当前服务器 */}
           {checkLog ? (
-            <p className="mt-1.5 text-[10px] leading-4 text-ink-3" data-testid="update-source-log">
+            <p className="mt-1.5 text-mini leading-4 text-ink-3" data-testid="update-source-log">
               上次检查：{fmtTimestamp(checkLog.at)} · 渠道
               {checkLog.source === 'server' ? '当前服务器' : checkLog.source === 'channel' ? '官网' : '无更新'}
               {checkLog.remote ? ` · 远端 v${checkLog.remote}` : ''}
@@ -508,7 +508,7 @@ export default function SettingsPage() {
 
       {/* 服务器管理入口统一收敛在「我的」页（避免多路径重复），此处不再放置 */}
 
-      <p className="mt-5 pb-2 text-center text-[11px] text-ink-3">
+      <p className="mt-5 pb-2 text-center text-micro text-ink-3">
         纳物 · {isNative() ? 'App' : '网页版'} v{APP_VERSION}
       </p>
     </PageShell>

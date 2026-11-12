@@ -248,7 +248,7 @@ export default function BackupPage() {
           >
             {busy ? '处理中…' : '立即备份到云端'}
           </button>
-          <p className="mt-2 px-1 text-[11px] text-ink-3">
+          <p className="mt-2 px-1 text-micro text-ink-3">
             服务器只保留最近 3 份备份；开启「自动同步」后满足条件会静默备份（设置里可开）。
             {autoSync ? '（已开启）' : ''}
           </p>
@@ -261,7 +261,7 @@ export default function BackupPage() {
           <p className="min-w-0 flex-1 text-sm font-medium">导出备份文件</p>
           <Download className="h-4 w-4 text-ink-3" aria-hidden />
         </div>
-        <p className="mt-0.5 text-[11px] text-ink-3">
+        <p className="mt-0.5 text-micro text-ink-3">
           把当前全部数据导出为 .flyme 文件（网页版可直接导入）；可选密码加密，密码不保存在应用里，忘记后无法恢复。
         </p>
         <button
@@ -279,7 +279,7 @@ export default function BackupPage() {
           <p className="min-w-0 flex-1 text-sm font-medium">导入备份文件</p>
           <Upload className="h-4 w-4 text-ink-3" aria-hidden />
         </div>
-        <p className="mt-0.5 text-[11px] text-ink-3">
+        <p className="mt-0.5 text-micro text-ink-3">
           选择之前导出的 .flyme 文件，把里面的数据恢复到本机（会覆盖当前全部数据）。加密文件需输入导出时设置的密码；不登录也能用。
         </p>
         <button
@@ -322,9 +322,9 @@ export default function BackupPage() {
             <li key={row.id} className="rounded-card border border-line bg-surface p-3.5">
               <div className="flex items-center gap-2">
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">{row.label || `备份 #${row.id}`}</p>
-                <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent">{row.item_count} 条</span>
+                <span className="rounded-full bg-accent-soft px-2 py-0.5 text-micro text-accent">{row.item_count} 条</span>
               </div>
-              <p className="mt-0.5 text-[11px] text-ink-3">
+              <p className="mt-0.5 text-micro text-ink-3">
                 {fmtTimestamp(row.created_at) || row.created_at}
                 {row.device ? ` · ${row.device}` : ''}
                 {row.bytes ? ` · ${(row.bytes / 1024).toFixed(1)} KB` : ''}
@@ -454,7 +454,7 @@ function ExportPasswordDialog(props: {
               className="h-11 w-full nw-input"
             />
           </PageField>
-          <p className="text-[11px] text-ink-3">
+          <p className="text-micro text-ink-3">
             加密采用 AES-256-GCM + PBKDF2（与网页版导出格式一致）；密码不会保存在应用里，忘记后无法恢复。
           </p>
         </div>
@@ -511,7 +511,7 @@ function ImportPasswordDialog(props: {
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}
       >
         <h2 className="mb-1 text-base font-semibold">这份备份已加密</h2>
-        <p className="mb-3 break-all text-[11px] text-ink-3">文件：{props.fileName}</p>
+        <p className="mb-3 break-all text-micro text-ink-3">文件：{props.fileName}</p>
         <div className="space-y-3">
           <PageField label="备份密码" hint="输入导出这份备份时设置的密码；密码不保存在应用里，忘记后无法恢复。">
             <input
@@ -593,7 +593,7 @@ function ImportConfirmDialog(props: {
           </p>
         </div>
         <p
-          className="mt-3 rounded-card border p-3 text-[11px] leading-5"
+          className="mt-3 rounded-card border p-3 text-micro leading-5"
           style={{ borderColor: 'var(--danger-soft)', background: 'var(--danger-soft)', color: 'var(--danger)' }}
         >
           ⚠ 导入会用备份内容覆盖本机全部数据（12 个集合与设置），且无法撤销。

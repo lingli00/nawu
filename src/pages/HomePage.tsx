@@ -174,7 +174,7 @@ function compressImage(file: File, max: number): Promise<string> {
 function DetailField({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="min-w-0">
-      <p className="text-[11px] text-ink-3">{label}</p>
+      <p className="text-micro text-ink-3">{label}</p>
       <p className="tnum truncate text-sm font-semibold" style={color ? { color } : undefined}>
         {value}
       </p>
@@ -753,11 +753,11 @@ export function GoodsFormSheet({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm text-ink">选择图标 / 图片</span>
-                    <span className="block text-[11px] text-ink-3">系统图标 / 品牌 / 网络商品图 / 相册·拍照</span>
+                    <span className="block text-micro text-ink-3">系统图标 / 品牌 / 网络商品图 / 相册·拍照</span>
                   </span>
                 </button>
                 {iconMatched && iconValue === iconMatched.value ? (
-                  <p className="mt-1.5 flex items-center gap-1.5 text-[11px] leading-4 text-ink-3">
+                  <p className="mt-1.5 flex items-center gap-1.5 text-micro leading-4 text-ink-3">
                     <span>✨ 已智能匹配 · {iconMatched.label}</span>
                     <button
                       type="button"
@@ -765,7 +765,7 @@ export function GoodsFormSheet({
                         setIconMatched(null);
                         setPickerTab('web');
                       }}
-                      className="rounded-full border border-line px-2 py-0.5 text-[11px] text-accent active:scale-95"
+                      className="rounded-full border border-line px-2 py-0.5 text-micro text-accent active:scale-95"
                     >
                       更换
                     </button>
@@ -1386,11 +1386,11 @@ export default function HomePage() {
           <div className="mb-3 rounded-2xl p-4" style={GLASS_STYLE}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] text-ink-3">
+                <p className="text-micro text-ink-3">
                   今日支出 · {todaySummary.count} 笔
                   {todaySummary.count === 0 ? ' · 今天还没有记录' : ''}
                 </p>
-                <p className="tnum mt-0.5 text-[28px] font-bold leading-9">
+                <p className="tnum mt-0.5 text-num font-bold leading-9">
                   {symbol}
                   {todaySummary.total.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}
                 </p>
@@ -1404,7 +1404,7 @@ export default function HomePage() {
                     </>
                   ) : null}
                 </div>
-                <p className="tnum mt-1.5 flex flex-wrap gap-x-2.5 text-[11px]">
+                <p className="tnum mt-1.5 flex flex-wrap gap-x-2.5 text-micro">
                   <span style={{ color: 'var(--gui)' }}>归 {formatMoney(todaySummary.gui, currency)}</span>
                   <span style={{ color: 'var(--xu)' }}>需 {formatMoney(todaySummary.xu, currency)}</span>
                   <span style={{ color: 'var(--fou)' }}>否 {formatMoney(todaySummary.fou, currency)}</span>
@@ -1427,15 +1427,15 @@ export default function HomePage() {
                 全历史周期的转卖净赚移到报表页，支持按月/按年筛选。 */}
             <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line-2 pt-2.5">
               <div className="rounded-btn bg-surface-2 p-2.5">
-                <p className="text-[11px] text-ink-3">在役资产</p>
-                <p className="tnum mt-0.5 text-[15px] font-semibold leading-5">
+                <p className="text-micro text-ink-3">在役资产</p>
+                <p className="tnum mt-0.5 text-h3 font-semibold leading-5">
                   {symbol}
                   {summary.invest.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
                 </p>
               </div>
               <div className="rounded-btn bg-surface-2 p-2.5">
-                <p className="text-[11px] text-ink-3">在役日均成本</p>
-                <p className="tnum mt-0.5 text-[15px] font-semibold leading-5" style={{ color: 'var(--gui)' }}>
+                <p className="text-micro text-ink-3">在役日均成本</p>
+                <p className="tnum mt-0.5 text-h3 font-semibold leading-5" style={{ color: 'var(--gui)' }}>
                   {formatMoney(summary.daily, currency)}
                 </p>
               </div>
@@ -1448,9 +1448,9 @@ export default function HomePage() {
                 className="rounded-btn bg-surface-2 p-2.5 text-left active:opacity-80"
                 aria-label="当月已转卖净赚，点击查看报表"
               >
-                <p className="text-[11px] text-ink-3">当月转卖净赚</p>
+                <p className="text-micro text-ink-3">当月转卖净赚</p>
                 <p
-                  className="tnum mt-0.5 text-[15px] font-semibold leading-5"
+                  className="tnum mt-0.5 text-h3 font-semibold leading-5"
                   style={{ color: monthSoldProfit > 0 ? 'var(--gui)' : 'var(--ink-3)' }}
                 >
                   {monthSoldProfitText}
@@ -1525,7 +1525,7 @@ export default function HomePage() {
                           {g.name}
                           {isSold(g) ? <span className="text-ink-3"> · 已转卖</span> : null}
                         </p>
-                        <p className="tnum text-[11px] text-ink-3">
+                        <p className="tnum text-micro text-ink-3">
                           {formatMoney(g.price, g.currency)} · 持有 {holdDays(g)} 天
                           {g.countEnabled ? ` · 用了 ${g.usedCount ?? 0} 次` : ''}
                         </p>
@@ -1537,7 +1537,7 @@ export default function HomePage() {
                         >
                           {formatMoney(dailyCost(g), g.currency)}
                         </p>
-                        <p className="text-[11px] text-ink-3">日均</p>
+                        <p className="text-micro text-ink-3">日均</p>
                       </div>
                       {/* ★v1.0.33 P0-1：常驻 ⋯ 菜单（长按编辑的唯一可视化入口） */}
                       <MoreMenuButton
@@ -1590,7 +1590,7 @@ export default function HomePage() {
                             在役=绿点（高关注）；已转卖/退役=中性灰 pill（低视觉权重） */}
                         {g.status === 'retired' ? (
                           <span
-                            className="absolute left-1 top-1.5 rounded-full bg-surface/85 px-2 text-[11px] leading-4 text-ink-2"
+                            className="absolute left-1 top-1.5 rounded-full bg-surface/85 px-2 text-micro leading-4 text-ink-2"
                           >
                             {isSold(g) ? '已转卖' : '退役'}
                           </span>
@@ -1686,7 +1686,7 @@ export default function HomePage() {
                       </span>
                     )}
                     <span
-                      className="absolute right-3 top-3 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                      className="absolute right-3 top-3 rounded-full px-2.5 py-0.5 text-micro font-medium"
                       style={{ background: 'color-mix(in srgb, var(--surface) 90%, transparent)' }}
                     >
                       {isSold(detail) ? (
@@ -1712,16 +1712,16 @@ export default function HomePage() {
                     <h2 className="line-clamp-2 text-lg font-semibold leading-6">{detail.name}</h2>
                     <div className="mt-2 flex items-end justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-[11px] text-ink-3">购入价</p>
+                        <p className="text-micro text-ink-3">购入价</p>
                         <p className="t-num tnum">{formatMoney(detail.price, detail.currency)}</p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
-                        <span className="tnum rounded-full bg-surface-2 px-2.5 py-0.5 text-[11px] text-ink-2">
+                        <span className="tnum rounded-full bg-surface-2 px-2.5 py-0.5 text-micro text-ink-2">
                           {formatMoney(dailyCost(detail), detail.currency)} / 天
                         </span>
                         {detailSoldProfit > 0 ? (
                           <span
-                            className="tnum rounded-full px-2.5 py-0.5 text-[11px] font-medium text-white"
+                            className="tnum rounded-full px-2.5 py-0.5 text-micro font-medium text-white"
                             style={{ background: 'var(--gui)' }}
                           >
                             净赚 +{formatMoney(detailSoldProfit, detail.currency)}

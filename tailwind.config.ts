@@ -30,6 +30,11 @@ const config: Config = {
         'warn-soft': 'var(--warn-soft)',
         danger: 'var(--danger)',
         'danger-soft': 'var(--danger-soft)',
+        /* ★DESIGN-SYSTEM v1：信息/成功语义色（组件禁止写死色值的口径下补齐的缺位令牌） */
+        info: 'var(--info)',
+        'info-soft': 'var(--info-soft)',
+        success: 'var(--success)',
+        'success-soft': 'var(--success-soft)',
       },
       borderRadius: {
         card: 'var(--radius-card)',
@@ -55,6 +60,10 @@ const config: Config = {
         caption: ['12px', { lineHeight: '16px', fontWeight: '400' }],
         num: ['28px', { lineHeight: '34px', fontWeight: '700' }],
         'num-sm': ['16px', { lineHeight: '22px', fontWeight: '600' }],
+        /* ★DESIGN-SYSTEM v1：微字号档（对齐 index.css 的 .t-micro / .t-mini），
+           收编后 text-[10px]/text-[11px] 任意字号类全站禁用 */
+        micro: ['11px', { lineHeight: '16px', fontWeight: '400' }],
+        mini: ['10px', { lineHeight: '14px', fontWeight: '500' }],
       },
       fontFamily: {
         sans: [

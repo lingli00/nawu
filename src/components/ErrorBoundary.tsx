@@ -55,7 +55,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           <p className="text-base font-medium">页面出了点问题</p>
           <p className="mt-1 text-xs text-ink-3">你的数据安全地存在本地，重载即可继续使用</p>
         </div>
-        <p className="max-w-md break-all rounded-card bg-surface-2 px-3 py-2 text-left text-[11px] text-ink-2">
+        <p className="max-w-md break-all rounded-card bg-surface-2 px-3 py-2 text-left text-micro text-ink-2">
           {err.message || String(err)}
         </p>
         <button
@@ -68,10 +68,10 @@ export default class ErrorBoundary extends Component<Props, State> {
         </button>
         {logs.length > 0 ? (
           <details className="w-full max-w-md text-left">
-            <summary className="cursor-pointer text-[11px] text-ink-3">错误详情（反馈时请截图）</summary>
+            <summary className="cursor-pointer text-micro text-ink-3">错误详情（反馈时请截图）</summary>
             <div className="mt-2 space-y-1.5">
               {logs.map((r, i) => (
-                <p key={i} className="break-all rounded bg-surface-2 px-2 py-1 text-[11px] leading-relaxed text-ink-3">
+                <p key={i} className="break-all rounded bg-surface-2 px-2 py-1 text-micro leading-relaxed text-ink-3">
                   [{new Date(r.t).toLocaleTimeString()}] {r.kind}: {r.msg}
                 </p>
               ))}
@@ -81,7 +81,7 @@ export default class ErrorBoundary extends Component<Props, State> {
                   clearErrors();
                   this.reload();
                 }}
-                className="mt-1 text-[11px] text-ink-3 underline"
+                className="mt-1 text-micro text-ink-3 underline"
               >
                 清除错误记录并重载
               </button>

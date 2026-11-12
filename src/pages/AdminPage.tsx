@@ -394,7 +394,7 @@ function UsersTab({
               <p className="truncate text-xs text-ink-3">{u.email}</p>
             </div>
             <span
-              className="rounded-full px-2 py-0.5 text-[11px]"
+              className="rounded-full px-2 py-0.5 text-micro"
               style={{
                 background: u.disabled ? 'var(--danger-soft)' : 'var(--accent-soft)',
                 color: u.disabled ? 'var(--danger)' : 'var(--accent)',
@@ -403,7 +403,7 @@ function UsersTab({
               {u.disabled ? '已停用' : '正常'}
             </span>
             <span
-              className="rounded-full px-2 py-0.5 text-[11px]"
+              className="rounded-full px-2 py-0.5 text-micro"
               style={{
                 background: u.verified ? 'var(--accent-soft)' : 'var(--warn-soft)',
                 color: u.verified ? 'var(--accent)' : 'var(--warn)',
@@ -412,7 +412,7 @@ function UsersTab({
               {u.verified ? '已验证' : '未验证'}
             </span>
           </div>
-          <p className="mt-1 text-[11px] text-ink-3">
+          <p className="mt-1 text-micro text-ink-3">
             注册 {u.created_at?.slice(0, 10) ?? '—'} · 最近登录 {u.last_login_at ? u.last_login_at.slice(0, 16).replace('T', ' ') : '从未'}
           </p>
           <div className="mt-2.5 flex flex-wrap gap-2">
@@ -538,7 +538,7 @@ function SwitchesTab({
               <p className="flex items-center gap-1.5 text-sm font-medium">
                 {s.label}
               </p>
-              <p className="text-[11px] text-ink-3">{s.desc}</p>
+              <p className="text-micro text-ink-3">{s.desc}</p>
             </div>
             <button
               onClick={() => void flip(s.key)}
@@ -573,7 +573,7 @@ function SwitchesTab({
 
       <div className="rounded-card border border-line bg-surface p-4">
         <p className="text-sm font-medium">站点图标</p>
-        <p className="mt-0.5 text-[11px] text-ink-3">显示在浏览器标签页与登录页；支持图片链接或本地上传（自动压缩）</p>
+        <p className="mt-0.5 text-micro text-ink-3">显示在浏览器标签页与登录页；支持图片链接或本地上传（自动压缩）</p>
         <div className="mt-2 flex items-center gap-3">
           {siteIcon ? (
             <img
@@ -784,7 +784,7 @@ function SecurityTab({
                 {a.display_name || a.username}
                 <span className="ml-2 text-xs text-ink-3">{a.username}</span>
               </span>
-              <span className="text-[11px] text-ink-3">{a.created_at?.slice(0, 10) ?? ''}</span>
+              <span className="text-micro text-ink-3">{a.created_at?.slice(0, 10) ?? ''}</span>
             </li>
           ))}
         </ul>
@@ -905,7 +905,7 @@ function MailTab({
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium">发件邮箱（SMTP）</p>
           <span
-            className="rounded-full px-2 py-0.5 text-[11px]"
+            className="rounded-full px-2 py-0.5 text-micro"
             style={{
               background: conf?.configured ? 'var(--accent-soft)' : 'var(--warn-soft)',
               color: conf?.configured ? 'var(--accent)' : 'var(--warn)',
@@ -914,7 +914,7 @@ function MailTab({
             {conf?.configured ? '已配置' : '未配置'}
           </span>
         </div>
-        <p className="mt-0.5 text-[11px] text-ink-3">
+        <p className="mt-0.5 text-micro text-ink-3">
           用于发送注册/找回密码验证码。{conf?.configured ? `当前：${conf.host}:${conf.port}（${conf.user}）` : '尚未配置。'}
         </p>
         <form onSubmit={(e) => void save(e)} className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -1285,7 +1285,7 @@ function DbTab({
       {/* 备份导出（v1.1：.flyme 加密容器，与用户端导出同格式） */}
       <div className="rounded-card border border-line bg-surface p-4">
         <p className="text-sm font-medium">数据备份 / 恢复</p>
-        <p className="mt-0.5 text-[11px] text-ink-3">
+        <p className="mt-0.5 text-micro text-ink-3">
           导出为 <span className="font-mono">.flyme</span> 加密文件保存在本地（PBKDF2 20 万次派生密钥 + AES-256-GCM，
           与用户端「导出 .flyme」同一容器格式），防止备份被窃取后直接读取；导入时需要同一密码，密码丢失无法恢复，请妥善保管。
         </p>
@@ -1351,14 +1351,14 @@ function DbTab({
                 取消
               </button>
             </div>
-            <p className="mt-1.5 text-[11px] text-ink-3">加密在本机与服务端之间完成，密码不会保存在服务器。</p>
+            <p className="mt-1.5 text-micro text-ink-3">加密在本机与服务端之间完成，密码不会保存在服务器。</p>
           </div>
         ) : null}
       </div>
 
       <div className="rounded-card border border-line bg-surface p-4">
         <p className="text-sm font-medium">导入备份</p>
-        <p className="mt-0.5 text-[11px] text-ink-3">
+        <p className="mt-0.5 text-micro text-ink-3">
           选一份上面导出的 <span className="font-mono">.flyme</span> 加密备份（也兼容 v1.1 之前的明文 .json）灌回当前数据库。
           服务端会先校验表名与列名白名单，全部写入包在一个事务里，任一步失败自动回滚；导入前会先在本地解密预览概要，确认无误才提交。
         </p>
@@ -1404,7 +1404,7 @@ function DbTab({
               备份概要：{importPreview.names.length} 张表 / {importPreview.rowTotal} 行
               {importPreview.encrypted ? '（已解密校验）' : ''}
             </p>
-            <p className="mt-0.5 max-h-32 overflow-auto whitespace-pre-wrap text-[11px] leading-5 text-ink-3">
+            <p className="mt-0.5 max-h-32 overflow-auto whitespace-pre-wrap text-micro leading-5 text-ink-3">
               {importPreview.names.join('、')}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-ink-2">
@@ -1476,7 +1476,7 @@ function DbTab({
           </>
         ) : null}
         {importMsg ? (
-          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-btn border border-line bg-surface-2 p-3 text-[11px] leading-5 text-ink-2">
+          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-btn border border-line bg-surface-2 p-3 text-micro leading-5 text-ink-2">
             {importMsg}
           </pre>
         ) : null}
@@ -1487,7 +1487,7 @@ function DbTab({
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium">当前连接</p>
           <span
-            className="rounded-full px-2 py-0.5 text-[11px]"
+            className="rounded-full px-2 py-0.5 text-micro"
             style={{
               background: info?.connected ? 'var(--accent-soft)' : 'var(--danger-soft)',
               color: info?.connected ? 'var(--accent)' : 'var(--danger)',
@@ -1509,14 +1509,14 @@ function DbTab({
           <p className="mt-2 text-xs" style={{ color: 'var(--danger)' }}>{info?.error ?? '数据库不可用'}</p>
         )}
         {info?.tables?.length ? (
-          <p className="mt-2 text-[11px] leading-5 text-ink-3">{info.tables.join(' · ')}</p>
+          <p className="mt-2 text-micro leading-5 text-ink-3">{info.tables.join(' · ')}</p>
         ) : null}
       </div>
 
       {/* 手动改连 */}
       <div className="rounded-card border border-line bg-surface p-4">
         <p className="text-sm font-medium">手动连接数据库</p>
-        <p className="mt-0.5 text-[11px] text-ink-3">
+        <p className="mt-0.5 text-micro text-ink-3">
           切换到其他 MySQL 实例（如迁移服务器）。密码留空表示保持现有密码；保存前会先测试连接，失败不落盘。
         </p>
         <form
@@ -1897,7 +1897,7 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
             <p className="mt-0.5">{fmtSizeMb(info?.diskFreeMb)}</p>
           </div>
         </div>
-        <p className="mt-2 text-[11px] text-ink-3">
+        <p className="mt-2 text-micro text-ink-3">
           数据库结构版本 v{info?.schema.current ?? '—'} / v{info?.schema.target ?? '—'}
           {lastAutoCheck ? ` · 上次自动检查 ${lastAutoCheck}` : ''}
         </p>
@@ -1906,7 +1906,7 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
       {/* 卡片 B · 检查更新 */}
       <div className="mt-3 rounded-card border border-line bg-surface p-4">
         <h2 className="text-sm font-semibold">检查更新</h2>
-        <p className="mt-1 text-[11px] text-ink-3">
+        <p className="mt-1 text-micro text-ink-3">
           从更新源拉取版本清单（manifest 仅几 KB），本地逐文件比对后给出变更统计；不会自动下载。
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1945,25 +1945,25 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
                 {busy === 'update' ? '启动中…' : jobActive ? '更新进行中…' : '立即更新'}
               </button>
               {check.diff.deleted > 0 ? (
-                <span className="text-[11px] text-ink-3">
+                <span className="text-micro text-ink-3">
                   将清理 {check.diff.deleted} 个旧版本遗留文件（不影响现有数据）
                 </span>
               ) : null}
             </div>
             {check.remote.notes ? (
               <details className="mt-2">
-                <summary className="cursor-pointer text-[11px] font-medium text-ink-2">更新说明</summary>
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-[11px] leading-relaxed text-ink-2">
+                <summary className="cursor-pointer text-micro font-medium text-ink-2">更新说明</summary>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-micro leading-relaxed text-ink-2">
                   {check.remote.notes}
                 </pre>
               </details>
             ) : null}
             {check.diff.deleted > 0 ? (
               <details className="mt-2">
-                <summary className="cursor-pointer text-[11px] font-medium text-danger">
+                <summary className="cursor-pointer text-micro font-medium text-danger">
                   查看将删除的 {check.diff.deleted} 个文件
                 </summary>
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-[11px] leading-relaxed text-ink-2">
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-micro leading-relaxed text-ink-2">
                   {check.diff.deletedList.join('\n')}
                 </pre>
               </details>
@@ -1996,7 +1996,7 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
             <p className="mt-1 text-xs text-ink-2">数据库迁移：{job.migration.log.join('；')}</p>
           ) : null}
           {job.log.length > 0 ? (
-            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-paper p-2 text-[11px] leading-relaxed text-ink-2">
+            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-btn bg-paper p-2 text-micro leading-relaxed text-ink-2">
               {job.log.map((l) => `${l.t} ${l.msg}`).join('\n')}
             </pre>
           ) : null}
@@ -2017,36 +2017,36 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
             {channelLoading ? '读取中…' : '刷新'}
           </button>
         </div>
-        <p className="mt-1 text-[11px] text-ink-3">
+        <p className="mt-1 text-micro text-ink-3">
           App 检查更新时按「当前服务器 → 官网」自动选择渠道；此页展示官网通道的当前内容。
         </p>
         {channelInfo ? (
           <>
             <p className="mt-2 text-sm font-semibold">
               最新版本 v{channelInfo.version}
-              <span className="ml-2 text-[11px] font-normal text-ink-3">
+              <span className="ml-2 text-micro font-normal text-ink-3">
                 {channelInfo.publishedAt ? `发布于 ${channelInfo.publishedAt}` : ''}
               </span>
             </p>
-            <p className="mt-1 text-[11px] text-ink-3">
+            <p className="mt-1 text-micro text-ink-3">
               全量包 {(channelInfo.apk.size / 1048576).toFixed(1)} MB
               {channelInfo.patches.length > 0
                 ? ` · 增量包 ${channelInfo.patches.length} 个（${channelInfo.patches.map((x: { from: string }) => x.from).join('、')}）`
                 : ' · 无增量包'}
             </p>
-            <p className="mt-1 break-all text-[11px] text-ink-3">
+            <p className="mt-1 break-all text-micro text-ink-3">
               通道地址：{`${window.location.origin}/app-manifest.json`}
             </p>
           </>
         ) : (
-          <p className="mt-2 text-[11px] text-ink-3">{channelLoading ? '正在读取通道清单…' : '通道清单不可达（检查站点根目录的 app-manifest.json 与静态服务）'}</p>
+          <p className="mt-2 text-micro text-ink-3">{channelLoading ? '正在读取通道清单…' : '通道清单不可达（检查站点根目录的 app-manifest.json 与静态服务）'}</p>
         )}
       </div>
 
       {/* 卡片 E · 更新源设置 */}
       <div className="mt-3 rounded-card border border-line bg-surface p-4">
         <h2 className="text-sm font-semibold">更新源</h2>
-        <p className="mt-1 text-[11px] text-ink-3">
+        <p className="mt-1 text-micro text-ink-3">
           服务端在线更新与 App 更新默认都走官方频道；此处可改为你自己的频道地址（留空恢复官方默认）。
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2079,7 +2079,7 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
       {/* 卡片 F · 历史与回滚 */}
       <div className="mt-3 rounded-card border border-line bg-surface p-4">
         <h2 className="text-sm font-semibold">历史与回滚</h2>
-        <p className="mt-1 text-[11px] text-ink-3">
+        <p className="mt-1 text-micro text-ink-3">
           每次更新前自动备份待改文件（最多保留 3 份）。更新出问题时可回滚到任一备份。
         </p>
         {info && info.backups.length > 0 ? (
@@ -2109,7 +2109,7 @@ function ServerUpdateTab({ token, onDot }: { token: string; onDot: (dot: boolean
           <button onClick={() => void doMigrate()} disabled={busy === 'migrate'} className={btnGhost}>
             {busy === 'migrate' ? '执行中…' : '执行数据库迁移'}
           </button>
-          <span className="text-[11px] text-ink-3">
+          <span className="text-micro text-ink-3">
             当前 v{info?.schema.current ?? '—'} / 目标 v{info?.schema.target ?? '—'}
           </span>
         </div>

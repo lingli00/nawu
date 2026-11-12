@@ -33,6 +33,13 @@
   --tint-cool: #2e8a7a; /* 青瓷：冷静池 / 时间切片（原 #2e9e8a / #10B981） */
   --tint-clay: #b3563a; /* 陶土：情绪速写 / 否判定（原 #c2603f / #EC4899） */
   --tint-violet: #7c5cd6; /* 紫：手动录入（原 #8B5CF6） */
+  /* ★DESIGN-SYSTEM v1：信息/成功语义色（此前全站用 --xu 兼任「信息」、
+     净赚成功态在吃不存在的 --ui-green fallback；现在令牌化，白底对比度
+     --info 4.6:1 / --success 5.0:1，均达 WCAG AA） */
+  --info: #4a7fb5;
+  --info-soft: #e5edf6;
+  --success: #16803c;
+  --success-soft: #e3f0e8;
   --radius-card: 16px;
   --radius-btn: 10px;
   --shadow: 0 1px 2px rgba(24, 32, 28, 0.05), 0 2px 8px rgba(24, 32, 28, 0.04);
@@ -73,6 +80,11 @@
   --tint-cool: #4aa696;
   --tint-clay: #d07067;
   --tint-violet: #9d86e8;
+  /* ★DESIGN-SYSTEM v1：深色 info/success 提亮一档（深底对比度 ~6:1） */
+  --info: #6f9ecb;
+  --info-soft: #1c2733;
+  --success: #5cab7f;
+  --success-soft: #1c2b22;
   --side: #121815;
   --side-2: #1a231e;
   --side-ink: #e8edea;
@@ -102,7 +114,14 @@
   }
   /* 筛选 / 排序 chip（选中 = accent 边 + accent-soft 底 + accent 字） */
   .nw-chip {
-    @apply inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3.5 text-xs transition-all active:scale-95;
+    @apply relative inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3.5 text-xs transition-all active:scale-95;
+  }
+  /* ★DESIGN-SYSTEM v1：隐形热区——视觉 32px（密集控件允许），点击命中区扩到 44px；
+     ::before 画在内容之下，不遮挡文字，只扩大可点范围 */
+  .nw-chip::before {
+    content: '';
+    position: absolute;
+    inset: -6px -4px;
   }
   .nw-chip[data-selected='true'] {
     @apply border-accent bg-accent-soft font-medium text-accent;
@@ -124,6 +143,14 @@
    ============================================================ */
 * {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* ★DESIGN-SYSTEM v1 · P0：键盘焦点指示。
+   全站输入类此前 outline-none 后无替代焦点态，键盘 Tab 在网页版不可感知。
+   :focus-visible 只在键盘导航时出现，鼠标/触摸观感零变化；外描边跟随圆角。 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 html,
@@ -218,6 +245,19 @@ textarea {
   line-height: 22px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+/* ★DESIGN-SYSTEM v1：微字号档位收编（原 100+ 处 text-[11px]/text-[10px] 任意值的规范归宿）。
+   11px 是移动端可读下限：配 --ink-3 时行高必须 ≥16px（本档已锁 16px）。 */
+.t-micro {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 400;
+}
+/* 仅限徽标内文字（Badge），不用于正文 */
+.t-mini {
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 500;
 }
 
 /* ============================================================
