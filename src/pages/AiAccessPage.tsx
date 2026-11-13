@@ -5,7 +5,7 @@ import {
   Inbox, KeyRound, Layers, Link2, RefreshCw, ShieldCheck, Sparkles, Tag,
   Trash2, Wand2, Zap,
 } from 'lucide-react';
-import { currentServer, useAuthStore, useDataStore, toastError, toastSuccess } from '../store';
+import { currentServer, useAuthStore, useDataStore, useUiStore, toastError, toastSuccess } from '../store';
 import { haptic } from '../lib/haptics';
 import { mergeInboxEvents } from '../lib/aiInboxMerge';
 import {
@@ -226,7 +226,13 @@ export default function AiAccessPage() {
 
   const doRevoke = async (id: string) => {
     void haptic('heavy');
-    if (!window.confirm('撤销后该 AI 将无法再调用接口，确定？')) return;
+    const ok = await useUiStore.getState().confirm({
+      title: '撤销该密钥？',
+      message: '撤销后该 AI 将无法再调用接口。',
+      confirmText: '撤销',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await revokeAiKey(server, id);
       await refresh();
@@ -274,7 +280,13 @@ export default function AiAccessPage() {
   /** 丢弃勾选的批次：服务端会同步清掉云端快照里的对应记录。 */
   const doDiscard = async () => {
     if (!selectedEvents.length) return;
-    if (!window.confirm(`确定丢弃这 ${selectedEvents.length} 个批次（共 ${selectedRows} 条）？丢弃后不会进入本机，也无法恢复。`)) return;
+    const ok = await useUiStore.getState().confirm({
+      title: `丢弃这 ${selectedEvents.length} 个批次？`,
+      message: `共 ${selectedRows} 条，丢弃后不会进入本机，也无法恢复。`,
+      confirmText: '丢弃',
+      danger: true,
+    });
+    if (!ok) return;
     void haptic('heavy');
     setBusy(true);
     try {

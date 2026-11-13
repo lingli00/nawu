@@ -4,7 +4,7 @@ import PageShell from '../components/layout/PageShell';
 import CategoryManageSheet from '../components/CategoryManageSheet';
 import CategoryGlyph from '../components/CategoryGlyph';
 import { QuickCooldownSheet } from '../components/LifeSheets';
-import { useDataStore, useSettingsStore, toastSuccess } from '../store';
+import { useDataStore, useSettingsStore, toastSuccess, toastError } from '../store';
 import { today } from '../lib/date';
 import { haptic } from '../lib/haptics';
 import type { Judgement, ValueRecord } from '../types/entities';
@@ -99,6 +99,8 @@ export default function ManualRecordSheet({
       /* v1.1.7：抽屉内嵌模式不跳路由，直接关闭抽屉（就地记一笔，停在原页面） */
       if (embedded) onDone?.();
       else nav('/ledger', { replace: true });
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : '保存失败，请重试');
     } finally {
       setBusy(false);
     }

@@ -451,11 +451,19 @@ function UsersTab({
             <MiniBtn
               danger
               onClick={() => {
-                if (!window.confirm(`确定删除用户 ${u.email}？该用户的云备份与资料将一并清除，且不可恢复。`)) return;
-                void act(async () => {
-                  await adminPost('/api/admin/users/delete', { email: u.email });
-                  toastSuccess('已删除');
-                });
+                void (async () => {
+                  const ok = await useUiStore.getState().confirm({
+                    title: `删除用户 ${u.email}？`,
+                    message: '该用户的云备份与资料将一并清除，且不可恢复。',
+                    confirmText: '删除',
+                    danger: true,
+                  });
+                  if (!ok) return;
+                  void act(async () => {
+                    await adminPost('/api/admin/users/delete', { email: u.email });
+                    toastSuccess('已删除');
+                  });
+                })();
               }}
             >
               删除
@@ -883,7 +891,13 @@ function MailTab({
   };
 
   const clear = async (): Promise<void> => {
-    if (!window.confirm('确定清除 SMTP 配置？清除后注册验证码邮件将无法发送。')) return;
+    const ok = await useUiStore.getState().confirm({
+      title: '清除 SMTP 配置？',
+      message: '清除后注册验证码邮件将无法发送。',
+      confirmText: '清除',
+      danger: true,
+    });
+    if (!ok) return;
     setBusy('clear');
     try {
       await adminPost('/api/admin/smtp/clear');
