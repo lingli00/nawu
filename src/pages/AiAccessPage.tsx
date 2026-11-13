@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, BookOpen, Braces, Check, ChevronDown, Copy, Database, ExternalLink,
+  BookOpen, Braces, Check, ChevronDown, Copy, Database, ExternalLink,
   Inbox, KeyRound, Layers, Link2, RefreshCw, ShieldCheck, Sparkles, Tag,
   Trash2, Wand2, Zap,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import PageShell from '../components/layout/PageShell';
 import { currentServer, useAuthStore, useDataStore, useUiStore, toastError, toastSuccess } from '../store';
 import { haptic } from '../lib/haptics';
 import { mergeInboxEvents } from '../lib/aiInboxMerge';
@@ -318,27 +319,18 @@ export default function AiAccessPage() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-3 pb-10 dt:max-w-3xl">
-      {/* 顶部标题 */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => nav(-1)}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-surface active:bg-surface-2"
-          aria-label="返回"
-        >
-          <ArrowLeft size={18} strokeWidth={1.8} />
-        </button>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-h2">AI 接入</h1>
-          <p className="truncate text-caption text-ink-3">把纳物的全部数据交给你的 AI</p>
-        </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-micro font-medium ${
+    <PageShell
+      title="AI 接入"
+      subtitle="把纳物的全部数据交给你的 AI"
+      right={
+        <span className={`mr-1 shrink-0 rounded-full px-2.5 py-1 text-micro font-medium ${
           loggedIn ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-ink-3'
         }`}>
           {loggedIn ? (baseUrl ? '已连接' : '未连接服务器') : '未登录'}
         </span>
-      </div>
-
+      }
+    >
+      <div className="space-y-3">
       {/* 状态总览 */}
       <div className="relative overflow-hidden rounded-card border border-line bg-accent-soft px-4 py-4">
         <div className="pointer-events-none absolute -right-12 -top-14 h-40 w-40 rounded-full border-[26px] border-accent/10" />
@@ -770,6 +762,7 @@ export default function AiAccessPage() {
           </section>
         </>
       )}
-    </div>
+      </div>
+    </PageShell>
   );
 }
