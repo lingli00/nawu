@@ -32,10 +32,16 @@ const config: CapacitorConfig = {
      */
     captureInput: false,
     webContentsDebuggingEnabled: false, // 发布版务必 false
-    // ★v1.0.21：Android 15 强制 edge-to-edge（WebView 延伸到状态栏/手势条下），
-    // 'auto' = 检测到强制 e2e 时给 WebView 加原生 margin 避开系统栏——
-    // 修复「页面顶部超出到状态栏」；低版本不受影响（overlay:false 已占位）。
-    adjustMarginsForEdgeToEdge: 'auto',
+    // ★Android 15 强制 edge-to-edge（WebView 延伸到状态栏/手势条下）。
+    // 保持 'disable'（= Capacitor 默认值，见 @capacitor/android CapConfig.java 的 fallback）。
+    // ★v1.7.5 留白复盘：此行**不是**修顶部空白的关键——'disable' 本就是默认值，
+    //   原生层从未给 WebView 加过避开系统栏的 margin，第一轮 'auto'→'disable' 实为空操作。
+    //   「APP 顶部状态栏下方空一大块」的真凶在**网页侧**：MainShell 的 pager 壳与 PageShell
+    //   的二级页顶栏都写了 `paddingTop: env(safe-area-inset-top)`，该值在 APP 里 = 状态栏高度
+    //   （浏览器里为 0，故网页不受影响），把内容整体推下一块。二/三轮已分别删掉这两处 padding。
+    //   此处显式写 'disable' 仅表意清楚（原生不加 margin，安全区交给网页侧 CSS 控制），
+    //   非留白修复项。类型为 'auto' | 'force' | 'disable'。
+    adjustMarginsForEdgeToEdge: 'disable',
   },
   plugins: {
     Keyboard: {
