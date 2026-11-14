@@ -623,7 +623,6 @@ function MobileShell({
   return (
     <div
       className="nw-pager-shell flex flex-col overflow-hidden bg-surface-2 text-ink"
-      style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       {/* 分页器本体：四页并排、原生横向滚动；拖到哪停到哪，松手吸附到最近一页 */}
       <main className="relative min-h-0 flex-1 overflow-hidden">
