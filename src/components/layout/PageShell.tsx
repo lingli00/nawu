@@ -37,7 +37,6 @@ export default function PageShell({
       <header
         className="sticky top-0 z-20 flex items-center gap-2 border-b border-line px-3"
         style={{
-          paddingTop: 'env(safe-area-inset-top)',
           background: 'color-mix(in srgb, var(--surface) 62%, transparent)',
           backdropFilter: 'blur(24px) saturate(170%)',
           WebkitBackdropFilter: 'blur(24px) saturate(170%)',
